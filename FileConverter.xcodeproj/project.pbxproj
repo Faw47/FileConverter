@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0EACD62AF256E8099E505D22 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 80E5CC3502DD413C5338434C /* Assets.xcassets */; };
 		115FA1AFB848CBDF28F6DCC0 /* DropURLCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 876AF88FCD648511C0E59E58 /* DropURLCollector.swift */; };
 		12D8A375F4F3821A7FCA59DF /* DropURLCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 876AF88FCD648511C0E59E58 /* DropURLCollector.swift */; };
 		165FD28813D2992B5EF54440 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E69FFF0E4E67E45C299E9F /* AppState.swift */; };
@@ -27,6 +28,7 @@
 		AF88ACCB609F866B61B6F3A4 /* FileConverterContracts in Frameworks */ = {isa = PBXBuildFile; productRef = 737116CD4FAC29892D7A74AD /* FileConverterContracts */; };
 		B4EC0079F200DE9F79414B6D /* PresetsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA89DE4948E258B0218F5929 /* PresetsSettingsView.swift */; };
 		B8EDC6C1AEAE5471BE8B50B6 /* PerformanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69896909738BEFDE61018475 /* PerformanceSettingsView.swift */; };
+		C16C0AEDF73FE4F98BBA06CA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 80E5CC3502DD413C5338434C /* Assets.xcassets */; };
 		C27388B16EAE67E7A06A200E /* JobRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD04DFD4A9D41668F7DA6891 /* JobRowView.swift */; };
 		C2D8A98C51FEC583F2556265 /* FileConverterCore in Frameworks */ = {isa = PBXBuildFile; productRef = F312CCD17BD7910D60C03C09 /* FileConverterCore */; };
 		C4569BE4D7ADD6EFA5D80530 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9769F9673E8312F4CCC36F8C /* SettingsView.swift */; };
@@ -103,6 +105,7 @@
 		6A1CBC6F9AC4E2EC7F2C25AA /* DropZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropZoneView.swift; sourceTree = "<group>"; };
 		6AEABD70E4F177405FB0DFBB /* FinderIntegrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderIntegrationView.swift; sourceTree = "<group>"; };
 		7E2BB9D0BD2A49F29AB18123 /* FileConverterNativeFinderExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FileConverterNativeFinderExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		80E5CC3502DD413C5338434C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		876AF88FCD648511C0E59E58 /* DropURLCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropURLCollector.swift; sourceTree = "<group>"; };
 		9769F9673E8312F4CCC36F8C /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA89DE4948E258B0218F5929 /* PresetsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetsSettingsView.swift; sourceTree = "<group>"; };
@@ -192,6 +195,7 @@
 				A577D66023EABF1A6519EC03 /* UI */,
 				371BB29A7BD8D7C20B27D475 /* AppMain.swift */,
 				67E69FFF0E4E67E45C299E9F /* AppState.swift */,
+				80E5CC3502DD413C5338434C /* Assets.xcassets */,
 			);
 			name = FileConverterApp;
 			path = Sources/FileConverterApp;
@@ -255,6 +259,7 @@
 			buildConfigurationList = F9F3E15EC06B39F5A01761FA /* Build configuration list for PBXNativeTarget "FileConverterNative" */;
 			buildPhases = (
 				3C5C5AA4A79DD5A01AB5A653 /* Sources */,
+				B3A2F67EBCE3903E51F1E026 /* Resources */,
 				995D1E41AFDBE786BC22B900 /* Frameworks */,
 				821F41E562CD6D27BA1B84EF /* Embed Foundation Extensions */,
 			);
@@ -278,6 +283,7 @@
 			buildConfigurationList = CF2294646D0BE23FBAE29B64 /* Build configuration list for PBXNativeTarget "FileConverterExtended" */;
 			buildPhases = (
 				44871B6BC4A1CA64DE83B449 /* Sources */,
+				4D65FA2C71AA4C048625EE92 /* Resources */,
 				6BAA502E5E28F593251956E9 /* Frameworks */,
 				38C0C75DA9F7521FA68A5782 /* Embed Foundation Extensions */,
 			);
@@ -388,6 +394,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4D65FA2C71AA4C048625EE92 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0EACD62AF256E8099E505D22 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B3A2F67EBCE3903E51F1E026 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C16C0AEDF73FE4F98BBA06CA /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		063AD879F3EFB7FE8BFEF0CA /* Sources */ = {
