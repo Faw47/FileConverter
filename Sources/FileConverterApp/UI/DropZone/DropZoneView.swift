@@ -28,11 +28,11 @@ public struct DropZoneView: View {
                 VStack(spacing: 8) {
                     Image(systemName: isHovering ? "arrow.down.doc.fill" : "plus.viewfinder")
                         .font(.system(size: 28))
-                        .foregroundColor(isHovering ? .accentColor : .secondary)
+                        .foregroundStyle(isHovering ? Color.accentColor : Color.secondary)
 
                     Text(isHovering ? "Drop files to convert" : "Drag and drop files here, or click to choose")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(isHovering ? .accentColor : .secondary)
+                        .foregroundStyle(isHovering ? Color.accentColor : Color.secondary)
                 }
             }
             .frame(height: 90)

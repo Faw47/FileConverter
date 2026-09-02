@@ -9,7 +9,7 @@ This document details the architectural design, subsystem relationships, and dat
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Finder.app Context                             │
-│  FIFinderSync (FileConverterNativeFinderExtension) `io.fileconverter.app.findersync` │
+│  FIFinderSync (FileConverterFinderExtension) `io.fileconverter.app.findersync` │
 │  • Container `group.io.fileconverter.shared` (`IPCConfiguration.sharedContainerURL`, Debug fallback `~/Library/Application Support/FileConverter/LocalIPC/native/`) │
 │  • Snapshot: FileConverterContracts + FinderSupport `FinderMenuSnapshot` │
 │    validated by `FinderMenuCatalog` (size/dupe/edition, ≤100 sources)    │
@@ -21,7 +21,7 @@ This document details the architectural design, subsystem relationships, and dat
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        File Converter.app (unified, unsandboxed)         │
-│  io.fileconverter.app • `FileConverterNative` + `FileConverterNativeFinderExtension` │
+│  io.fileconverter.app • `FileConverter` + `FileConverterFinderExtension` │
 │  ConversionCoordinator (actor, serialized drain, dedup) ──► ConversionQueue│
 │     validation: PresetValidator + BackendResolver.canResolve (always     │
 │                  Native+External)                                        │
@@ -65,7 +65,7 @@ This document details the architectural design, subsystem relationships, and dat
 ### 3.2 FileConverterCore
 * **`FormatRegistry`**: canonical alias ownership, atomic duplicate rejection, MOV/QTA ownership fixes.
 * **`FormatDetector`**: extension + UTType + magic-byte tiers.
-* **`PresetStore`**: built-in identity via `BuiltInPresetIdentity`, ordered merge preserving enabled/sort, App Group path per edition, read-only extension guard, corrupt-file preservation, retryable `publishFinderMenuSnapshot` gated on successful load.
+* **`PresetStore`**: built-in identity via `BuiltInPresetIdentity`, ordered merge preserving enabled/sort, shared-container path (`IPCConfiguration.sharedContainerURL`), read-only extension guard, corrupt-file preservation, retryable `publishFinderMenuSnapshot` gated on successful load.
 * **`PresetValidator`**: resolver-aware intersection — a preset is compatible only if enabled, source-compatible **and** `BackendResolver.canResolve` for every selected file.
 * **`ConversionQueue`**: `@MainActor` state, nonisolated `executeJob`. Backend resolved before output reservation; concurrent destinations reserved via `reservedOutputURLs`; `clearCompleted` never releases active leases; `finalizing` is non-cancellable commit boundary with `replaceIfNewer` revalidation and `replaceItemAt` atomic commit.
 * **`OutputNamingEngine`**: per-preset policy, directory-traversal guard, custom-folder lease requirement (no fallback path), numbered collision with in-flight reservation, atomic commit via `replaceItemAt`/`moveItem` with directory guard.

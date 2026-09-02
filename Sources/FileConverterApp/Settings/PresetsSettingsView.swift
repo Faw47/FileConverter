@@ -6,7 +6,6 @@ public struct PresetsSettingsView: View {
     @State private var presets: [ConversionPreset] = []
     @State private var selectedPresetID: UUID?
     @State private var selectedCategoryFilter: FormatCategory?
-    @State private var showingExportSuccess = false
     @State private var showingImportError = false
     @State private var importErrorMessage = ""
 
@@ -25,7 +24,7 @@ public struct PresetsSettingsView: View {
             } else {
                 Text("Select a preset to inspect or edit.")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
         .onAppear {
@@ -33,6 +32,11 @@ public struct PresetsSettingsView: View {
             if selectedPresetID == nil {
                 selectedPresetID = presets.first?.id
             }
+        }
+        .alert("Import Failed", isPresented: $showingImportError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(importErrorMessage.isEmpty ? "The selected presets file could not be imported." : importErrorMessage)
         }
     }
 
@@ -55,7 +59,7 @@ public struct PresetsSettingsView: View {
                 ForEach(filteredPresets) { preset in
                     HStack {
                         Image(systemName: preset.category.systemImage)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .frame(width: 18)
 
                         VStack(alignment: .leading, spacing: 2) {
@@ -64,7 +68,7 @@ public struct PresetsSettingsView: View {
 
                             Text(preset.name)
                                 .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
 
                         Spacer()
@@ -216,7 +220,7 @@ public struct PresetDetailEditorView: View {
 
     public var body: some View {
         Form {
-            Section(header: Text("Preset Identity").font(.headline)) {
+            Section {
                 TextField("Preset Full Name", text: $preset.name)
                 TextField("Finder Menu Title", text: $preset.menuName)
 
@@ -227,9 +231,11 @@ public struct PresetDetailEditorView: View {
                 }
 
                 TextField("Destination Format Extension", text: $preset.destinationFormat)
+            } header: {
+                Text("Preset Identity").font(.headline)
             }
 
-            Section(header: Text("Engine & Backend").font(.headline)) {
+            Section {
                 Picker("Backend Engine", selection: $preset.backend) {
                     ForEach(BackendResolver.shared.registeredBackendTypes, id: \.self) { b in
                         Text(b.displayName).tag(b)
@@ -247,10 +253,12 @@ public struct PresetDetailEditorView: View {
                         Text(h.displayName).tag(h)
                     }
                 }
+            } header: {
+                Text("Engine & Backend").font(.headline)
             }
 
             if preset.category == .video {
-                Section(header: Text("Video Settings").font(.headline)) {
+                Section {
                     Picker("Video Codec", selection: $preset.videoCodec) {
                         ForEach(VideoCodecType.allCases, id: \.self) { c in
                             Text(c.displayName).tag(c)
@@ -270,11 +278,13 @@ public struct PresetDetailEditorView: View {
                             set: { preset.videoBitrateKbps = $0 }
                         ), in: 500...50000, step: 500)
                     }
+                } header: {
+                    Text("Video Settings").font(.headline)
                 }
             }
 
             if preset.category == .audio || preset.category == .video {
-                Section(header: Text("Audio Settings").font(.headline)) {
+                Section {
                     Picker("Audio Codec", selection: $preset.audioCodec) {
                         ForEach(AudioCodecType.allCases, id: \.self) { c in
                             Text(c.displayName).tag(c)
@@ -287,12 +297,16 @@ public struct PresetDetailEditorView: View {
                             set: { preset.audioBitrateKbps = $0 }
                         ), in: 64...320, step: 32)
                     }
+                } header: {
+                    Text("Audio Settings").font(.headline)
                 }
             }
 
-            Section(header: Text("Advanced").font(.headline)) {
+            Section {
                 Toggle("Preserve Metadata & Tags", isOn: $preset.preserveMetadata)
                 Toggle("Preserve File Creation Timestamp", isOn: $preset.preserveCreationDate)
+            } header: {
+                Text("Advanced").font(.headline)
             }
         }
         .formStyle(.grouped)

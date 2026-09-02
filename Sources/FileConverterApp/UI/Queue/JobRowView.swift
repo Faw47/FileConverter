@@ -16,10 +16,10 @@ public struct JobRowView: View {
             // Category Icon
             Image(systemName: job.preset.category.systemImage)
                 .font(.system(size: 20))
-                .foregroundColor(iconColor)
+                .foregroundStyle(iconColor)
                 .frame(width: 28, height: 28)
                 .background(iconColor.opacity(0.12))
-                .cornerRadius(6)
+                .clipShape(.rect(cornerRadius: 6))
 
             // File & Conversion Info
             VStack(alignment: .leading, spacing: 3) {
@@ -35,19 +35,19 @@ public struct JobRowView: View {
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(Color.secondary.opacity(0.15))
-                            .cornerRadius(3)
+                            .clipShape(.rect(cornerRadius: 3))
 
                         Image(systemName: "arrow.right")
                             .font(.system(size: 8, weight: .semibold))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
 
                         Text(job.targetFormat)
                             .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(Color.accentColor.opacity(0.15))
-                            .foregroundColor(.accentColor)
-                            .cornerRadius(3)
+                            .foregroundStyle(Color.accentColor)
+                            .clipShape(.rect(cornerRadius: 3))
                     }
                 }
 
@@ -55,18 +55,18 @@ public struct JobRowView: View {
                 HStack(spacing: 8) {
                     Text(statusDescription)
                         .font(.system(size: 11))
-                        .foregroundColor(statusColor)
+                        .foregroundStyle(statusColor)
 
                     if job.state.isActive, let eta = job.progress.formattedTimeRemaining {
                         Text("• ETA: \(eta)")
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
 
                     if let backend = job.resolvedBackend {
                         Text("• \(backend.displayName)")
                             .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -93,7 +93,7 @@ public struct JobRowView: View {
                         ConversionQueue.shared.cancelJob(id: job.id)
                     }) {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .help("Cancel conversion")
@@ -104,7 +104,7 @@ public struct JobRowView: View {
                             NSWorkspace.shared.activateFileViewerSelecting([dest])
                         }) {
                             Image(systemName: "magnifyingglass.circle.fill")
-                                .foregroundColor(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                         }
                         .buttonStyle(.plain)
                         .help("Reveal in Finder")
@@ -115,7 +115,7 @@ public struct JobRowView: View {
                         showingErrorDetails = true
                     }) {
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.red)
+                            .foregroundStyle(.red)
                     }
                     .buttonStyle(.plain)
                     .help("Show error details")
@@ -128,7 +128,7 @@ public struct JobRowView: View {
                             if let rec = err.recoverySuggestion {
                                 Text("Suggestion: \(rec)")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             Button("Copy Technical Details") {
                                 NSPasteboard.general.clearContents()
@@ -144,7 +144,7 @@ public struct JobRowView: View {
                         ConversionQueue.shared.retryJob(id: job.id)
                     }) {
                         Image(systemName: "arrow.clockwise.circle.fill")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .help("Retry conversion")
@@ -154,7 +154,7 @@ public struct JobRowView: View {
                         ConversionQueue.shared.retryJob(id: job.id)
                     }) {
                         Image(systemName: "arrow.clockwise.circle.fill")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .help("Restart conversion")

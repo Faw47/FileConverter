@@ -14,9 +14,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "4A4B1619D87AF83186FF841A"
+               BlueprintIdentifier = "0F4929DC8164B2EF1179FC9E"
                BuildableName = "File Converter.app"
-               BlueprintName = "FileConverterNative"
+               BlueprintName = "FileConverter"
                ReferencedContainer = "container:FileConverter.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -28,9 +28,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "CA2D6F2958A3B558C1704DD7"
-               BuildableName = "FileConverterNativeFinderExtension.appex"
-               BlueprintName = "FileConverterNativeFinderExtension"
+               BlueprintIdentifier = "9B8A37752EDBD8FB350F8FCD"
+               BuildableName = "FileConverterFinderExtension.appex"
+               BlueprintName = "FileConverterFinderExtension"
                ReferencedContainer = "container:FileConverter.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -44,9 +44,9 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4A4B1619D87AF83186FF841A"
+            BlueprintIdentifier = "0F4929DC8164B2EF1179FC9E"
             BuildableName = "File Converter.app"
-            BlueprintName = "FileConverterNative"
+            BlueprintName = "FileConverter"
             ReferencedContainer = "container:FileConverter.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -67,9 +67,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4A4B1619D87AF83186FF841A"
+            BlueprintIdentifier = "0F4929DC8164B2EF1179FC9E"
             BuildableName = "File Converter.app"
-            BlueprintName = "FileConverterNative"
+            BlueprintName = "FileConverter"
             ReferencedContainer = "container:FileConverter.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -84,9 +84,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4A4B1619D87AF83186FF841A"
+            BlueprintIdentifier = "0F4929DC8164B2EF1179FC9E"
             BuildableName = "File Converter.app"
-            BlueprintName = "FileConverterNative"
+            BlueprintName = "FileConverter"
             ReferencedContainer = "container:FileConverter.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

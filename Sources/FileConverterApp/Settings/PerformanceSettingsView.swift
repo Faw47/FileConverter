@@ -9,7 +9,7 @@ public struct PerformanceSettingsView: View {
 
     public var body: some View {
         Form {
-            Section(header: Text("Concurrency & CPU Allocation").font(.headline)) {
+            Section {
                 Stepper("Maximum Concurrent Conversions: \(maxConcurrency)", value: $maxConcurrency, in: 1...16)
                     .onChange(of: maxConcurrency) { _, newVal in
                         ConversionQueue.shared.setMaxConcurrency(newVal)
@@ -17,21 +17,25 @@ public struct PerformanceSettingsView: View {
 
                 Text("System CPU Cores Detected: \(ProcessInfo.processInfo.activeProcessorCount)")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Concurrency & CPU Allocation").font(.headline)
             }
 
-            Section(header: Text("Thermal & Energy Management").font(.headline)) {
+            Section {
                 HStack {
                     Text("Current Thermal State:")
                     Spacer()
                     Text(thermalStateName)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(thermalColor)
+                        .foregroundStyle(thermalColor)
                 }
 
                 Text("When the system experiences high thermal pressure or enters Low Power Mode, File Converter automatically throttles background workers to prevent fan noise and battery drain.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Thermal & Energy Management").font(.headline)
             }
         }
         .formStyle(.grouped)

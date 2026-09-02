@@ -1,17 +1,16 @@
 # Security & Privacy Model
 
-**File Converter for macOS** adheres to the strictest security, privacy, and sandboxing standards on Apple platforms. Two editions ship from one codebase: **Native (App Store, sandboxed)** and **Extended (Developer ID, unsandboxed for Homebrew tools)**.
+**File Converter for macOS** is a single unsandboxed Developer ID app (`io.fileconverter.app` + `io.fileconverter.app.findersync`) with full native + Homebrew backend access and strict privacy guarantees.
 
 ---
 
 ## 1. Zero Full Disk Access Requirement
 
-* **Explicit User Intent Only**: The application **never requests Full Disk Access**. Access is granted strictly to:
+* **Explicit User Intent Only**: The application **never requests Full Disk Access**. Conversions run only on:
   1. Files explicitly selected by the user in Finder via the `FIFinderSync` context menu (ephemeral bookmark handoff).
   2. Files selected via `NSOpenPanel`/`NSSavePanel`.
   3. Files explicitly dragged and dropped.
-  4. Persisted custom output folders via security-scoped bookmarks (Native).
-* **No Plain-Path Authority**: The host never treats `lastKnownPath` or display paths as authorization. Finder requests are accepted only as security-scoped bookmarks resolved under `SecurityScopedLease`; App Group paths carry no sandbox privilege.
+* **No Plain-Path Authority**: The host never treats `lastKnownPath` or display paths as authorization. Finder requests are accepted only as bookmarks resolved under `SecurityScopedLease` (`withSecurityScope` first, ephemeral Finder fallback with balanced `start/stopAccessingSecurityScopedResource`).
 * **Scoped Lifetimes**: Each source (and, for `.customFolder`, destination) `SecurityScopedLease` is held for the full conversion job and released exactly once; `clearCompleted` never releases active jobs' leases.
 
 ---
@@ -26,12 +25,11 @@
 
 ## 3. IPC & Finder Isolation
 
-* **Edition Separation**: Native `io.fileconverter.app` / `group.io.fileconverter.shared` never intersect Extended `io.fileconverter.app.extended` / `group.io.fileconverter.extended.shared` (bundle IDs, groups, keychain, notifications, snapshot names).
-* **Least-Privilege Finder**: Extensions link only `FileConverterContracts` + `FileConverterFinderSupport`. No `FileConverterCore`, no backends, no `Process`.
+* **Single App**: `io.fileconverter.app` / `group.io.fileconverter.shared` + keychain `$(AppIdentifierPrefix)io.fileconverter.ipc` only. No Extended split remains.
+* **Least-Privilege Finder**: Extension links only `FileConverterContracts` + `FileConverterFinderSupport`. No `FileConverterCore`, no backends, no `Process`. Host links both backend catalogs (`NativeBackendCatalog + ExternalBackendCatalog` always), so every preset (`MP3`, `FLAC`, `Opus`, `OGG`, `MKV`, `WebM`, Office docs, `QTA→MP3`) is visible.
 * **Snapshot Contract**: Host-published `finder-menu-snapshot.json` is versioned, `≤1 MiB`, duplicate-alias checked, and capability-filtered per `BackendResolver`; Finder retains last-known-good on corruption/oversize and caps selection at 100 files.
-* **Authenticated Mailbox**: HMAC-SHA256 envelopes over canonical JSON, per-edition keychain key (`$(AppIdentifierPrefix)io.fileconverter[.*].ipc`), 5-minute TTL with 60 s clock skew, per-request size limits, `Pending → Processing → Rejected` lifecycle with 60 s claim lease and crash recovery, duplicate UUID rejection, and serialized actor drains.
-* **Unified Capabilities (non-App Store)**: Both editions are unsandboxed Developer ID apps — `BackendResolver` is always `NativeBackendCatalog + ExternalBackendCatalog`, so every `ConversionPreset` (`MP3`, `FLAC`, `Opus`, `OGG`, `MKV`, `WebM`, Office docs, etc.) is available for any `sourceFormats` match including `QTA`. Finder `FinderMenuSnapshotWriter` capability filtering now shows `MP3` for `QTA` in both editions.
-* **Personal Team Debug Fallback**: Release uses App Group containers (still valid unsandboxed); Debug Personal Team cannot vend `com.apple.security.application-groups`, so `IPCConfiguration.sharedContainerURL` falls back to a home-relative path `/Library/Application Support/FileConverter/LocalIPC/{native,extended}/` resolved via `getpwuid` with `..` rejection. Debug-only (`project.yml` Debug `FILE_CONVERTER_LOCAL_IPC_PATH`), never weakens Release.
+* **Authenticated Mailbox**: HMAC-SHA256 envelopes over canonical JSON, keychain key `$(AppIdentifierPrefix)io.fileconverter.ipc`, 5-minute TTL with 60 s clock skew, per-request size limits, `Pending → Processing → Rejected` lifecycle with 60 s claim lease and crash recovery, duplicate UUID rejection, and serialized actor drains.
+* **Personal Team Debug Fallback**: Release uses App Group container; Debug Personal Team cannot vend `com.apple.security.application-groups`, so `IPCConfiguration.sharedContainerURL` falls back to home-relative `/Library/Application Support/FileConverter/LocalIPC/native/` resolved via `getpwuid` with `..` rejection. Debug-only (`project.yml` Debug `FILE_CONVERTER_LOCAL_IPC_PATH`).
 
 ---
 

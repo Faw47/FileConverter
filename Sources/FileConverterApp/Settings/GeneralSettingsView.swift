@@ -12,7 +12,7 @@ public struct GeneralSettingsView: View {
 
     public var body: some View {
         Form {
-            Section(header: Text("Output Location").font(.headline)) {
+            Section {
                 Picker("Default Output Location", selection: $outputPolicyRaw) {
                     Text("Same directory as source file").tag("sameAsSource")
                     Text("Downloads folder").tag("downloads")
@@ -25,16 +25,22 @@ public struct GeneralSettingsView: View {
                     Text("Skip conversion").tag(OverwritePolicy.skip.rawValue)
                     Text("Replace only if source is newer").tag(OverwritePolicy.replaceIfNewer.rawValue)
                 }
+            } header: {
+                Text("Output Location").font(.headline)
             }
 
-            Section(header: Text("Metadata & File Attributes").font(.headline)) {
+            Section {
                 Toggle("Preserve file creation & modification dates", isOn: $preserveTimestamps)
                     .help("Copies the original file's creation and modification dates to the converted output.")
+            } header: {
+                Text("Metadata & File Attributes").font(.headline)
             }
 
-            Section(header: Text("Notifications & Workflow").font(.headline)) {
+            Section {
                 Toggle("Show system notification when batch completes", isOn: $enableNotifications)
                 Toggle("Automatically reveal output file in Finder", isOn: $revealInFinder)
+            } header: {
+                Text("Notifications & Workflow").font(.headline)
             }
         }
         .formStyle(.grouped)

@@ -118,7 +118,6 @@
 <!-- Center conversion badge — solid disc with bidirectional icon -->
 <g>
   <circle cx="512" cy="524" r="62" fill="white" stroke="white" stroke-opacity="0.9" stroke-width="1.2" filter="url(#fileShadow)"/>
-  <circle cx="512" cy="524" r="61" fill="white"/>
   <!-- Subtle inner ring -->
   <circle cx="512" cy="524" r="61" fill="none" stroke="#0F172A" stroke-opacity="0.06" stroke-width="1.4"/>
   <!-- Bidirectional arrows icon -->

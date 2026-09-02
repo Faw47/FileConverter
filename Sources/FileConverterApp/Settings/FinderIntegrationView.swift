@@ -6,7 +6,7 @@ public struct FinderIntegrationView: View {
 
     public var body: some View {
         Form {
-            Section(header: Text("Finder Sync Context Menu Extension").font(.headline)) {
+            Section {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("File Converter includes a native macOS Finder Sync extension that integrates directly into your right-click context menu.")
                         .font(.system(size: 13))
@@ -33,12 +33,16 @@ public struct FinderIntegrationView: View {
                     }
                 }
                 .padding(.vertical, 4)
+            } header: {
+                Text("Finder Sync Context Menu Extension").font(.headline)
             }
 
-            Section(header: Text("Troubleshooting").font(.headline)) {
+            Section {
                 Text("If the context menu does not appear after enabling, you can restart Finder from Terminal using: killall Finder")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Troubleshooting").font(.headline)
             }
         }
         .formStyle(.grouped)
@@ -56,11 +60,13 @@ private struct StepRow: View {
                 .font(.system(size: 11, weight: .bold))
                 .frame(width: 18, height: 18)
                 .background(Color.accentColor.opacity(0.15))
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
                 .clipShape(Circle())
 
             Text(text)
                 .font(.system(size: 12))
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Step \(number): \(text)")
     }
 }

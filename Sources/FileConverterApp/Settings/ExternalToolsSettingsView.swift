@@ -4,18 +4,12 @@ import FileConverterExternalBackends
 
 public struct ExternalToolsSettingsView: View {
     @State private var tools: [ToolInfo] = []
-    @State private var isRefreshing = false
 
     public init() {}
 
     public var body: some View {
         Form {
-            Section(
-                header: Text("External Tool Dependencies").font(.headline),
-                footer: Text("File Converter works out-of-the-box using native Apple frameworks (AVFoundation, ImageIO, PDFKit). External tools are optional enhancements for unsupported containers/codecs like MKV, WebM, AV1, or Office documents.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            ) {
+            Section {
                 ForEach(tools) { tool in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -27,24 +21,24 @@ public struct ExternalToolsSettingsView: View {
                             if tool.isInstalled {
                                 Label("Installed", systemImage: "checkmark.circle.fill")
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.green)
+                                    .foregroundStyle(.green)
                             } else {
                                 Label("Not Installed", systemImage: "xmark.circle")
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.orange)
+                                    .foregroundStyle(.orange)
                             }
                         }
 
                         if let path = tool.executablePath {
                             Text(path)
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
 
                         if let ver = tool.version {
                             Text(ver)
                                 .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
 
                         if !tool.isInstalled {
@@ -57,7 +51,7 @@ public struct ExternalToolsSettingsView: View {
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(Color.secondary.opacity(0.1))
-                                    .cornerRadius(4)
+                                    .clipShape(.rect(cornerRadius: 4))
 
                                 Spacer()
 
@@ -72,6 +66,12 @@ public struct ExternalToolsSettingsView: View {
                     }
                     .padding(.vertical, 4)
                 }
+            } header: {
+                Text("External Tool Dependencies").font(.headline)
+            } footer: {
+                Text("File Converter works out-of-the-box using native Apple frameworks (AVFoundation, ImageIO, PDFKit). External tools enable MP3, MKV, WebM, AV1, Opus, and Office documents — all presets stay visible.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

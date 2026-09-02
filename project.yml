@@ -27,7 +27,7 @@ settings:
       ARCHS: arm64 x86_64
       ONLY_ACTIVE_ARCH: NO
 targets:
-  FileConverterNative:
+  FileConverter:
     type: application
     platform: macOS
     sources:
@@ -38,9 +38,11 @@ targets:
           - "*.entitlements"
     resources:
       - path: Sources/FileConverterApp/Resources
+        excludes:
+          - "*.svg"
     settings:
       base:
-        CODE_SIGN_ENTITLEMENTS: Sources/FileConverterApp/FileConverterNative.entitlements
+        CODE_SIGN_ENTITLEMENTS: Sources/FileConverterApp/FileConverter.entitlements
         FILE_CONVERTER_APP_BUNDLE_ID: io.fileconverter.app
         FILE_CONVERTER_APP_GROUP: group.io.fileconverter.shared
         FILE_CONVERTER_EDITION: native
@@ -52,7 +54,7 @@ targets:
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) FILE_CONVERTER_EXTENDED
       configs:
         Debug:
-          CODE_SIGN_ENTITLEMENTS: Sources/FileConverterApp/FileConverterNativeDebug.entitlements
+          CODE_SIGN_ENTITLEMENTS: Sources/FileConverterApp/FileConverterDebug.entitlements
           FILE_CONVERTER_LOCAL_IPC_PATH: /Library/Application Support/FileConverter/LocalIPC/native/
     dependencies:
       - package: FileConverterPackage
@@ -63,9 +65,9 @@ targets:
         product: FileConverterNativeBackends
       - package: FileConverterPackage
         product: FileConverterExternalBackends
-      - target: FileConverterNativeFinderExtension
+      - target: FileConverterFinderExtension
         embed: true
-  FileConverterNativeFinderExtension:
+  FileConverterFinderExtension:
     type: app-extension
     platform: macOS
     sources:
@@ -76,7 +78,7 @@ targets:
           - "*.entitlements"
     settings:
       base:
-        CODE_SIGN_ENTITLEMENTS: Sources/FileConverterFinderSync/FileConverterNativeFinder.entitlements
+        CODE_SIGN_ENTITLEMENTS: Sources/FileConverterFinderSync/FileConverterFinder.entitlements
         FILE_CONVERTER_APP_BUNDLE_ID: io.fileconverter.app
         FILE_CONVERTER_APP_GROUP: group.io.fileconverter.shared
         FILE_CONVERTER_EDITION: native
@@ -84,11 +86,11 @@ targets:
         FILE_CONVERTER_URL_SCHEME: fileconverter
         INFOPLIST_FILE: Sources/FileConverterFinderSync/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: io.fileconverter.app.findersync
-        PRODUCT_NAME: FileConverterNativeFinderExtension
+        PRODUCT_NAME: FileConverterFinderExtension
         SKIP_INSTALL: YES
       configs:
         Debug:
-          CODE_SIGN_ENTITLEMENTS: Sources/FileConverterFinderSync/FileConverterNativeFinderDebug.entitlements
+          CODE_SIGN_ENTITLEMENTS: Sources/FileConverterFinderSync/FileConverterFinderDebug.entitlements
           FILE_CONVERTER_LOCAL_IPC_PATH: /Library/Application Support/FileConverter/LocalIPC/native/
     dependencies:
       - package: FileConverterPackage
@@ -99,8 +101,8 @@ schemes:
   FileConverter:
     build:
       targets:
-        FileConverterNative: all
-        FileConverterNativeFinderExtension: all
+        FileConverter: all
+        FileConverterFinderExtension: all
     run:
       config: Debug
     archive:

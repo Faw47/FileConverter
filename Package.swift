@@ -79,11 +79,8 @@ let package = Package(
             ],
             path: "Sources/FileConverterApp",
             exclude: [
-                "FileConverterApp.entitlements",
-                "FileConverterExtendedDebug.entitlements",
-                "FileConverterExtended.entitlements",
-                "FileConverterNativeDebug.entitlements",
-                "FileConverterNative.entitlements",
+                "FileConverter.entitlements",
+                "FileConverterDebug.entitlements",
                 "Info.plist",
                 "Resources"
             ]
@@ -96,11 +93,8 @@ let package = Package(
             ],
             path: "Sources/FileConverterFinderSync",
             exclude: [
-                "FileConverterExtendedFinder.entitlements",
-                "FileConverterExtendedFinderDebug.entitlements",
-                "FileConverterFinderSync.entitlements",
-                "FileConverterNativeFinderDebug.entitlements",
-                "FileConverterNativeFinder.entitlements",
+                "FileConverterFinder.entitlements",
+                "FileConverterFinderDebug.entitlements",
                 "Info.plist"
             ]
         ),

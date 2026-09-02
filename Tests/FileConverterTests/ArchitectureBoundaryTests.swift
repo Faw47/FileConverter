@@ -29,44 +29,25 @@ final class ArchitectureBoundaryTests: XCTestCase {
 
     func testXcodeGenConfigurationPreservesEditionAndFinderBoundaries() throws {
         let project = try read("project.yml")
+        XCTAssertFalse(project.contains("  FileConverterExtended"), "Extended split removed — single unified app")
+        XCTAssertFalse(project.contains("  FileConverterNative:"), "Renamed to FileConverter for single-app clarity")
         let nativeApp = try section(
             in: project,
-            from: "  FileConverterNative:\n",
-            to: "  FileConverterNativeFinderExtension:\n"
+            from: "  FileConverter:\n",
+            to: "  FileConverterFinderExtension:\n"
         )
         XCTAssertTrue(nativeApp.contains("product: FileConverterNativeBackends"))
         XCTAssertTrue(nativeApp.contains("product: FileConverterExternalBackends"))
         XCTAssertFalse(nativeApp.contains("Settings/ExternalToolsSettingsView.swift"))
 
-        if project.contains("  FileConverterExtended:\n") {
-            let nativeFinder = try section(
-                in: project,
-                from: "  FileConverterNativeFinderExtension:\n",
-                to: "  FileConverterExtended:\n"
-            )
-            let extendedApp = try section(
-                in: project,
-                from: "  FileConverterExtended:\n",
-                to: "  FileConverterExtendedFinderExtension:\n"
-            )
-            let extendedFinder = try section(
-                in: project,
-                from: "  FileConverterExtendedFinderExtension:\n",
-                to: "schemes:\n"
-            )
-            XCTAssertTrue(extendedApp.contains("product: FileConverterNativeBackends"))
-            XCTAssertTrue(extendedApp.contains("product: FileConverterExternalBackends"))
-            assertFinderDependencies(nativeFinder)
-            assertFinderDependencies(extendedFinder)
-        } else {
-            let nativeFinder = try section(
-                in: project,
-                from: "  FileConverterNativeFinderExtension:\n",
-                to: "schemes:\n"
-            )
-            assertFinderDependencies(nativeFinder)
-            XCTAssertFalse(project.contains("ENABLE_USER_SCRIPT_SANDBOXING: YES"), "Non-App Store build must have ENABLE_USER_SCRIPT_SANDBOXING: NO")
-        }
+        let nativeFinder = try section(
+            in: project,
+            from: "  FileConverterFinderExtension:\n",
+            to: "schemes:\n"
+        )
+        assertFinderDependencies(nativeFinder)
+        XCTAssertFalse(project.contains("ENABLE_USER_SCRIPT_SANDBOXING: YES"), "Non-App Store build must have ENABLE_USER_SCRIPT_SANDBOXING: NO")
+        XCTAssertTrue(project.contains("*.svg"), "SVG source must be excluded from bundle resources")
     }
 
     func testFinderSourcesImportOnlyLeastPrivilegeModules() throws {

@@ -44,12 +44,12 @@ public struct ConversionQueueView: View {
                     if queue.failedCount > 0 {
                         Text("(\(queue.failedCount) failed)")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.red)
+                            .foregroundStyle(.red)
                     }
                     if queue.cancelledCount > 0 {
                         Text("(\(queue.cancelledCount) cancelled)")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -80,7 +80,7 @@ public struct ConversionQueueView: View {
         VStack(spacing: 14) {
             Image(systemName: "arrow.triangle.2.circlepath.doc.on.clipboard")
                 .font(.system(size: 44))
-                .foregroundColor(.secondary.opacity(0.6))
+                .foregroundStyle(.secondary.opacity(0.6))
 
             VStack(spacing: 4) {
                 Text("No Conversions in Progress")
@@ -88,7 +88,7 @@ public struct ConversionQueueView: View {
 
                 Text("Right-click any file in Finder and select **File Converter**, or drop files here.")
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 300)
             }

@@ -99,7 +99,7 @@ public struct FileConverterMainView: View {
                         .font(.headline)
                     Text("Choose an output format preset")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Cancel") {
@@ -110,17 +110,17 @@ public struct FileConverterMainView: View {
 
             if count == 0 {
                 Text("No files selected.")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.vertical)
             } else if compatible.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("No compatible presets found for:", systemImage: "exclamationmark.triangle")
                         .font(.subheadline)
-                        .foregroundColor(.orange)
+                        .foregroundStyle(.orange)
                     ForEach(urls, id: \.self) { url in
                         Text("• \(url.lastPathComponent)")
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.vertical, 8)
@@ -133,7 +133,7 @@ public struct FileConverterMainView: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Label(cat.displayName, systemImage: cat.systemImage)
                                         .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
 
                                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 135), spacing: 8)], spacing: 8) {
                                         ForEach(presets) { preset in
@@ -150,13 +150,13 @@ public struct FileConverterMainView: View {
                                                             .padding(.horizontal, 4)
                                                             .padding(.vertical, 1)
                                                             .background(Color.accentColor.opacity(0.12))
-                                                            .foregroundColor(.accentColor)
-                                                            .cornerRadius(3)
+                                                            .foregroundStyle(Color.accentColor)
+                                                            .clipShape(.rect(cornerRadius: 3))
                                                     }
 
                                                     Text(preset.name)
                                                         .font(.system(size: 10))
-                                                        .foregroundColor(.secondary)
+                                                        .foregroundStyle(.secondary)
                                                         .lineLimit(1)
                                                 }
                                                 .padding(10)
