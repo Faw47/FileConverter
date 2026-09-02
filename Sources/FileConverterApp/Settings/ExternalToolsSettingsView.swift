@@ -1,4 +1,3 @@
-#if FILE_CONVERTER_EXTENDED
 import SwiftUI
 import FileConverterCore
 import FileConverterExternalBackends
@@ -96,4 +95,3 @@ public struct ExternalToolsSettingsView: View {
         tools = ExternalToolDiscovery.shared.allTools()
     }
 }
-#endif

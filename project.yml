@@ -36,7 +36,6 @@ targets:
           - Info.plist
           - Resources
           - "*.entitlements"
-          - Settings/ExternalToolsSettingsView.swift
     resources:
       - path: Sources/FileConverterApp/Resources
     settings:
@@ -50,6 +49,7 @@ targets:
         INFOPLIST_FILE: Sources/FileConverterApp/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: io.fileconverter.app
         PRODUCT_NAME: File Converter
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) FILE_CONVERTER_EXTENDED
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: Sources/FileConverterApp/FileConverterNativeDebug.entitlements
@@ -61,6 +61,8 @@ targets:
         product: FileConverterContracts
       - package: FileConverterPackage
         product: FileConverterNativeBackends
+      - package: FileConverterPackage
+        product: FileConverterExternalBackends
       - target: FileConverterNativeFinderExtension
         embed: true
   FileConverterNativeFinderExtension:

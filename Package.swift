@@ -74,7 +74,8 @@ let package = Package(
             dependencies: [
                 "FileConverterContracts",
                 "FileConverterCore",
-                "FileConverterNativeBackends"
+                "FileConverterNativeBackends",
+                "FileConverterExternalBackends"
             ],
             path: "Sources/FileConverterApp",
             exclude: [
@@ -84,8 +85,7 @@ let package = Package(
                 "FileConverterNativeDebug.entitlements",
                 "FileConverterNative.entitlements",
                 "Info.plist",
-                "Resources",
-                "Settings/ExternalToolsSettingsView.swift"
+                "Resources"
             ]
         ),
         .executableTarget(

@@ -23,8 +23,8 @@ final class ArchitectureBoundaryTests: XCTestCase {
         assertFinderDependencies(finderSupport)
         assertFinderDependencies(finderExecutable)
         XCTAssertTrue(nativeApp.contains("\"FileConverterNativeBackends\""))
-        XCTAssertFalse(nativeApp.contains("\"FileConverterExternalBackends\""))
-        XCTAssertTrue(nativeApp.contains("\"Settings/ExternalToolsSettingsView.swift\""))
+        XCTAssertTrue(nativeApp.contains("\"FileConverterExternalBackends\""))
+        XCTAssertFalse(nativeApp.contains("\"Settings/ExternalToolsSettingsView.swift\""))
     }
 
     func testXcodeGenConfigurationPreservesEditionAndFinderBoundaries() throws {
@@ -51,8 +51,8 @@ final class ArchitectureBoundaryTests: XCTestCase {
         )
 
         XCTAssertTrue(nativeApp.contains("product: FileConverterNativeBackends"))
-        XCTAssertFalse(nativeApp.contains("product: FileConverterExternalBackends"))
-        XCTAssertTrue(nativeApp.contains("Settings/ExternalToolsSettingsView.swift"))
+        XCTAssertTrue(nativeApp.contains("product: FileConverterExternalBackends"))
+        XCTAssertFalse(nativeApp.contains("Settings/ExternalToolsSettingsView.swift"))
         XCTAssertTrue(extendedApp.contains("product: FileConverterNativeBackends"))
         XCTAssertTrue(extendedApp.contains("product: FileConverterExternalBackends"))
         assertFinderDependencies(nativeFinder)

@@ -1,10 +1,8 @@
 import SwiftUI
 import FileConverterCore
 import FileConverterNativeBackends
-import Combine
-#if FILE_CONVERTER_EXTENDED
 import FileConverterExternalBackends
-#endif
+import Combine
 
 @MainActor
 public final class AppState: ObservableObject {
@@ -19,9 +17,7 @@ public final class AppState: ObservableObject {
         case presets = "Presets"
         case video = "Video"
         case audio = "Audio"
-#if FILE_CONVERTER_EXTENDED
         case externalTools = "External Tools"
-#endif
         case performance = "Performance"
         case finder = "Finder Integration"
 
@@ -33,9 +29,7 @@ public final class AppState: ObservableObject {
             case .presets: return "slider.horizontal.3"
             case .video: return "film"
             case .audio: return "waveform"
-#if FILE_CONVERTER_EXTENDED
             case .externalTools: return "terminal"
-#endif
             case .performance: return "bolt"
             case .finder: return "macwindow"
             }
@@ -43,13 +37,9 @@ public final class AppState: ObservableObject {
     }
 
     public init() {
-#if FILE_CONVERTER_EXTENDED
         BackendResolver.shared.configure(
             backends: NativeBackendCatalog.makeBackends() + ExternalBackendCatalog.makeBackends()
         )
-#else
-        BackendResolver.shared.configure(backends: NativeBackendCatalog.makeBackends())
-#endif
         PresetStore.shared.publishFinderMenuSnapshot()
         _ = ConversionCoordinator.shared
     }

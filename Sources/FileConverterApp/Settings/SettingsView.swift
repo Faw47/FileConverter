@@ -19,13 +19,11 @@ public struct SettingsView: View {
                 }
                 .tag(AppState.SettingsTab.presets)
 
-#if FILE_CONVERTER_EXTENDED
             ExternalToolsSettingsView()
                 .tabItem {
                     Label(AppState.SettingsTab.externalTools.rawValue, systemImage: AppState.SettingsTab.externalTools.systemImage)
                 }
                 .tag(AppState.SettingsTab.externalTools)
-#endif
 
             PerformanceSettingsView()
                 .tabItem {

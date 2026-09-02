@@ -59,12 +59,10 @@ struct FileConverterApp: App {
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
 
-#if FILE_CONVERTER_EXTENDED
                 Button("External Tools Diagnostics...") {
                     appState.selectedTab = .externalTools
                     appState.showSettings = true
                 }
-#endif
             }
 
             CommandGroup(replacing: .help) {

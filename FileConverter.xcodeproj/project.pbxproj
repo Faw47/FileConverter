@@ -19,6 +19,7 @@
 		707C01678D4D658E7C1C778E /* FileConverterFinderSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 612D6F8CB6251D64D505EA4D /* FileConverterFinderSync.swift */; };
 		7380ED583736689038097E2B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9769F9673E8312F4CCC36F8C /* SettingsView.swift */; };
 		779E8C60BB584F051C14613F /* FileConverterNativeBackends in Frameworks */ = {isa = PBXBuildFile; productRef = 4AAA193A9A2AAA0C9653EF1F /* FileConverterNativeBackends */; };
+		8522461AC4775501AEE98F85 /* ExternalToolsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B980366D20EC1D96E42D0C1 /* ExternalToolsSettingsView.swift */; };
 		863ED4FE6D65B4AC6A4DDDCB /* AppMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 371BB29A7BD8D7C20B27D475 /* AppMain.swift */; };
 		8F2C35CC86F858A2A464DFE6 /* ConversionQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632DF3C51A1614507C0D50CB /* ConversionQueueView.swift */; };
 		96BEFB52724D87D6FFC516CF /* FileConverterContracts in Frameworks */ = {isa = PBXBuildFile; productRef = 6D295A422A4F3CA0EC4919FD /* FileConverterContracts */; };
@@ -40,6 +41,7 @@
 		D5DF72813015EC3C023B5F6B /* FinderIntegrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AEABD70E4F177405FB0DFBB /* FinderIntegrationView.swift */; };
 		D8EC67B7D0BF83B94983F5F5 /* FileConverterNativeBackends in Frameworks */ = {isa = PBXBuildFile; productRef = 63FE661B60B93F6B8F152C5E /* FileConverterNativeBackends */; };
 		D92DAB8BA9767D56CF214CCD /* DropZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1CBC6F9AC4E2EC7F2C25AA /* DropZoneView.swift */; };
+		E3CF3C562423AE1AAC559B08 /* FileConverterExternalBackends in Frameworks */ = {isa = PBXBuildFile; productRef = 4602F49A6568C35160DDFE09 /* FileConverterExternalBackends */; };
 		E44B9D422903D48FB8DEAF4D /* FileConverterNativeFinderExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7E2BB9D0BD2A49F29AB18123 /* FileConverterNativeFinderExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E52674FDD755FA4CC95506AA /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E69FFF0E4E67E45C299E9F /* AppState.swift */; };
 		E957BF07F3C7D6DDC8682B92 /* FileConverterExtendedFinderExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E05DA17DBC420B72721A85B2 /* FileConverterExtendedFinderExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -144,6 +146,7 @@
 				C9F4E28C7D183A48B91DDF5C /* FileConverterCore in Frameworks */,
 				AF88ACCB609F866B61B6F3A4 /* FileConverterContracts in Frameworks */,
 				779E8C60BB584F051C14613F /* FileConverterNativeBackends in Frameworks */,
+				E3CF3C562423AE1AAC559B08 /* FileConverterExternalBackends in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -273,6 +276,7 @@
 				42C3DDC6CEE076B89879F3C7 /* FileConverterCore */,
 				737116CD4FAC29892D7A74AD /* FileConverterContracts */,
 				4AAA193A9A2AAA0C9653EF1F /* FileConverterNativeBackends */,
+				4602F49A6568C35160DDFE09 /* FileConverterExternalBackends */,
 			);
 			productName = FileConverterNative;
 			productReference = 56CD59403995582DFD727A1B /* FileConverterNative.app */;
@@ -440,6 +444,7 @@
 				8F2C35CC86F858A2A464DFE6 /* ConversionQueueView.swift in Sources */,
 				12D8A375F4F3821A7FCA59DF /* DropURLCollector.swift in Sources */,
 				D92DAB8BA9767D56CF214CCD /* DropZoneView.swift in Sources */,
+				8522461AC4775501AEE98F85 /* ExternalToolsSettingsView.swift in Sources */,
 				FDE82D87F3A2E4983E8FE64D /* FileConverterMainView.swift in Sources */,
 				D5DF72813015EC3C023B5F6B /* FinderIntegrationView.swift in Sources */,
 				E9E75CB99CE4A467676D193E /* GeneralSettingsView.swift in Sources */,
@@ -617,6 +622,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = io.fileconverter.app;
 				PRODUCT_NAME = "File Converter";
 				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) FILE_CONVERTER_EXTENDED";
 			};
 			name = Release;
 		};
@@ -663,6 +669,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = io.fileconverter.app;
 				PRODUCT_NAME = "File Converter";
 				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) FILE_CONVERTER_EXTENDED";
 			};
 			name = Debug;
 		};
@@ -886,6 +893,10 @@
 		42C3DDC6CEE076B89879F3C7 /* FileConverterCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FileConverterCore;
+		};
+		4602F49A6568C35160DDFE09 /* FileConverterExternalBackends */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = FileConverterExternalBackends;
 		};
 		4AAA193A9A2AAA0C9653EF1F /* FileConverterNativeBackends */ = {
 			isa = XCSwiftPackageProductDependency;
