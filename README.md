@@ -9,14 +9,14 @@ Inspired by the workflow and usability of **Tichau/FileConverter** and **AlexDev
 ## Key Features
 
 - **Finder Context Menu**: Right-click one or multiple files in Finder to reveal the `File Converter >` submenu, dynamically filtered to show only presets compatible with all selected files.
-- **Native-First Engine**: Immediate conversions out of the box using Apple's high-performance frameworks (`AVFoundation`, `VideoToolbox`, `ImageIO`, `Core Image`, `PDFKit`, `AudioToolbox`).
+- **Universal Engine**: Native Apple frameworks (`AVFoundation`, `VideoToolbox`, `ImageIO`, `PDFKit`) plus full `ffmpeg`/`imagemagick`/`ghostscript`/`libreoffice` integration when installed — every preset (including `MP3` for `QTA`, `FLAC`, `Opus`, `OGG`, `MKV`, `WebM`, Office docs) is always visible.
 - **Apple Silicon Hardware Acceleration**: Leverages hardware encoders for H.264, HEVC (H.265), and Apple ProRes.
-- **Zero Full Disk Access Required**: Fully sandboxed with App Group IPC and user-selected security-scoped file access.
+- **Developer ID (unsandboxed)**: Direct file access, no App Store sandbox limits; Finder IPC via App Group + authenticated mailbox.
 - **Intelligent Concurrency Queue**: Automatically balances CPU/GPU concurrency according to core count and thermal throttling states (`ProcessInfo.thermalState`).
 - **Collision Management**: Configurable filename collision handling (e.g. `video (1).mp4`, overwrite, replace if newer, skip).
 - **Metadata & Timestamp Preservation**: Preserves EXIF, ICC color profiles, creation dates, and modification dates.
-- **Optional CLI Enhancement**: Automatically detects and leverages `ffmpeg`, `imagemagick`, `ghostscript`, and `libreoffice` if installed via Homebrew.
-- **SwiftUI Management Interface**: Compact queue progress window, drag-and-drop zone, and a comprehensive preset editor.
+- **Built-in External Tools**: Automatically detects `ffmpeg`/`ffprobe`, `imagemagick`, `ghostscript`, `libreoffice` from Homebrew (`/opt/homebrew`, `/usr/local`) — no separate “Extended” build.
+- **SwiftUI Management Interface**: Compact queue progress window, drag-and-drop zone, preset editor with `External Tools` diagnostics (always visible).
 - **100% Offline & Private**: Zero telemetry, zero analytics, zero network requests.
 
 ---
@@ -58,14 +58,16 @@ cd FileConverter
 # Build package via Swift Package Manager
 swift build
 
-# Run unit and integration test suite (25 tests)
+# Run unit and integration test suite (78 tests)
 swift test
 
-# Build & package the native macOS Application bundle (.app):
+# Build the unified Developer ID application bundle:
+xcodebuild -project FileConverter.xcodeproj -scheme FileConverter -configuration Release CODE_SIGNING_ALLOWED=YES build
+# or
 ./Scripts/package_app.sh
 ```
 
-The packaged application bundle will be created at `dist/File Converter.app` containing the embedded `FileConverterFinderSync.appex` extension.
+The unified `File Converter.app` (`io.fileconverter.app`) is unsandboxed Developer ID with embedded `FileConverterFinderSync.appex`; every audio/video/image/document preset is always available.
 
 ### Enabling Finder Integration
 1. Open **System Settings** on your Mac.
@@ -75,21 +77,21 @@ The packaged application bundle will be created at `dist/File Converter.app` con
 
 ---
 
-## Optional External Tools
+## External Tools (always enabled)
 
-To extend support for container formats like `.mkv`, `.webm`, or Microsoft Office files:
+All presets are visible; tools are auto-detected if present:
 
 ```bash
-# For extended video/audio codecs (MKV, WebM, VP9, AV1, Opus):
+# Video/audio codecs (MKV, WebM, VP9, AV1, Opus, MP3 for QTA, etc.):
 brew install ffmpeg
 
-# For legacy & exotic image formats:
+# Legacy & exotic image formats:
 brew install imagemagick
 
-# For document formats (DOCX, XLSX, PPTX):
+# Document formats (DOCX, XLSX, PPTX):
 brew install --cask libreoffice
 
-# For advanced PDF optimization:
+# Advanced PDF optimization:
 brew install ghostscript
 ```
 

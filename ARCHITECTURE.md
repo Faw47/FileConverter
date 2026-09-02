@@ -1,6 +1,6 @@
 # Architecture & Technical Design
 
-This document details the architectural design, subsystem relationships, and data flow of **File Converter for macOS** (Native App Store and Extended Developer ID editions).
+This document details the architectural design, subsystem relationships, and data flow of **File Converter for macOS** (unified Developer ID, unsandboxed — former Native + Extended merged).
 
 ---
 
@@ -9,47 +9,31 @@ This document details the architectural design, subsystem relationships, and dat
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Finder.app Context                             │
-│                                                                          │
-│  FIFinderSync (FileConverterFinderSync)                                  │
-│  • Edition-specific container: Native `group.io.fileconverter.shared`     │
-│    vs Extended `group.io.fileconverter.extended.shared`                  │
-│  • Snapshot-only menu: FileConverterContracts + FileConverterFinderSupport│
-│    `FinderMenuSnapshot` (formats, compatibleFormatIDs, section order)    │
+│  FIFinderSync (FileConverterNativeFinderExtension) `io.fileconverter.app.findersync` │
+│  • Container `group.io.fileconverter.shared` (`IPCConfiguration.sharedContainerURL`, Debug fallback `~/Library/Application Support/FileConverter/LocalIPC/native/`) │
+│  • Snapshot: FileConverterContracts + FinderSupport `FinderMenuSnapshot` │
 │    validated by `FinderMenuCatalog` (size/dupe/edition, ≤100 sources)    │
 │  • Handoff: ephemeral bookmark `ConversionRequest` → HMAC envelope        │
-│    `IPCChannels.sendRequest()` → Pending file                            │
+│    `FinderRequestClient.send` → Pending file                             │
 └──────────────────────────────┬──────────────────────────────────────────┘
-                               │ Pending/Processing/Rejected + Darwin notification
-                               │  (authenticated, time-boxed, duplicate-safe)
-                               ▼
+                                │ Pending/Processing/Rejected + Darwin notification
+                                │  (authenticated, time-boxed, duplicate-safe)
+                                ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Main Host Application                             │
-│                                                                          │
+│                        File Converter.app (unified, unsandboxed)         │
+│  io.fileconverter.app • `FileConverterNative` + `FileConverterNativeFinderExtension` │
 │  ConversionCoordinator (actor, serialized drain, dedup) ──► ConversionQueue│
-│     validation: PresetValidator + BackendResolver.canResolve               │
-│                                                                          │
+│     validation: PresetValidator + BackendResolver.canResolve (always     │
+│                  Native+External)                                        │
 │                        @MainActor ConversionQueue                         │
-│     • @Published counts (cancelled separated) • reservedOutputURLs        │
 │     • Backend resolved before any directory/temp-file creation             │
 │     • Atomic commit: finalizing non-cancellable; replaceItemAt/revalidate │
-│     • Thermal throttling                                                   │
-│                                  │                                      │
 │                ┌─────────────────┴─────────────────┐                     │
 │                ▼                                   ▼                     │
 │        BackendResolver                      OutputNamingEngine            │
-│     ordered registry                        • number collision            │
-│     isAvailable gate                        • replaceIfNewer revalidation │
-│     + centralized cancel                    • atomic temp→final commit    │
-│                │                                   │                     │
-│   ┌────────────┴────────────┐                       │                     │
-│   ▼                         ▼                       ▼                     │
-│ NativeBackends          ExternalBackends     SecurityScopedLease          │
-│ • ImageIO               • FFmpeg             FileAccessManager             │
-│ • PDFKit (@MainActor    • ImageMagick        (scoped source + dest leases)│
-│   for text/RTF)         • LibreOffice        UserNotifications             │
-│ • AVFoundation            (staging+profile)  • atomic sandbox leases      │
-│   VideoToolbox          • Ghostscript                                 │
-│   ExternalProcessRunner (bounded drains, graceful termination)            │
+│     [ImageIO, PDFKit, AVFoundation] + [FFmpeg, ImageMagick, LibreOffice, Ghostscript] │
+│   ExternalProcessRunner (bounded drains, graceful termination, staging)  │
+│   SecurityScopedLease (ephemeral bookmark fallback, still balanced)       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -61,13 +45,13 @@ This document details the architectural design, subsystem relationships, and dat
 |---|---|---|
 | **FileConverterContracts** | none | host, Finder, backends, Core |
 | **FileConverterCore** | Contracts | host, backends, tests |
-| **FileConverterNativeBackends** | Core | Native + Extended hosts |
-| **FileConverterExternalBackends** | Core | Extended host only |
-| **FileConverterFinderSupport** | Contracts | Finder extensions only |
-| **FileConverterFinderSync** | Contracts + FinderSupport | Finder appex only |
+| **FileConverterNativeBackends** | Core | host |
+| **FileConverterExternalBackends** | Core | host (always) |
+| **FileConverterFinderSupport** | Contracts | Finder extension |
+| **FileConverterFinderSync** | Contracts + FinderSupport | Finder appex |
 
-* Finder extensions never import `FileConverterCore`, `FileConverterNativeBackends`, or `FileConverterExternalBackends`. Native host never links `FileConverterExternalBackends`.
-* Enforced at build by `project.yml`/`Package.swift` dependencies, `FileConverterExtended` Swift flag, and `ArchitectureBoundaryTests` (source import + manifest checks + symbol-link verification).
+* Finder extension never imports `FileConverterCore`/`NativeBackends`/`ExternalBackends`. Host links both backend catalogs (`BackendResolver` = `NativeBackendCatalog + ExternalBackendCatalog` always).
+* Enforced by `Package.swift` deps and `ArchitectureBoundaryTests` (Core has no `Process`, Finder has no `FileConverterCore`).
 
 ---
 
@@ -96,8 +80,8 @@ This document details the architectural design, subsystem relationships, and dat
 * `FIFinderSync` monitoring `/` with snapshot-only menu; setup/readiness gate requiring both keychain and snapshot; `listenForPresetChanges` via snapshot Darwin notification; `conversionPresetSelected` builds ephemeral bookmarks and sends via `FinderRequestClient`.
 
 ### 3.5 Signing & Local IPC
-* **Release (Developer ID, non-App Store, unified)**: Both `FileConverterNative` (`io.fileconverter.app`) and `FileConverterExtended` (`io.fileconverter.app.extended`) are now unsandboxed Developer ID apps with identical capabilities — App Group `group.io.fileconverter.shared` / `group.io.fileconverter.extended.shared` via `FileConverterAppGroup` + `containerURL(forSecurityApplicationGroupIdentifier:)` (`IPCConfiguration.sharedContainerURL`), but no `com.apple.security.app-sandbox`. External tools (`ffmpeg`, `libreoffice`, `imagemagick`, `ghostscript`) are available in both editions via `FileConverterExternalBackends`.
-* **Debug Personal Team**: Xcode-managed provisioning cannot vend App Groups, so `project.yml` Debug overrides set `FileConverterLocalIPCPath` (`/Library/Application Support/FileConverter/LocalIPC/native/` or `/extended/`) and `IPCConfiguration.sharedContainerURL` resolves to `getpwuid(getuid()).pw_dir` + that home-relative path with `..` traversal rejection. Production Release is unaffected and remains unsandboxed.
+* **Release (Developer ID, unsandboxed, single app)**: `File Converter.app` `io.fileconverter.app` + `io.fileconverter.app.findersync` — no `com.apple.security.app-sandbox`, no `ENABLE_USER_SCRIPT_SANDBOXING`. App Group `group.io.fileconverter.shared` + `keychain-access-groups` `$(AppIdentifierPrefix)io.fileconverter.ipc` for Finder IPC; all `ExternalBackends` (FFmpeg, LibreOffice, ImageMagick, Ghostscript) linked. Former `FileConverterExtended` (`io.fileconverter.app.extended`) removed.
+* **Debug Personal Team**: Xcode-managed Personal Team cannot vend App Groups, so `project.yml` Debug `FILE_CONVERTER_LOCAL_IPC_PATH=/Library/Application Support/FileConverter/LocalIPC/native/` and `IPCConfiguration.sharedContainerURL` resolves via `getpwuid` + home-relative path with `..` rejection. Release unaffected.
 
 ---
 

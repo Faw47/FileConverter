@@ -14,7 +14,7 @@ settings:
     CURRENT_PROJECT_VERSION: 1
     DEVELOPMENT_TEAM: VU98S4HN9K
     ENABLE_HARDENED_RUNTIME: YES
-    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
     GENERATE_INFOPLIST_FILE: NO
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     MARKETING_VERSION: 1.0.0
@@ -95,89 +95,12 @@ targets:
         product: FileConverterContracts
       - package: FileConverterPackage
         product: FileConverterFinderSupport
-  FileConverterExtended:
-    type: application
-    platform: macOS
-    sources:
-      - path: Sources/FileConverterApp
-        excludes:
-          - Info.plist
-          - Resources
-          - "*.entitlements"
-    resources:
-      - path: Sources/FileConverterApp/Resources
-    settings:
-      base:
-        CODE_SIGN_ENTITLEMENTS: Sources/FileConverterApp/FileConverterExtended.entitlements
-        FILE_CONVERTER_APP_BUNDLE_ID: io.fileconverter.app.extended
-        FILE_CONVERTER_APP_GROUP: group.io.fileconverter.extended.shared
-        FILE_CONVERTER_EDITION: extended
-        FILE_CONVERTER_KEYCHAIN_ACCESS_GROUP: $(AppIdentifierPrefix)io.fileconverter.extended.ipc
-        FILE_CONVERTER_URL_SCHEME: fileconverter-extended
-        INFOPLIST_FILE: Sources/FileConverterApp/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: io.fileconverter.app.extended
-        PRODUCT_NAME: File Converter Extended
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) FILE_CONVERTER_EXTENDED
-      configs:
-        Debug:
-          CODE_SIGN_ENTITLEMENTS: Sources/FileConverterApp/FileConverterExtendedDebug.entitlements
-          FILE_CONVERTER_LOCAL_IPC_PATH: /Library/Application Support/FileConverter/LocalIPC/extended/
-    dependencies:
-      - package: FileConverterPackage
-        product: FileConverterCore
-      - package: FileConverterPackage
-        product: FileConverterContracts
-      - package: FileConverterPackage
-        product: FileConverterNativeBackends
-      - package: FileConverterPackage
-        product: FileConverterExternalBackends
-      - target: FileConverterExtendedFinderExtension
-        embed: true
-  FileConverterExtendedFinderExtension:
-    type: app-extension
-    platform: macOS
-    sources:
-      - path: Sources/FileConverterFinderSync
-        excludes:
-          - Info.plist
-          - main.swift
-          - "*.entitlements"
-    settings:
-      base:
-        CODE_SIGN_ENTITLEMENTS: Sources/FileConverterFinderSync/FileConverterExtendedFinder.entitlements
-        FILE_CONVERTER_APP_BUNDLE_ID: io.fileconverter.app.extended
-        FILE_CONVERTER_APP_GROUP: group.io.fileconverter.extended.shared
-        FILE_CONVERTER_EDITION: extended
-        FILE_CONVERTER_KEYCHAIN_ACCESS_GROUP: $(AppIdentifierPrefix)io.fileconverter.extended.ipc
-        FILE_CONVERTER_URL_SCHEME: fileconverter-extended
-        INFOPLIST_FILE: Sources/FileConverterFinderSync/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: io.fileconverter.app.extended.findersync
-        PRODUCT_NAME: FileConverterExtendedFinderExtension
-        SKIP_INSTALL: YES
-      configs:
-        Debug:
-          CODE_SIGN_ENTITLEMENTS: Sources/FileConverterFinderSync/FileConverterExtendedFinderDebug.entitlements
-          FILE_CONVERTER_LOCAL_IPC_PATH: /Library/Application Support/FileConverter/LocalIPC/extended/
-    dependencies:
-      - package: FileConverterPackage
-        product: FileConverterFinderSupport
-      - package: FileConverterPackage
-        product: FileConverterContracts
 schemes:
-  FileConverterNative:
+  FileConverter:
     build:
       targets:
         FileConverterNative: all
         FileConverterNativeFinderExtension: all
-    run:
-      config: Debug
-    archive:
-      config: Release
-  FileConverterExtended:
-    build:
-      targets:
-        FileConverterExtended: all
-        FileConverterExtendedFinderExtension: all
     run:
       config: Debug
     archive:
