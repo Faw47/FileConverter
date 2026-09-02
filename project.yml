@@ -65,6 +65,8 @@ targets:
         product: FileConverterNativeBackends
       - package: FileConverterPackage
         product: FileConverterExternalBackends
+      - package: FileConverterPackage
+        product: FileConverterFinderSupport
       - target: FileConverterFinderExtension
         embed: true
   FileConverterFinderExtension:

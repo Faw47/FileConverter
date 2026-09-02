@@ -24,6 +24,7 @@ final class ArchitectureBoundaryTests: XCTestCase {
         assertFinderDependencies(finderExecutable)
         XCTAssertTrue(nativeApp.contains("\"FileConverterNativeBackends\""))
         XCTAssertTrue(nativeApp.contains("\"FileConverterExternalBackends\""))
+        XCTAssertTrue(nativeApp.contains("\"FileConverterFinderSupport\""), "Host links FinderSupport for live Finder status in Settings")
         XCTAssertFalse(nativeApp.contains("\"Settings/ExternalToolsSettingsView.swift\""))
     }
 
@@ -38,6 +39,7 @@ final class ArchitectureBoundaryTests: XCTestCase {
         )
         XCTAssertTrue(nativeApp.contains("product: FileConverterNativeBackends"))
         XCTAssertTrue(nativeApp.contains("product: FileConverterExternalBackends"))
+        XCTAssertTrue(nativeApp.contains("product: FileConverterFinderSupport"), "Host links FinderSupport for live Finder status in Settings")
         XCTAssertFalse(nativeApp.contains("Settings/ExternalToolsSettingsView.swift"))
 
         let nativeFinder = try section(

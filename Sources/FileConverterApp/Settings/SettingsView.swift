@@ -2,41 +2,69 @@ import SwiftUI
 
 public struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     public init() {}
 
     public var body: some View {
-        TabView(selection: $appState.selectedTab) {
-            GeneralSettingsView()
-                .tabItem {
-                    Label(AppState.SettingsTab.general.rawValue, systemImage: AppState.SettingsTab.general.systemImage)
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            List(selection: $appState.selectedTab) {
+                ForEach(AppState.SettingsTab.allCases) { tab in
+                    NavigationLink(value: tab) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(tab.rawValue)
+                                    .font(.system(size: 13, weight: .medium))
+                                Text(tab.subtitle)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        } icon: {
+                            Image(systemName: tab.systemImage)
+                                .font(.system(size: 15))
+                                .frame(width: 22)
+                        }
+                    }
+                    .tag(tab)
+                    .accessibilityLabel("\(tab.rawValue) settings. \(tab.subtitle)")
                 }
-                .tag(AppState.SettingsTab.general)
-
-            PresetsSettingsView()
-                .tabItem {
-                    Label(AppState.SettingsTab.presets.rawValue, systemImage: AppState.SettingsTab.presets.systemImage)
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
+            .navigationTitle("Settings")
+        } detail: {
+            Group {
+                switch appState.selectedTab {
+                case .general:
+                    GeneralSettingsView()
+                case .presets:
+                    PresetsSettingsView()
+                case .externalTools:
+                    ExternalToolsSettingsView()
+                case .performance:
+                    PerformanceSettingsView()
+                case .finder:
+                    FinderIntegrationView()
                 }
-                .tag(AppState.SettingsTab.presets)
-
-            ExternalToolsSettingsView()
-                .tabItem {
-                    Label(AppState.SettingsTab.externalTools.rawValue, systemImage: AppState.SettingsTab.externalTools.systemImage)
-                }
-                .tag(AppState.SettingsTab.externalTools)
-
-            PerformanceSettingsView()
-                .tabItem {
-                    Label(AppState.SettingsTab.performance.rawValue, systemImage: AppState.SettingsTab.performance.systemImage)
-                }
-                .tag(AppState.SettingsTab.performance)
-
-            FinderIntegrationView()
-                .tabItem {
-                    Label(AppState.SettingsTab.finder.rawValue, systemImage: AppState.SettingsTab.finder.systemImage)
-                }
-                .tag(AppState.SettingsTab.finder)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .navigationTitle(appState.selectedTab.rawValue)
         }
-        .frame(minWidth: 640, minHeight: 460)
+        .frame(minWidth: 720, minHeight: 480)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    withAnimation {
+                        columnVisibility = columnVisibility == .all ? .detailOnly : .all
+                    }
+                } label: {
+                    Label("Toggle Sidebar", systemImage: "sidebar.leading")
+                }
+                .help("Toggle sidebar (⌃⌘S)")
+                .keyboardShortcut("S", modifiers: [.command, .control])
+                .accessibilityLabel("Toggle settings sidebar")
+            }
+        }
     }
 }

@@ -47,11 +47,22 @@ This document details the architectural design, subsystem relationships, and dat
 | **FileConverterCore** | Contracts | host, backends, tests |
 | **FileConverterNativeBackends** | Core | host |
 | **FileConverterExternalBackends** | Core | host (always) |
-| **FileConverterFinderSupport** | Contracts | Finder extension |
+| **FileConverterFinderSupport** | Contracts | host (Settings status) + Finder extension |
 | **FileConverterFinderSync** | Contracts + FinderSupport | Finder appex |
 
-* Finder extension never imports `FileConverterCore`/`NativeBackends`/`ExternalBackends`. Host links both backend catalogs (`BackendResolver` = `NativeBackendCatalog + ExternalBackendCatalog` always).
+* Finder extension never imports `FileConverterCore`/`NativeBackends`/`ExternalBackends`. Host links both backend catalogs (`BackendResolver` = `NativeBackendCatalog + ExternalBackendCatalog` always) plus `FinderSupport` for live Finder status in Settings.
 * Enforced by `Package.swift` deps and `ArchitectureBoundaryTests` (Core has no `Process`, Finder has no `FileConverterCore`).
+
+## 5. Settings (redesigned)
+
+* **`AppSettings`** (`ObservableObject`, `MainActor`): typed `UserDefaults` store with registration, clamping, and reset. Owns output/conflict/filename defaults for new presets, notification + reveal switches, and `maxConcurrentJobs` (pushes into `ConversionQueue`). Every control writes here — no dead toggles.
+* **`AppState.SettingsTab`**: 5 tabs (General, Presets, External Tools, Performance, Finder). Dead Video/Audio cases removed. Selection persists via `fc.selectedSettingsTab`; `openSettings(tab:)` is the single entry point (menu, toolbar, `fileconverter://settings?tab=` with fuzzy matching).
+* **`SettingsView`**: `NavigationSplitView` sidebar (source-list style, collapsible via ⌃⌘S) + detail. No `TabView`.
+* **Presets**: sidebar search + category filter + availability badges (`Off`, `Needs tool` via `supportsAnySource`), context menu, Delete key, explicit Save/Discard editor with validation (non-empty names, known writable extension via `FormatRegistry`, non-empty pattern, single-folder subfolder rule), live filename preview, custom-folder bookmark picker, Export/Import (merge or replace) with error alerts, Reset with confirmation. New customs inherit `AppSettings` defaults.
+* **Performance**: stepper 1…16 bound to `AppSettings` (live `ConversionQueue` sync), effective concurrency display (thermal throttling to 1 under Serious/Critical), system-default reset, live queue counts.
+* **Tools**: background `Task.detached` rescan (never blocks UI), sorted list, copyable install commands, last-checked footer.
+* **Finder**: live `FinderRequestClient.isReady()` + snapshot readiness + snapshot age, reveal IPC folder, relaunch Finder, enable steps.
+* **Queue wiring**: `ConversionQueue` reads `maxConcurrentJobs` on init, exposes `current/effectiveMaxConcurrency`, gates notifications on `enableNotifications` (defaults true), and posts `.fileConverterBatchCompleted` with output URLs; `AppState` reveals them when `revealInFinder` is on.
 
 ---
 

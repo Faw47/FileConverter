@@ -14,18 +14,24 @@ public final class ConversionQueue: ObservableObject {
     @Published public private(set) var cancelledCount: Int = 0
     @Published public private(set) var overallProgress: Double = 0.0
 
-    private var maxConcurrency: Int = max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
+    private var maxConcurrency: Int
     private var activeJobIDs = Set<UUID>()
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
     private var reservedOutputURLs = Set<URL>()
     private var isProcessing = false
 
     public init() {
+        let stored = UserDefaults.standard.integer(forKey: "maxConcurrentJobs")
+        self.maxConcurrency = (1...16).contains(stored) ? stored : max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
         setupThermalMonitoring()
     }
 
+    public var currentMaxConcurrency: Int { maxConcurrency }
+
+    public var effectiveMaxConcurrency: Int { calculateEffectiveConcurrency() }
+
     public func setMaxConcurrency(_ limit: Int) {
-        maxConcurrency = max(1, limit)
+        maxConcurrency = min(max(1, limit), 16)
         processNextJobs()
     }
 
@@ -359,7 +365,11 @@ public final class ConversionQueue: ObservableObject {
         leaseToRelease?.release()
         updateCountsAndProgress()
         if isAllDone && totalCount > 0 {
-            sendBatchCompletionNotification(total: totalCount, completed: completed, failed: failed)
+            let completedURLs = jobs.compactMap { job -> URL? in
+                guard job.state == .completed, let url = job.destinationURL else { return nil }
+                return url
+            }
+            sendBatchCompletionNotification(total: totalCount, completed: completed, failed: failed, destinationURLs: completedURLs)
         }
 
         processNextJobs()
@@ -423,7 +433,21 @@ public final class ConversionQueue: ObservableObject {
         }
     }
 
-    private func sendBatchCompletionNotification(total: Int, completed: Int, failed: Int) {
+    public func requestNotificationAuthorizationIfNeeded() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    private func sendBatchCompletionNotification(total: Int, completed: Int, failed: Int, destinationURLs: [URL] = []) {
+        if !destinationURLs.isEmpty {
+            NotificationCenter.default.post(
+                name: .fileConverterBatchCompleted,
+                object: nil,
+                userInfo: ["destinationURLs": destinationURLs]
+            )
+        }
+
+        let enabled = UserDefaults.standard.object(forKey: "enableNotifications") as? Bool ?? true
+        guard enabled else { return }
         guard Bundle.main.bundleURL.pathExtension.lowercased() == "app" else { return }
 
         let center = UNUserNotificationCenter.current()
@@ -448,4 +472,8 @@ public final class ConversionQueue: ObservableObject {
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         center.add(request, withCompletionHandler: nil)
     }
+}
+
+public extension Notification.Name {
+    static let fileConverterBatchCompleted = Notification.Name("io.fileconverter.batchCompleted")
 }

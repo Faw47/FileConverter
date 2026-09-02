@@ -75,7 +75,8 @@ let package = Package(
                 "FileConverterContracts",
                 "FileConverterCore",
                 "FileConverterNativeBackends",
-                "FileConverterExternalBackends"
+                "FileConverterExternalBackends",
+                "FileConverterFinderSupport"
             ],
             path: "Sources/FileConverterApp",
             exclude: [

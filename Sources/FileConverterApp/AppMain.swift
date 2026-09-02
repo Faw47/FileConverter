@@ -54,14 +54,12 @@ struct FileConverterApp: App {
                 Divider()
 
                 Button("Manage Presets...") {
-                    appState.selectedTab = .presets
-                    appState.showSettings = true
+                    appState.openSettings(tab: .presets)
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
 
                 Button("External Tools Diagnostics...") {
-                    appState.selectedTab = .externalTools
-                    appState.showSettings = true
+                    appState.openSettings(tab: .externalTools)
                 }
             }
 
@@ -72,8 +70,7 @@ struct FileConverterApp: App {
                     }
                 }
                 Button("Finder Integration Setup Guide") {
-                    appState.selectedTab = .finder
-                    appState.showSettings = true
+                    appState.openSettings(tab: .finder)
                 }
             }
         }
@@ -83,14 +80,20 @@ struct FileConverterApp: App {
         let configuredScheme = try? IPCConfiguration.current().urlScheme
         if url.scheme == configuredScheme {
             if url.host == "settings" {
-                if let tabName = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first(where: { $0.name == "tab" })?.value,
-                   let tab = AppState.SettingsTab.allCases.first(where: {
-                       $0.rawValue.caseInsensitiveCompare(tabName) == .orderedSame
-                   }) {
-                    appState.selectedTab = tab
-                }
-                appState.showSettings = true
+                let tab: AppState.SettingsTab? = {
+                    guard let tabName = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                        .queryItems?.first(where: { $0.name == "tab" })?.value else { return nil }
+                    let query = tabName.lowercased()
+                    if query.contains("preset") { return .presets }
+                    if query.contains("tool") || query.contains("external") || query.contains("ffmpeg") { return .externalTools }
+                    if query.contains("perform") || query.contains("thermal") || query.contains("cpu") { return .performance }
+                    if query.contains("finder") || query.contains("menu") || query.contains("extension") { return .finder }
+                    if query.contains("general") || query.contains("output") || query.contains("default") { return .general }
+                    return AppState.SettingsTab.allCases.first {
+                        $0.rawValue.caseInsensitiveCompare(tabName) == .orderedSame
+                    }
+                }()
+                appState.openSettings(tab: tab)
             } else {
                 Task {
                     await ConversionCoordinator.shared.checkAndDrainPendingRequests()

@@ -58,7 +58,7 @@ public struct FileConverterMainView: View {
                 }
 
                 Button(action: {
-                    appState.showSettings = true
+                    appState.openSettings()
                 }) {
                     Label("Settings", systemImage: "gearshape")
                 }
