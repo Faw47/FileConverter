@@ -1,109 +1,111 @@
-import SwiftUI
 import FileConverterCore
+import SwiftUI
 
 public struct PerformanceSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var queue = ConversionQueue.shared
-    @State private var thermalState: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState
+    @State private var thermalState = ProcessInfo.processInfo.thermalState
 
     public init() {}
 
     public var body: some View {
-        Form {
-            Section {
-                Stepper(
-                    "Maximum parallel conversions: \(settings.maxConcurrentJobs)",
-                    value: $settings.maxConcurrentJobs,
-                    in: 1...16
-                )
-                .accessibilityLabel("Maximum parallel conversions")
-                .help("How many files convert at once. Video work is additionally capped to protect the GPU.")
+        SettingsPage(
+            title: "Performance",
+            subtitle: "Control parallel work while File Converter adapts to system heat.",
+            systemImage: "gauge.with.dots.needle.67percent"
+        ) {
+            Form {
+                Section("Concurrency") {
+                    Stepper(
+                        "Maximum parallel conversions: \(settings.maxConcurrentJobs)",
+                        value: $settings.maxConcurrentJobs,
+                        in: 1...16
+                    )
+                    .help("Video work may be capped further to protect the GPU and system responsiveness.")
 
-                HStack {
-                    Text("Running right now")
-                    Spacer()
-                    Text(effectiveText)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("Effective concurrency: \(effectiveText)")
+                    LabeledContent("Effective limit") {
+                        Text(effectiveConcurrencyText)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    LabeledContent("System default") {
+                        Text("\(AppSettings.systemDefaultConcurrency) jobs")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Button("Use System Default") {
+                        settings.maxConcurrentJobs = AppSettings.systemDefaultConcurrency
+                    }
+                    .controlSize(.small)
+                    .disabled(settings.maxConcurrentJobs == AppSettings.systemDefaultConcurrency)
                 }
 
-                Text("Mac CPU cores: \(ProcessInfo.processInfo.activeProcessorCount) · System default: \(AppSettings.systemDefaultConcurrency). Heavy video jobs are capped separately and throttle to 1 under Serious or Critical heat.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Section {
+                    LabeledContent("Thermal state") {
+                        Label(thermalStateName, systemImage: thermalStateIcon)
+                            .foregroundStyle(thermalStateColor)
+                    }
 
-                Button("Use System Default (\(AppSettings.systemDefaultConcurrency))") {
-                    settings.maxConcurrentJobs = AppSettings.systemDefaultConcurrency
+                    LabeledContent("Conversion queue") {
+                        Text("\(queue.activeCount) active, \(queue.queuedCount) waiting")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    LabeledContent("CPU cores") {
+                        Text("\(ProcessInfo.processInfo.activeProcessorCount)")
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("System Load")
+                } footer: {
+                    Text("When macOS reports Serious or Critical thermal pressure, File Converter temporarily reduces work to one conversion at a time. Your chosen limit returns automatically after the Mac cools down.")
                 }
-                .controlSize(.small)
-                .accessibilityLabel("Reset concurrency to system default")
-            } header: {
-                Text("Concurrency").font(.headline)
-            } footer: {
-                Text("Lower this if fans spin up or the Mac feels sluggish. Changes apply to queued work immediately.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-
-            Section {
-                HStack {
-                    Text("Heat")
-                    Spacer()
-                    Text(thermalStateName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(thermalColor)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Thermal state: \(thermalStateName)")
-
-                HStack {
-                    Text("Queue")
-                    Spacer()
-                    Text("\(queue.activeCount) active · \(queue.queuedCount) waiting")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-
-                Text("Under Serious or Critical heat File Converter automatically runs one job at a time until the system cools, then resumes your setting.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Thermals & Queue").font(.headline)
-            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
         }
-        .formStyle(.grouped)
-        .padding()
-        .navigationTitle("Performance")
         .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
             thermalState = ProcessInfo.processInfo.thermalState
         }
     }
 
-    private var effectiveText: String {
+    private var effectiveConcurrencyText: String {
         let effective = queue.effectiveMaxConcurrency
         if effective < settings.maxConcurrentJobs {
-            return "\(effective) (throttled by heat)"
+            return "\(effective) jobs (thermally limited)"
         }
-        return "\(effective)"
+        return "\(effective) jobs"
     }
 
     private var thermalStateName: String {
         switch thermalState {
-        case .nominal: return "Nominal — full speed"
-        case .fair: return "Fair — slightly warm"
-        case .serious: return "Serious — throttled to 1"
-        case .critical: return "Critical — throttled to 1"
+        case .nominal: return "Nominal"
+        case .fair: return "Fair"
+        case .serious: return "Serious"
+        case .critical: return "Critical"
         @unknown default: return "Unknown"
         }
     }
 
-    private var thermalColor: Color {
+    private var thermalStateIcon: String {
+        switch thermalState {
+        case .nominal: return "checkmark.circle.fill"
+        case .fair: return "thermometer.medium"
+        case .serious: return "thermometer.high"
+        case .critical: return "exclamationmark.triangle.fill"
+        @unknown default: return "questionmark.circle"
+        }
+    }
+
+    private var thermalStateColor: Color {
         switch thermalState {
         case .nominal: return .green
-        case .fair: return .yellow
+        case .fair: return .secondary
         case .serious: return .orange
         case .critical: return .red
-        @unknown default: return .primary
+        @unknown default: return .secondary
         }
     }
 }

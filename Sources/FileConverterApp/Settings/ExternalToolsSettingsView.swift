@@ -1,156 +1,170 @@
-import SwiftUI
+import AppKit
 import FileConverterCore
 import FileConverterExternalBackends
+import SwiftUI
 
 public struct ExternalToolsSettingsView: View {
     @State private var tools: [ToolInfo] = []
-    @State private var isLoading = false
+    @State private var isScanning = false
     @State private var lastChecked: Date?
 
     public init() {}
 
     public var body: some View {
-        Form {
-            Section {
-                if isLoading && tools.isEmpty {
-                    HStack {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Scanning for tools…")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 8)
-                    .accessibilityLabel("Scanning for external tools")
-                } else {
-                    ForEach(tools) { tool in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(displayName(for: tool))
-                                    .font(.system(size: 14, weight: .semibold))
-                                Spacer()
-                                if tool.isInstalled {
-                                    Label("Installed", systemImage: "checkmark.circle.fill")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(.green)
-                                        .accessibilityLabel("\(displayName(for: tool)) installed")
-                                } else {
-                                    Label("Missing", systemImage: "xmark.circle")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(.orange)
-                                        .accessibilityLabel("\(displayName(for: tool)) not installed")
-                                }
-                            }
-
-                            if let path = tool.executablePath {
-                                Text(path)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                            }
-
-                            if let version = tool.version {
-                                Text(version)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-
-                            if !tool.isInstalled {
-                                HStack {
-                                    Text(tool.installCommand)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.secondary.opacity(0.1))
-                                        .clipShape(.rect(cornerRadius: 4))
-                                        .textSelection(.enabled)
-                                    Spacer()
-                                    Button("Copy") {
-                                        NSPasteboard.general.clearContents()
-                                        NSPasteboard.general.setString(tool.installCommand, forType: .string)
-                                    }
-                                    .controlSize(.small)
-                                    .accessibilityLabel("Copy install command for \(displayName(for: tool))")
-                                }
-                                .padding(.top, 2)
-                            }
+        SettingsPage(
+            title: "External Tools",
+            subtitle: "Check the command-line tools used by optional conversion backends.",
+            systemImage: "wrench.and.screwdriver"
+        ) {
+            Form {
+                Section {
+                    if isScanning && tools.isEmpty {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Scanning installed tools...")
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 4)
-                        Divider().opacity(0.4)
-                    }
-                }
-            } header: {
-                Text(summaryText).font(.headline)
-            } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Every preset stays visible. Missing tools only matter at convert time — for example MP3 needs FFmpeg, Office docs need LibreOffice.")
-                    if let lastChecked {
-                        Text("Last checked \(lastChecked.formatted(date: .omitted, time: .shortened)).")
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Button {
-                    refresh()
-                } label: {
-                    HStack {
-                        if isLoading {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
+                        .padding(.vertical, 6)
+                    } else if tools.isEmpty {
+                        ContentUnavailableView(
+                            "No tools found",
+                            systemImage: "terminal",
+                            description: Text("Run a scan to check supported external tools.")
+                        )
+                    } else {
+                        ForEach(tools) { tool in
+                            ToolStatusRow(tool: tool)
                         }
-                        Text(isLoading ? "Scanning…" : "Re-scan Installed Tools")
+                    }
+                } header: {
+                    HStack {
+                        Text(summaryTitle)
+                        Spacer()
+                        if isScanning {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                } footer: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Missing tools do not hide presets. They only prevent conversions that depend on that backend.")
+                        if let lastChecked {
+                            Text("Last checked \(lastChecked.formatted(date: .omitted, time: .shortened)).")
+                        }
                     }
                 }
-                .disabled(isLoading)
-                .accessibilityLabel("Re-scan installed tools")
 
-                Button("How to Install Homebrew...") {
-                    if let url = URL(string: "https://brew.sh") {
+                Section {
+                    Button {
+                        refresh()
+                    } label: {
+                        Label(isScanning ? "Scanning..." : "Scan Again", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(isScanning)
+
+                    Button("Open Homebrew Website...") {
+                        guard let url = URL(string: "https://brew.sh") else { return }
                         NSWorkspace.shared.open(url)
                     }
                 }
-                .accessibilityLabel("Open Homebrew website")
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
+        }
+        .onAppear {
+            if tools.isEmpty {
+                refresh()
             }
         }
-        .formStyle(.grouped)
-        .padding()
-        .navigationTitle("External Tools")
-        .onAppear { refresh() }
     }
 
-    private var summaryText: String {
-        guard !tools.isEmpty else { return "External Tools" }
-        let installed = tools.filter(\.isInstalled).count
-        return "External Tools — \(installed) of \(tools.count) installed"
-    }
-
-    private func displayName(for tool: ToolInfo) -> String {
-        switch tool.name {
-        case "ffmpeg": return "FFmpeg (video & audio)"
-        case "ffprobe": return "FFprobe (media analysis)"
-        case "magick": return "ImageMagick (images)"
-        case "gs": return "Ghostscript (PDF)"
-        case "soffice": return "LibreOffice (documents)"
-        default: return tool.name
-        }
+    private var summaryTitle: String {
+        guard !tools.isEmpty else { return "Tool Status" }
+        let installedCount = tools.filter(\.isInstalled).count
+        return "Tool Status (\(installedCount) of \(tools.count) installed)"
     }
 
     private func refresh() {
-        guard !isLoading else { return }
-        isLoading = true
+        guard !isScanning else { return }
+        isScanning = true
+
         Task.detached(priority: .userInitiated) {
             ExternalToolDiscovery.shared.refreshAllTools()
-            let found = ExternalToolDiscovery.shared.allTools().sorted { $0.name < $1.name }
+            let discovered = ExternalToolDiscovery.shared.allTools().sorted { $0.name < $1.name }
+
             await MainActor.run {
-                self.tools = found
-                self.lastChecked = Date()
-                self.isLoading = false
+                tools = discovered
+                lastChecked = Date()
+                isScanning = false
             }
+        }
+    }
+}
+
+private struct ToolStatusRow: View {
+    let tool: ToolInfo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayName)
+                        .font(.body.weight(.medium))
+                    if let version = tool.version, !version.isEmpty {
+                        Text(version)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Spacer()
+
+                Label(tool.isInstalled ? "Installed" : "Missing", systemImage: tool.isInstalled ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(tool.isInstalled ? Color.green : Color.orange)
+            }
+
+            if let path = tool.executablePath, !path.isEmpty {
+                Text(path)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            if !tool.isInstalled {
+                HStack(spacing: 8) {
+                    Text(tool.installCommand)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Spacer()
+
+                    Button("Copy Command") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(tool.installCommand, forType: .string)
+                    }
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(.vertical, 5)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var displayName: String {
+        switch tool.name {
+        case "ffmpeg": return "FFmpeg"
+        case "ffprobe": return "FFprobe"
+        case "magick": return "ImageMagick"
+        case "gs": return "Ghostscript"
+        case "soffice": return "LibreOffice"
+        default: return tool.name
         }
     }
 }

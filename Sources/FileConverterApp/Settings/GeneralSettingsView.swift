@@ -1,93 +1,82 @@
-import SwiftUI
 import FileConverterCore
+import SwiftUI
 
 public struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
-    @State private var showingResetConfirm = false
+    @State private var showingResetConfirmation = false
 
     public init() {}
 
     public var body: some View {
-        Form {
-            Section {
-                Picker("New presets save to", selection: $settings.defaultOutputPolicyRaw) {
-                    Text("Same folder as source").tag("sameAsSource")
-                    Text("Downloads folder").tag("downloads")
-                }
-                .pickerStyle(.radioGroup)
-                .accessibilityLabel("Default output location for new presets")
-
-                Text("Applies to presets you create. Built-in presets keep their own locations.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Picker("If the file already exists", selection: $settings.defaultOverwritePolicyRaw) {
-                    ForEach(OverwritePolicy.allCases, id: \.rawValue) { policy in
-                        Text(policy.displayName).tag(policy.rawValue)
+        SettingsPage(
+            title: "General",
+            subtitle: "Defaults for new presets and what happens after conversion.",
+            systemImage: "gearshape"
+        ) {
+            Form {
+                Section("New Preset Defaults") {
+                    Picker("Output location", selection: $settings.defaultOutputPolicyRaw) {
+                        Text("Same folder as source").tag("sameAsSource")
+                        Text("Downloads folder").tag("downloads")
                     }
-                }
-                .accessibilityLabel("Default conflict policy for new presets")
+                    .pickerStyle(.radioGroup)
 
-                TextField("Filename pattern", text: $settings.defaultFilenamePattern, prompt: Text("{name}"))
-                    .font(.system(.body, design: .monospaced))
-                    .accessibilityLabel("Default filename pattern for new presets")
-                    .help("Tokens: {name} source name, {preset} preset, {date} yyyy-MM-dd, {time} HH-mm-ss, {ext} extension.")
-
-                Text("Example: {name} → Report.pdf · {preset} adds the preset name · {date} adds today.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Defaults for New Presets").font(.headline)
-            } footer: {
-                Text("Changing defaults never touches existing presets. Edit a preset to override its own output, conflicts, or naming.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Toggle("Preserve creation & modification dates", isOn: $settings.preserveTimestamps)
-                    .help("New presets copy the source dates onto the output. Existing presets keep their own switch.")
-                    .accessibilityLabel("Preserve file dates on new presets")
-            } header: {
-                Text("File Attributes").font(.headline)
-            }
-
-            Section {
-                Toggle("Notify when a batch finishes", isOn: $settings.enableNotifications)
-                    .onChange(of: settings.enableNotifications) { _, enabled in
-                        if enabled {
-                            ConversionQueue.shared.requestNotificationAuthorizationIfNeeded()
+                    Picker("If a file already exists", selection: $settings.defaultOverwritePolicyRaw) {
+                        ForEach(OverwritePolicy.allCases, id: \.rawValue) { policy in
+                            Text(policy.displayName).tag(policy.rawValue)
                         }
                     }
-                    .accessibilityLabel("Show system notification when batch completes")
-                Toggle("Reveal completed files in Finder", isOn: $settings.revealInFinder)
-                    .help("Selects finished outputs in Finder when a batch completes.")
-                    .accessibilityLabel("Automatically reveal output files in Finder")
-            } header: {
-                Text("Notifications & Workflow").font(.headline)
-            }
 
-            Section {
-                Button("Reset All Settings to Defaults...") {
-                    showingResetConfirm = true
+                    TextField("Filename pattern", text: $settings.defaultFilenamePattern, prompt: Text("{name}"))
+                        .font(.system(.body, design: .monospaced))
+                        .help("Tokens: {name}, {preset}, {date}, {time}, and {ext}.")
+
+                    Text("Example: {name} keeps the source name. These defaults only affect presets created later.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .accessibilityLabel("Reset all settings to defaults")
-                .confirmationDialog(
-                    "Reset every setting to its original value?",
-                    isPresented: $showingResetConfirm,
-                    titleVisibility: .visible
-                ) {
-                    Button("Reset Everything", role: .destructive) {
-                        settings.resetAllToDefaults()
+
+                Section("File Attributes") {
+                    Toggle("Preserve creation and modification dates", isOn: $settings.preserveTimestamps)
+                        .help("New presets copy source timestamps to converted files.")
+                }
+
+                Section("After Conversion") {
+                    Toggle("Notify when a batch finishes", isOn: $settings.enableNotifications)
+                        .onChange(of: settings.enableNotifications) { _, enabled in
+                            if enabled {
+                                ConversionQueue.shared.requestNotificationAuthorizationIfNeeded()
+                            }
+                        }
+
+                    Toggle("Reveal completed files in Finder", isOn: $settings.revealInFinder)
+                        .help("Selects the converted files in Finder when the batch finishes.")
+                }
+
+                Section {
+                    Button("Reset General Settings...", role: .destructive) {
+                        showingResetConfirmation = true
                     }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("Output defaults, notifications, performance, and sidebar selection return to factory values. Your presets are untouched.")
+                } footer: {
+                    Text("Resetting these settings does not delete or modify your existing presets.")
                 }
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
         }
-        .formStyle(.grouped)
-        .padding()
-        .navigationTitle("General")
+        .confirmationDialog(
+            "Reset general settings to their defaults?",
+            isPresented: $showingResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reset Settings", role: .destructive) {
+                settings.resetAllToDefaults()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Output defaults, notifications, Finder reveal behavior, and performance settings return to their original values. Presets are untouched.")
+        }
     }
 }

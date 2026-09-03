@@ -1,70 +1,117 @@
 import SwiftUI
 
 public struct SettingsView: View {
-    @EnvironmentObject var appState: AppState
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @EnvironmentObject private var appState: AppState
 
     public init() {}
 
     public var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(selection: $appState.selectedTab) {
-                ForEach(AppState.SettingsTab.allCases) { tab in
-                    NavigationLink(value: tab) {
-                        Label {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(tab.rawValue)
-                                    .font(.system(size: 13, weight: .medium))
-                                Text(tab.subtitle)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        } icon: {
-                            Image(systemName: tab.systemImage)
-                                .font(.system(size: 15))
-                                .frame(width: 22)
-                        }
-                    }
-                    .tag(tab)
-                    .accessibilityLabel("\(tab.rawValue) settings. \(tab.subtitle)")
-                }
+        NavigationSplitView {
+            List(selection: sidebarSelection) {
+                settingsRow(.general)
+                settingsRow(.presets)
+                settingsRow(.externalTools)
+                settingsRow(.performance)
+                settingsRow(.finder)
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
             .navigationTitle("Settings")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 205, max: 240)
         } detail: {
-            Group {
-                switch appState.selectedTab {
-                case .general:
-                    GeneralSettingsView()
-                case .presets:
-                    PresetsSettingsView()
-                case .externalTools:
-                    ExternalToolsSettingsView()
-                case .performance:
-                    PerformanceSettingsView()
-                case .finder:
-                    FinderIntegrationView()
+            detailView
+        }
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 860, idealWidth: 920, minHeight: 580, idealHeight: 640)
+    }
+
+    private var sidebarSelection: Binding<AppState.SettingsTab?> {
+        Binding(
+            get: { appState.selectedTab },
+            set: { newValue in
+                if let newValue {
+                    appState.selectedTab = newValue
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .navigationTitle(appState.selectedTab.rawValue)
+        )
+    }
+
+    @ViewBuilder
+    private func settingsRow(_ tab: AppState.SettingsTab) -> some View {
+        Label(tab.rawValue, systemImage: tab.systemImage)
+            .tag(tab)
+    }
+
+    @ViewBuilder
+    private var detailView: some View {
+        switch appState.selectedTab {
+        case .general:
+            GeneralSettingsView()
+        case .presets:
+            PresetsSettingsView()
+        case .externalTools:
+            ExternalToolsSettingsView()
+        case .performance:
+            PerformanceSettingsView()
+        case .finder:
+            FinderIntegrationView()
         }
-        .frame(minWidth: 720, minHeight: 480)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    withAnimation {
-                        columnVisibility = columnVisibility == .all ? .detailOnly : .all
-                    }
-                } label: {
-                    Label("Toggle Sidebar", systemImage: "sidebar.leading")
-                }
-                .help("Toggle sidebar (⌃⌘S)")
-                .keyboardShortcut("S", modifiers: [.command, .control])
-                .accessibilityLabel("Toggle settings sidebar")
+    }
+}
+
+struct SettingsPage<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    @ViewBuilder let content: Content
+
+    init(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SettingsPageHeader(title: title, subtitle: subtitle, systemImage: systemImage)
+            Divider()
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct SettingsPageHeader: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 38, height: 38)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.title2.weight(.semibold))
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
+
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 16)
+        .accessibilityElement(children: .combine)
     }
 }

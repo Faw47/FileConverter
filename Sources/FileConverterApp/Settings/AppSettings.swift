@@ -1,13 +1,7 @@
-import SwiftUI
 import Combine
 import FileConverterCore
+import Foundation
 
-/// Central source of truth for user preferences.
-///
-/// Every toggle in Settings writes here. Values persist in `UserDefaults`
-/// under the legacy keys so existing installs migrate silently. `AppSettings`
-/// also pushes concurrency changes into `ConversionQueue` and exposes
-/// validated helpers so views never parse raw strings themselves.
 @MainActor
 public final class AppSettings: ObservableObject {
     public static let shared = AppSettings()
@@ -25,62 +19,75 @@ public final class AppSettings: ObservableObject {
 
     @Published public var defaultOutputPolicyRaw: String {
         didSet {
-            if defaultOutputPolicyRaw != "sameAsSource" && defaultOutputPolicyRaw != "downloads" {
-                defaultOutputPolicyRaw = "sameAsSource"
+            let normalized = Self.normalizeOutputPolicy(defaultOutputPolicyRaw)
+            if normalized != defaultOutputPolicyRaw {
+                defaultOutputPolicyRaw = normalized
+                return
             }
-            UserDefaults.standard.set(defaultOutputPolicyRaw, forKey: Keys.defaultOutputPolicy)
+            defaults.set(defaultOutputPolicyRaw, forKey: Keys.defaultOutputPolicy)
         }
     }
 
     @Published public var defaultOverwritePolicyRaw: String {
         didSet {
-            if OverwritePolicy(rawValue: defaultOverwritePolicyRaw) == nil {
-                defaultOverwritePolicyRaw = OverwritePolicy.appendNumber.rawValue
+            let normalized = Self.normalizeOverwritePolicy(defaultOverwritePolicyRaw)
+            if normalized != defaultOverwritePolicyRaw {
+                defaultOverwritePolicyRaw = normalized
+                return
             }
-            UserDefaults.standard.set(defaultOverwritePolicyRaw, forKey: Keys.defaultOverwritePolicy)
+            defaults.set(defaultOverwritePolicyRaw, forKey: Keys.defaultOverwritePolicy)
         }
     }
 
     @Published public var preserveTimestamps: Bool {
-        didSet { UserDefaults.standard.set(preserveTimestamps, forKey: Keys.preserveTimestamps) }
+        didSet { defaults.set(preserveTimestamps, forKey: Keys.preserveTimestamps) }
     }
 
     @Published public var enableNotifications: Bool {
-        didSet { UserDefaults.standard.set(enableNotifications, forKey: Keys.enableNotifications) }
+        didSet { defaults.set(enableNotifications, forKey: Keys.enableNotifications) }
     }
 
     @Published public var revealInFinder: Bool {
-        didSet { UserDefaults.standard.set(revealInFinder, forKey: Keys.revealInFinder) }
+        didSet { defaults.set(revealInFinder, forKey: Keys.revealInFinder) }
     }
 
     @Published public var maxConcurrentJobs: Int {
         didSet {
-            maxConcurrentJobs = min(max(1, maxConcurrentJobs), 16)
-            UserDefaults.standard.set(maxConcurrentJobs, forKey: Keys.maxConcurrentJobs)
+            let normalized = Self.normalizeConcurrency(maxConcurrentJobs)
+            if normalized != maxConcurrentJobs {
+                maxConcurrentJobs = normalized
+                return
+            }
+            defaults.set(maxConcurrentJobs, forKey: Keys.maxConcurrentJobs)
             ConversionQueue.shared.setMaxConcurrency(maxConcurrentJobs)
         }
     }
 
     @Published public var defaultFilenamePattern: String {
         didSet {
-            let trimmed = defaultFilenamePattern.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                defaultFilenamePattern = "{name}"
+            let normalized = Self.normalizeFilenamePattern(defaultFilenamePattern)
+            if normalized != defaultFilenamePattern {
+                defaultFilenamePattern = normalized
+                return
             }
-            UserDefaults.standard.set(defaultFilenamePattern, forKey: Keys.defaultFilenamePattern)
+            defaults.set(defaultFilenamePattern, forKey: Keys.defaultFilenamePattern)
         }
     }
+
+    private let defaults: UserDefaults
 
     public var defaultOverwritePolicy: OverwritePolicy {
         OverwritePolicy(rawValue: defaultOverwritePolicyRaw) ?? .appendNumber
     }
 
     public static var systemDefaultConcurrency: Int {
-        max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
+        normalizeConcurrency(max(2, ProcessInfo.processInfo.activeProcessorCount / 2))
     }
 
-    public init() {
-        UserDefaults.standard.register(defaults: [
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+
+        defaults.register(defaults: [
             Keys.defaultOutputPolicy: "sameAsSource",
             Keys.defaultOverwritePolicy: OverwritePolicy.appendNumber.rawValue,
             Keys.preserveTimestamps: true,
@@ -90,27 +97,26 @@ public final class AppSettings: ObservableObject {
             Keys.defaultFilenamePattern: "{name}",
         ])
 
-        var outputRaw = UserDefaults.standard.string(forKey: Keys.defaultOutputPolicy) ?? "sameAsSource"
-        if outputRaw != "sameAsSource" && outputRaw != "downloads" {
-            outputRaw = "sameAsSource"
-        }
-        self.defaultOutputPolicyRaw = outputRaw
+        defaultOutputPolicyRaw = Self.normalizeOutputPolicy(
+            defaults.string(forKey: Keys.defaultOutputPolicy) ?? "sameAsSource"
+        )
+        defaultOverwritePolicyRaw = Self.normalizeOverwritePolicy(
+            defaults.string(forKey: Keys.defaultOverwritePolicy) ?? OverwritePolicy.appendNumber.rawValue
+        )
+        preserveTimestamps = defaults.bool(forKey: Keys.preserveTimestamps)
+        enableNotifications = defaults.bool(forKey: Keys.enableNotifications)
+        revealInFinder = defaults.bool(forKey: Keys.revealInFinder)
 
-        let rawOverwrite = UserDefaults.standard.string(forKey: Keys.defaultOverwritePolicy)
-        self.defaultOverwritePolicyRaw = OverwritePolicy(rawValue: rawOverwrite ?? "")?.rawValue ?? OverwritePolicy.appendNumber.rawValue
+        let storedConcurrency = defaults.integer(forKey: Keys.maxConcurrentJobs)
+        maxConcurrentJobs = storedConcurrency == 0
+            ? Self.systemDefaultConcurrency
+            : Self.normalizeConcurrency(storedConcurrency)
 
-        self.preserveTimestamps = UserDefaults.standard.object(forKey: Keys.preserveTimestamps) as? Bool ?? true
-        self.enableNotifications = UserDefaults.standard.object(forKey: Keys.enableNotifications) as? Bool ?? true
-        self.revealInFinder = UserDefaults.standard.object(forKey: Keys.revealInFinder) as? Bool ?? false
+        defaultFilenamePattern = Self.normalizeFilenamePattern(
+            defaults.string(forKey: Keys.defaultFilenamePattern) ?? "{name}"
+        )
 
-        let storedConcurrency = UserDefaults.standard.integer(forKey: Keys.maxConcurrentJobs)
-        let concurrency = (1...16).contains(storedConcurrency) ? storedConcurrency : Self.systemDefaultConcurrency
-        self.maxConcurrentJobs = concurrency
-
-        let pattern = UserDefaults.standard.string(forKey: Keys.defaultFilenamePattern) ?? "{name}"
-        self.defaultFilenamePattern = pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "{name}" : pattern
-
-        ConversionQueue.shared.setMaxConcurrency(concurrency)
+        ConversionQueue.shared.setMaxConcurrency(maxConcurrentJobs)
     }
 
     public func resetAllToDefaults() {
@@ -121,5 +127,22 @@ public final class AppSettings: ObservableObject {
         revealInFinder = false
         defaultFilenamePattern = "{name}"
         maxConcurrentJobs = Self.systemDefaultConcurrency
+    }
+
+    private static func normalizeOutputPolicy(_ value: String) -> String {
+        value == "downloads" ? "downloads" : "sameAsSource"
+    }
+
+    private static func normalizeOverwritePolicy(_ value: String) -> String {
+        OverwritePolicy(rawValue: value)?.rawValue ?? OverwritePolicy.appendNumber.rawValue
+    }
+
+    private static func normalizeConcurrency(_ value: Int) -> Int {
+        min(max(1, value), 16)
+    }
+
+    private static func normalizeFilenamePattern(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "{name}" : trimmed
     }
 }

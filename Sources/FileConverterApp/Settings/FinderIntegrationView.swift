@@ -1,129 +1,130 @@
-import SwiftUI
+import AppKit
 import FileConverterContracts
 import FileConverterFinderSupport
+import Foundation
+import SwiftUI
 
 public struct FinderIntegrationView: View {
     @State private var channelReady = false
     @State private var snapshotReady = false
-    @State private var statusDetail = "Checking…"
+    @State private var statusDetail = "Checking integration files..."
     @State private var snapshotAge: String?
 
     public init() {}
 
     public var body: some View {
-        Form {
-            Section {
-                HStack {
-                    Image(systemName: statusIcon)
-                        .font(.system(size: 20))
-                        .foregroundStyle(statusColor)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(statusTitle)
-                            .font(.system(size: 14, weight: .semibold))
-                        Text(statusDetail)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Refresh") { refresh() }
-                        .controlSize(.small)
-                        .accessibilityLabel("Refresh Finder integration status")
-                }
-                .padding(.vertical, 4)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Finder integration status: \(statusTitle). \(statusDetail)")
+        SettingsPage(
+            title: "Finder",
+            subtitle: "Set up and troubleshoot the Finder context-menu extension.",
+            systemImage: "finder"
+        ) {
+            Form {
+                Section {
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: statusIcon)
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(statusColor)
 
-                if let snapshotAge {
-                    HStack {
-                        Text("Menu data")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(statusTitle)
+                                .font(.body.weight(.medium))
+                            Text(statusDetail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
                         Spacer()
-                        Text(snapshotAge)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+
+                        Button("Refresh") {
+                            refresh()
+                        }
+                        .controlSize(.small)
                     }
-                }
-            } header: {
-                Text("Status").font(.headline)
-            }
+                    .padding(.vertical, 3)
 
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Right-click any file in Finder to convert it without opening the app. The menu only lists presets that work for every selected file.")
-                        .font(.system(size: 13))
-                    StepRow(number: "1", text: "Open System Settings → Privacy & Security → Extensions.")
-                    StepRow(number: "2", text: "Under Added Extensions, switch on File Converter.")
-                    StepRow(number: "3", text: "Right-click a video, audio track, image, or document to convert it.")
+                    if let snapshotAge {
+                        LabeledContent("Finder menu data") {
+                            Text(snapshotAge)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Integration Files")
+                } footer: {
+                    Text("This status verifies File Converter's shared channel and menu snapshot. macOS does not expose a reliable in-app switch state for the Finder extension, so confirm that separately in System Settings.")
                 }
-                .padding(.vertical, 4)
 
-                Button("Open System Settings → Extensions...") {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
+                Section("Enable the Finder Extension") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        FinderSetupStep(number: 1, text: "Open System Settings, then Privacy & Security, then Extensions.")
+                        FinderSetupStep(number: 2, text: "Under Added Extensions, enable File Converter.")
+                        FinderSetupStep(number: 3, text: "Right-click a supported file and choose a File Converter preset.")
+                    }
+                    .padding(.vertical, 3)
+
+                    Button("Open System Settings Extensions...") {
+                        guard let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") else { return }
                         NSWorkspace.shared.open(url)
                     }
-                }
-                .accessibilityLabel("Open System Settings Extensions")
 
-                Button("Reveal Integration Folder...") {
-                    revealIPCFolder()
+                    Button("Reveal Integration Folder...") {
+                        revealIPCFolder()
+                    }
                 }
-                .accessibilityLabel("Reveal Finder integration folder in Finder")
-            } header: {
-                Text("Finder Context Menu").font(.headline)
-            }
 
-            Section {
-                Text("Still missing? After enabling, relaunch Finder once. If files were moved, open File Converter once so it republishes the menu.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("Relaunch Finder") {
-                    let task = Process()
-                    task.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-                    task.arguments = ["Finder"]
-                    try? task.run()
+                Section("Troubleshooting") {
+                    Text("If the extension is enabled but the menu is missing, relaunch Finder. Open File Converter again afterward if the menu snapshot needs to be republished.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button("Relaunch Finder") {
+                        relaunchFinder()
+                    }
+                    .controlSize(.small)
                 }
-                .controlSize(.small)
-                .accessibilityLabel("Relaunch Finder")
-            } header: {
-                Text("Troubleshooting").font(.headline)
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
         }
-        .formStyle(.grouped)
-        .padding()
-        .navigationTitle("Finder")
-        .onAppear { refresh() }
+        .onAppear(perform: refresh)
     }
 
-    private var isReady: Bool { channelReady && snapshotReady }
+    private var integrationFilesReady: Bool {
+        channelReady && snapshotReady
+    }
 
     private var statusIcon: String {
-        isReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+        integrationFilesReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
     }
 
     private var statusColor: Color {
-        isReady ? .green : .orange
+        integrationFilesReady ? .green : .orange
     }
 
     private var statusTitle: String {
-        if isReady { return "Ready — right-click works" }
-        if !channelReady && !snapshotReady { return "Finish setup — open the app once" }
-        if !channelReady { return "Waiting for secure channel" }
-        return "Waiting for menu data"
+        if integrationFilesReady { return "Integration files are ready" }
+        if !channelReady && !snapshotReady { return "Setup is incomplete" }
+        if !channelReady { return "Secure channel is not ready" }
+        return "Finder menu data is not ready"
     }
 
     private func refresh() {
         let catalog = FinderMenuCatalog.shared
         catalog.reload()
+
         channelReady = FinderRequestClient.isReady()
         snapshotReady = catalog.hasUsableSnapshot
 
-        if isReady {
-            statusDetail = "Secure channel plus menu data are live."
+        if integrationFilesReady {
+            statusDetail = "The secure channel and Finder menu snapshot are available."
         } else if let error = catalog.lastErrorDescription, !snapshotReady {
             statusDetail = error
         } else if !channelReady {
-            statusDetail = "Open File Converter once to create the secure key."
+            statusDetail = "Open File Converter once so it can create its secure integration key."
         } else {
-            statusDetail = "Menu data will appear after your presets load."
+            statusDetail = "Preset menu data has not been published yet."
         }
 
         snapshotAge = snapshotFileAge()
@@ -131,38 +132,62 @@ public struct FinderIntegrationView: View {
 
     private func snapshotFileAge() -> String? {
         guard let config = try? IPCConfiguration.current(),
-              let container = config.sharedContainerURL() else { return nil }
-        let url = container
+              let container = config.sharedContainerURL() else {
+            return nil
+        }
+
+        let snapshotURL = container
             .appendingPathComponent("FileConverter", isDirectory: true)
             .appendingPathComponent("finder-menu-snapshot.json")
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let date = attrs[.modificationDate] as? Date else { return nil }
+
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: snapshotURL.path),
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            return nil
+        }
+
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
-        return "updated \(formatter.localizedString(for: date, relativeTo: Date()))"
+        return "Updated \(formatter.localizedString(for: modificationDate, relativeTo: Date()))"
     }
 
     private func revealIPCFolder() {
         guard let config = try? IPCConfiguration.current(),
-              let container = config.sharedContainerURL() else { return }
+              let container = config.sharedContainerURL() else {
+            NSSound.beep()
+            return
+        }
+
         NSWorkspace.shared.activateFileViewerSelecting([container])
+    }
+
+    private func relaunchFinder() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        process.arguments = ["Finder"]
+
+        do {
+            try process.run()
+        } catch {
+            NSSound.beep()
+        }
     }
 }
 
-private struct StepRow: View {
-    let number: String
+private struct FinderSetupStep: View {
+    let number: Int
     let text: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(number)
-                .font(.system(size: 11, weight: .bold))
-                .frame(width: 18, height: 18)
-                .background(Color.accentColor.opacity(0.15))
+        HStack(alignment: .top, spacing: 9) {
+            Text("\(number)")
+                .font(.caption.weight(.bold))
                 .foregroundStyle(Color.accentColor)
-                .clipShape(Circle())
+                .frame(width: 20, height: 20)
+                .background(Color.accentColor.opacity(0.12), in: Circle())
+
             Text(text)
-                .font(.system(size: 12))
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Step \(number): \(text)")
