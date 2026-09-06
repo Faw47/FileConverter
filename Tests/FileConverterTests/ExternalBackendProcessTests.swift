@@ -313,6 +313,157 @@ final class LibreOfficeBackendHardeningTests: XCTestCase {
     }
 }
 
+final class CalibreBackendTests: XCTestCase {
+    private var testDirectory: URL!
+
+    override func setUpWithError() throws {
+        testDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "CalibreBackendTests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: testDirectory, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: testDirectory)
+    }
+
+    func testEPUBToPDFUsesDedicatedConverterAndTemporaryDestination() async throws {
+        let executableURL = try makeFakeCalibre()
+        let sourceURL = testDirectory.appendingPathComponent("book.epub")
+        let temporaryURL = testDirectory.appendingPathComponent(".book.converting.pdf")
+        try Data("EPUB fixture".utf8).write(to: sourceURL)
+
+        let backend = CalibreBackend(executableURL: executableURL)
+        let preset = ConversionPreset(
+            name: "EPUB to PDF",
+            category: .document,
+            sourceFormats: ["epub"],
+            destinationFormat: "pdf",
+            backend: .calibre
+        )
+        let job = ConversionJob(
+            sourceURL: sourceURL,
+            destinationURL: testDirectory.appendingPathComponent("book.pdf"),
+            temporaryOutputURL: temporaryURL,
+            preset: preset
+        )
+
+        try await backend.convert(job: job) { _ in }
+
+        XCTAssertEqual(try Data(contentsOf: temporaryURL), Data("fake PDF".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: job.destinationURL!.path))
+    }
+
+    private func makeFakeCalibre() throws -> URL {
+        let executableURL = testDirectory.appendingPathComponent("fake-ebook-convert")
+        let script = """
+        #!/bin/sh
+        printf 'fake PDF' > "$2"
+        """
+        try Data(script.utf8).write(to: executableURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
+        return executableURL
+    }
+}
+
+final class FFmpegWorkflowIntegrationTests: XCTestCase {
+    private var testDirectory: URL!
+
+    override func setUpWithError() throws {
+        testDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "FFmpegWorkflowIntegrationTests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: testDirectory, withIntermediateDirectories: true)
+        ExternalToolDiscovery.shared.refreshAllTools(force: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: testDirectory)
+    }
+
+    func testAudioSplitAndTargetSizeWorkflowsWithInstalledFFmpeg() async throws {
+        guard let ffmpegPath = ExternalToolDiscovery.shared.executablePath(for: "ffmpeg"),
+              ExternalToolDiscovery.shared.executablePath(for: "ffprobe") != nil else {
+            throw XCTSkip("FFmpeg and ffprobe are required for this optional integration test.")
+        }
+        let sourceURL = testDirectory.appendingPathComponent("source.wav")
+        let fixtureProcess = ExternalProcessAttempt(
+            executableURL: URL(fileURLWithPath: ffmpegPath),
+            arguments: [
+                "-y", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
+                "-t", "21", "-c:a", "pcm_s16le", sourceURL.path
+            ],
+            timeout: 60
+        )
+        let fixtureResult = try await fixtureProcess.run()
+        XCTAssertEqual(fixtureResult.terminationStatus, 0, fixtureResult.stderr)
+
+        let backend = FFmpegBackend()
+        var splitPreset = try XCTUnwrap(
+            BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "audio.split-mp3-5min" }
+        )
+        splitPreset.audioSplitDurationSeconds = 10
+        let splitJob = ConversionJob(sourceURL: sourceURL, preset: splitPreset)
+        let requirements = try await backend.outputRequirements(for: splitJob)
+        XCTAssertEqual(requirements.count, 3)
+        let splitOutputs = requirements.enumerated().map { index, _ in
+            PlannedConversionOutput(
+                finalURL: testDirectory.appendingPathComponent("part-\(index + 1).mp3"),
+                temporaryURL: testDirectory.appendingPathComponent(".part-\(index + 1).mp3")
+            )
+        }
+
+        _ = try await backend.convert(job: splitJob, outputs: splitOutputs) { _ in }
+        XCTAssertTrue(splitOutputs.allSatisfy {
+            FileManager.default.fileExists(atPath: $0.temporaryURL.path)
+                && FileAccessManager.shared.fileSize(at: $0.temporaryURL) > 0
+        })
+
+        var targetPreset = try XCTUnwrap(
+            BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "audio.fit-5mb" }
+        )
+        targetPreset.audioTargetFileSizeBytes = 350_000
+        let targetTemporaryURL = testDirectory.appendingPathComponent(".sized.m4a")
+        let targetJob = ConversionJob(
+            sourceURL: sourceURL,
+            destinationURL: testDirectory.appendingPathComponent("sized.m4a"),
+            temporaryOutputURL: targetTemporaryURL,
+            preset: targetPreset
+        )
+
+        let targetProgress = ProgressCollector()
+        try await backend.convert(job: targetJob) { progress in
+            targetProgress.append(progress.fractionCompleted)
+        }
+        XCTAssertGreaterThan(FileAccessManager.shared.fileSize(at: targetTemporaryURL), 0)
+        XCTAssertLessThanOrEqual(
+            FileAccessManager.shared.fileSize(at: targetTemporaryURL),
+            Int64(try XCTUnwrap(targetPreset.audioTargetFileSizeBytes))
+        )
+        XCTAssertEqual(targetProgress.values.last, 1.0)
+        XCTAssertTrue(targetProgress.values.dropLast().allSatisfy { $0 < 1.0 })
+    }
+}
+
 private enum ProcessTestError: Error {
     case launchTimedOut
+}
+
+private final class ProgressCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValues: [Double] = []
+
+    func append(_ value: Double) {
+        lock.lock()
+        storedValues.append(value)
+        lock.unlock()
+    }
+
+    var values: [Double] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedValues
+    }
 }

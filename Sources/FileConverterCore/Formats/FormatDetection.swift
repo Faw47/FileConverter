@@ -44,7 +44,53 @@ public enum FormatDetector {
             isZeroByte = (fileSize == 0)
         }
 
-        // 1. If extension matches a specific format (e.g. qta, m4a, flac, heic, pdf, etc.), return it
+        // Prefer bytes and the filesystem content type over a misleading suffix.
+        // A file named `photo.mp4` containing a PNG must be offered as a PNG.
+        if exists, let fileHandle = try? FileHandle(forReadingFrom: url) {
+            let headerData = (try? fileHandle.read(upToCount: 512)) ?? Data()
+            try? fileHandle.close()
+
+            if let magicFormat = detectFromMagicBytes(headerData) {
+                // QuickTime audio and movie files share the same container
+                // signature. When a .qta suffix disambiguates that container,
+                // retain the audio type instead of treating it as video.
+                let resolvedFormat: FormatDefinition
+                if magicFormat.id == "mov", fallbackFormat?.id == "qta" {
+                    resolvedFormat = fallbackFormat ?? magicFormat
+                } else {
+                    resolvedFormat = magicFormat
+                }
+                let utType = resolvedFormat.utTypes.first ?? UTType(filenameExtension: resolvedFormat.primaryExtension)
+                return FormatDetectionResult(
+                    format: resolvedFormat,
+                    detectedUTType: utType,
+                    confidence: .exactMagicBytes,
+                    isDirectory: false,
+                    isZeroByte: isZeroByte,
+                    isReadable: true
+                )
+            }
+        }
+
+        // Try URL resource values (content type key).
+        if exists,
+           let resourceValues = try? url.resourceValues(forKeys: [.contentTypeKey]),
+           let contentType = resourceValues.contentType {
+            if let format = FormatRegistry.shared.format(forUTType: contentType) {
+                return FormatDetectionResult(
+                    format: format,
+                    detectedUTType: contentType,
+                    confidence: .utType,
+                    isDirectory: false,
+                    isZeroByte: isZeroByte,
+                    isReadable: true
+                )
+            }
+        }
+
+        // For a zero-byte file there is no content to sniff. Keep extension
+        // inference available for naming/UI, while compatibility validation
+        // rejects the unusable input explicitly.
         if let format = fallbackFormat {
             return FormatDetectionResult(
                 format: format,
@@ -56,46 +102,12 @@ public enum FormatDetector {
             )
         }
 
-        // 2. Try URL resource values (content type key)
-        if exists,
-           let resourceValues = try? url.resourceValues(forKeys: [.contentTypeKey]),
-           let contentType = resourceValues.contentType {
-            if let format = FormatRegistry.shared.format(forUTType: contentType) {
-                return FormatDetectionResult(
-                    format: format,
-                    detectedUTType: contentType,
-                    confidence: .utType,
-                    isDirectory: false,
-                    isZeroByte: false,
-                    isReadable: true
-                )
-            }
-        }
-
-        // 3. Try magic bytes if file exists and is readable
-        if exists, let fileHandle = try? FileHandle(forReadingFrom: url) {
-            let headerData = (try? fileHandle.read(upToCount: 32)) ?? Data()
-            try? fileHandle.close()
-
-            if let magicFormat = detectFromMagicBytes(headerData) {
-                let utType = magicFormat.utTypes.first ?? UTType(filenameExtension: magicFormat.primaryExtension)
-                return FormatDetectionResult(
-                    format: magicFormat,
-                    detectedUTType: utType,
-                    confidence: .exactMagicBytes,
-                    isDirectory: false,
-                    isZeroByte: headerData.isEmpty,
-                    isReadable: true
-                )
-            }
-        }
-
         return FormatDetectionResult(
             format: nil,
             detectedUTType: fallbackUTType,
             confidence: .none,
             isDirectory: false,
-            isZeroByte: false,
+            isZeroByte: isZeroByte,
             isReadable: exists
         )
     }

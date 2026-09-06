@@ -9,6 +9,7 @@ public enum BackendType: String, Codable, CaseIterable, Sendable {
     case imageMagick = "imageMagick"
     case libreOffice = "libreOffice"
     case ghostscript = "ghostscript"
+    case calibre = "calibre"
 
     public var displayName: String {
         switch self {
@@ -20,7 +21,33 @@ public enum BackendType: String, Codable, CaseIterable, Sendable {
         case .imageMagick: return "ImageMagick"
         case .libreOffice: return "LibreOffice"
         case .ghostscript: return "Ghostscript"
+        case .calibre: return "Calibre eBook Converter"
         }
+    }
+}
+
+/// Optional transformations that change the number or size of outputs. Keeping
+/// these in an optional value preserves compatibility with preset files written
+/// before these workflows existed.
+public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
+    public var audioSplitDurationSeconds: Int?
+    public var audioTargetFileSizeBytes: Int?
+    public var splitPDFIntoPages: Bool
+
+    public init(
+        audioSplitDurationSeconds: Int? = nil,
+        audioTargetFileSizeBytes: Int? = nil,
+        splitPDFIntoPages: Bool = false
+    ) {
+        self.audioSplitDurationSeconds = audioSplitDurationSeconds
+        self.audioTargetFileSizeBytes = audioTargetFileSizeBytes
+        self.splitPDFIntoPages = splitPDFIntoPages
+    }
+
+    public var isEmpty: Bool {
+        audioSplitDurationSeconds == nil
+            && audioTargetFileSizeBytes == nil
+            && !splitPDFIntoPages
     }
 }
 
@@ -191,6 +218,7 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
     public var filenamePattern: String
     public var overwritePolicy: OverwritePolicy
     public var extraBackendOptions: [String: String]
+    public var processingOptions: ConversionProcessingOptions?
     public var isEnabled: Bool
     public var isBuiltIn: Bool
     public var sortOrder: Int
@@ -222,6 +250,7 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
         filenamePattern: String = "{name}",
         overwritePolicy: OverwritePolicy = .appendNumber,
         extraBackendOptions: [String: String] = [:],
+        processingOptions: ConversionProcessingOptions? = nil,
         isEnabled: Bool = true,
         isBuiltIn: Bool = false,
         sortOrder: Int = 0
@@ -252,8 +281,40 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
         self.filenamePattern = filenamePattern
         self.overwritePolicy = overwritePolicy
         self.extraBackendOptions = extraBackendOptions
+        self.processingOptions = processingOptions?.isEmpty == true ? nil : processingOptions
         self.isEnabled = isEnabled
         self.isBuiltIn = isBuiltIn
         self.sortOrder = sortOrder
+    }
+
+    public var audioSplitDurationSeconds: Int? {
+        get { processingOptions?.audioSplitDurationSeconds }
+        set {
+            var options = processingOptions ?? ConversionProcessingOptions()
+            options.audioSplitDurationSeconds = newValue
+            processingOptions = options.isEmpty ? nil : options
+        }
+    }
+
+    public var audioTargetFileSizeBytes: Int? {
+        get { processingOptions?.audioTargetFileSizeBytes }
+        set {
+            var options = processingOptions ?? ConversionProcessingOptions()
+            options.audioTargetFileSizeBytes = newValue
+            processingOptions = options.isEmpty ? nil : options
+        }
+    }
+
+    public var splitPDFIntoPages: Bool {
+        get { processingOptions?.splitPDFIntoPages ?? false }
+        set {
+            var options = processingOptions ?? ConversionProcessingOptions()
+            options.splitPDFIntoPages = newValue
+            processingOptions = options.isEmpty ? nil : options
+        }
+    }
+
+    public var requiresExternalAudioProcessing: Bool {
+        audioSplitDurationSeconds != nil || audioTargetFileSizeBytes != nil
     }
 }

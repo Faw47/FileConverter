@@ -1,6 +1,6 @@
 # Security & Privacy Model
 
-**File Converter for macOS** is a single unsandboxed Developer ID app (`io.fileconverter.app` + `io.fileconverter.app.findersync`) with full native + Homebrew backend access and strict privacy guarantees.
+**File Converter for macOS** is a local app (`io.fileconverter.app` + `io.fileconverter.app.findersync`) with native backends and optional external tools. This document describes the implemented local security boundaries; the package script uses an available Apple Development identity (or an ad-hoc fallback) for Finder registration and does not notarize or publish the app.
 
 ---
 
@@ -17,7 +17,7 @@
 
 ## 2. 100% Offline & Private (No Telemetry)
 
-* **Zero Network Activity**: No network code, analytics SDKs, telemetry, or auto-update checkers.
+* **Zero Network Activity**: No network code, analytics SDKs, telemetry, or auto-update checkers are part of the app.
 * **Local Conversion**: All processing occurs on-device. No media leaves the device.
 * **Privacy-Preserving Logs**: `os.Logger` emits milestones and error codes only; never file contents, bookmark tokens, or HMAC keys.
 
@@ -25,11 +25,11 @@
 
 ## 3. IPC & Finder Isolation
 
-* **Single App**: `io.fileconverter.app` / `group.io.fileconverter.shared` + keychain `$(AppIdentifierPrefix)io.fileconverter.ipc` only. No Extended split remains.
-* **Least-Privilege Finder**: Extension links only `FileConverterContracts` + `FileConverterFinderSupport`. No `FileConverterCore`, no backends, no `Process`. Host links both backend catalogs (`NativeBackendCatalog + ExternalBackendCatalog` always), so every preset (`MP3`, `FLAC`, `Opus`, `OGG`, `MKV`, `WebM`, Office docs, `QTA→MP3`) is visible.
+* **Single App**: `io.fileconverter.app` / `io.fileconverter.app.findersync` only. Provisioned builds may use App Group `group.io.fileconverter.shared` and keychain `$(AppIdentifierPrefix)io.fileconverter.ipc`; local ad-hoc builds deliberately use the confined home-relative IPC path and file key instead, because they have no provisioning profile. There is no second “Extended” host.
+* **Least-Privilege Finder**: Extension links only `FileConverterContracts` + `FileConverterFinderSupport`. No `FileConverterCore`, no backends, no `Process`. The host registers both backend catalogs, but menu entries are capability-filtered; optional-tool presets remain hidden until the required tool/encoder is available.
 * **Snapshot Contract**: Host-published `finder-menu-snapshot.json` is versioned, `≤1 MiB`, duplicate-alias checked, and capability-filtered per `BackendResolver`; Finder retains last-known-good on corruption/oversize and caps selection at 100 files.
 * **Authenticated Mailbox**: HMAC-SHA256 envelopes over canonical JSON, keychain key `$(AppIdentifierPrefix)io.fileconverter.ipc`, 5-minute TTL with 60 s clock skew, per-request size limits, `Pending → Processing → Rejected` lifecycle with 60 s claim lease and crash recovery, duplicate UUID rejection, and serialized actor drains.
-* **Personal Team Debug Fallback**: Release uses App Group container; Debug Personal Team cannot vend `com.apple.security.application-groups`, so `IPCConfiguration.sharedContainerURL` falls back to home-relative `/Library/Application Support/FileConverter/LocalIPC/native/` resolved via `getpwuid` with `..` rejection. Debug-only (`project.yml` Debug `FILE_CONVERTER_LOCAL_IPC_PATH`).
+* **Local Artifact Container**: local builds explicitly configure home-relative `/Library/Application Support/FileConverter/LocalIPC/native/`, resolved via `getpwuid` with `..` rejection. That explicit setting takes precedence because macOS may vend an unusable App Group URL to unsigned processes. Builds that omit the local override use the App Group; the local path also matches the Finder extension's narrow Personal Team exception.
 
 ---
 
@@ -47,6 +47,6 @@
 
 * **Directory Guard**: Resolve and finalization reject existing directories/packages, never `replaceItemAt` a directory tree.
 * **Reservation**: `ConversionQueue.reservedOutputURLs` prevents concurrent jobs from colliding on the same ideal name; number-append policy falls back to UUID after 9999 collisions.
-* **Policy Enforcement**: `.skip`/`.replaceIfNewer` stale-date collisions surface as `outputCollision` → `.failed` (not `.skipped`); `.replaceIfNewer` revalidates source/destination mtimes immediately before commit.
+* **Policy Enforcement**: `.skip` collisions finish as skipped without invoking a backend; stale `.replaceIfNewer` collisions surface as `outputCollision` and never silently overwrite. `.replaceIfNewer` revalidates source/destination mtimes immediately before commit. `.ask` pauses the job for an explicit batch decision.
 * **Commit Atomicity**: `finalizing` is a non-cancellable MainActor commit boundary; `replaceItemAt` preserves prior output until the new file is durable.
 * **Path Confinement**: `sourceSubfolder("a/b")` and traversal names are rejected; destination directories are created only after backend resolution.

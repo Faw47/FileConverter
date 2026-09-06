@@ -1,6 +1,7 @@
 import XCTest
 import Darwin
 @testable import FileConverterContracts
+@testable import FileConverterCore
 
 final class ConversionRequestContractTests: XCTestCase {
     private let key = Data(repeating: 0xA5, count: 32)
@@ -60,7 +61,14 @@ final class ConversionRequestContractTests: XCTestCase {
         let expected = URL(fileURLWithPath: String(cString: homePath), isDirectory: true)
             .appendingPathComponent("Library/Application Support/FileConverter/LocalIPC/native", isDirectory: true)
 
-        XCTAssertEqual(configuration.sharedContainerURL()?.standardizedFileURL, expected.standardizedFileURL)
+        XCTAssertEqual(
+            configuration.sharedContainerURL(
+                fileManager: StubContainerFileManager(
+                    containerURL: URL(fileURLWithPath: "/tmp/file-converter-app-group", isDirectory: true)
+                )
+            )?.standardizedFileURL,
+            expected.standardizedFileURL
+        )
     }
 
     func testLocalSharedContainerPathRejectsTraversal() {
@@ -68,7 +76,59 @@ final class ConversionRequestContractTests: XCTestCase {
             localSharedContainerPath: "/Library/Application Support/../Secrets/"
         )
 
-        XCTAssertNil(configuration.sharedContainerURL())
+        XCTAssertNil(configuration.sharedContainerURL(fileManager: StubContainerFileManager(containerURL: nil)))
+    }
+
+    func testAppGroupContainerIsUsedWhenNoLocalPathIsConfigured() {
+        let appGroupURL = URL(fileURLWithPath: "/tmp/file-converter-app-group", isDirectory: true)
+        let configuration = makeConfiguration()
+
+        XCTAssertEqual(
+            configuration.sharedContainerURL(
+                fileManager: StubContainerFileManager(containerURL: appGroupURL)
+            ),
+            appGroupURL
+        )
+    }
+
+    func testAuthenticationKeyIsMaterializedInLocalSharedContainer() throws {
+        let suffix = UUID().uuidString
+        let configuration = makeConfiguration(
+            localSharedContainerPath: "/Library/Caches/FileConverterIPCKeyStoreTests-\(suffix)/"
+        )
+        let container = try XCTUnwrap(configuration.sharedContainerURL())
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let ensured = try IPCAuthenticationKeyStore.ensureKey(configuration: configuration)
+        let keyURL = container
+            .appendingPathComponent("FileConverter", isDirectory: true)
+            .appendingPathComponent("IPC", isDirectory: true)
+            .appendingPathComponent("authentication-native.key")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: keyURL.path))
+        XCTAssertEqual(try IPCAuthenticationKeyStore.loadKey(configuration: configuration), ensured)
+        let attributes = try FileManager.default.attributesOfItem(atPath: keyURL.path)
+        let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue
+        XCTAssertEqual(permissions & 0o777, 0o600)
+    }
+
+    func testSecurityScopedFinderBookmarkCanBeConsumedByHost() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FinderBookmarkTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let sourceURL = directory.appendingPathComponent("source.pdf")
+        try Data("%PDF-1.4".utf8).write(to: sourceURL)
+        let bookmark = try sourceURL.bookmarkData(
+            options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+
+        let lease = try SecurityScopedLease(bookmarkData: bookmark)
+        XCTAssertEqual(lease.url.standardizedFileURL, sourceURL.standardizedFileURL)
+        lease.release()
     }
 
     private func makeRequest(
@@ -90,7 +150,7 @@ final class ConversionRequestContractTests: XCTestCase {
         )
     }
 
-    private func makeConfiguration(localSharedContainerPath: String?) -> IPCConfiguration {
+    private func makeConfiguration(localSharedContainerPath: String? = nil) -> IPCConfiguration {
         IPCConfiguration(
             appGroupID: "group.io.fileconverter.shared",
             edition: .native,
@@ -99,5 +159,18 @@ final class ConversionRequestContractTests: XCTestCase {
             urlScheme: "fileconverter",
             localSharedContainerPath: localSharedContainerPath
         )
+    }
+}
+
+private final class StubContainerFileManager: FileManager, @unchecked Sendable {
+    private let stubbedContainerURL: URL?
+
+    init(containerURL: URL?) {
+        self.stubbedContainerURL = containerURL
+        super.init()
+    }
+
+    override func containerURL(forSecurityApplicationGroupIdentifier groupIdentifier: String) -> URL? {
+        stubbedContainerURL
     }
 }

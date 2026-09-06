@@ -1,7 +1,6 @@
 import XCTest
 @testable import FileConverterCore
 import FileConverterContracts
-import FileConverterExternalBackends
 import FileConverterNativeBackends
 
 final class BackendIsolationTests: XCTestCase {
@@ -32,7 +31,7 @@ final class BackendIsolationTests: XCTestCase {
         let externalPreset = try XCTUnwrap(presets.first { $0.builtInKey == "video.av1" })
         let nativeResolver = BackendResolver(backends: NativeBackendCatalog.makeBackends())
         let extendedResolver = BackendResolver(
-            backends: NativeBackendCatalog.makeBackends() + ExternalBackendCatalog.makeBackends()
+            backends: NativeBackendCatalog.makeBackends() + [AvailableMediaBackendStub()]
         )
 
         let nativeSnapshot = FinderMenuSnapshotWriter.makeSnapshot(
@@ -95,4 +94,32 @@ final class BackendIsolationTests: XCTestCase {
 
         XCTAssertTrue(compatible.isEmpty)
     }
+}
+
+/// Deterministic stand-in for optional media tooling. Capability-selection
+/// tests must not depend on what happens to be installed on the test Mac.
+struct AvailableMediaBackendStub: ConversionBackend {
+    let backendType: BackendType = .ffmpeg
+    let isAvailable = true
+
+    func supports(
+        sourceFormat: FormatDefinition,
+        destinationFormat: FormatDefinition,
+        preset: ConversionPreset
+    ) -> Bool {
+        let mediaSource = sourceFormat.category == .audio || sourceFormat.category == .video
+        let mediaDestination = destinationFormat.category == .audio
+            || destinationFormat.category == .video
+            || destinationFormat.id == "gif"
+        return mediaSource && mediaDestination
+    }
+
+    func convert(
+        job: ConversionJob,
+        progressHandler: @escaping @Sendable (ConversionProgress) -> Void
+    ) async throws {
+        throw ConversionError.backendUnavailable(backend: "Test stub")
+    }
+
+    func cancel(jobID: UUID) async {}
 }

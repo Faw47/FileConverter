@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 import FileConverterContracts
 
 public actor ConversionCoordinator {
@@ -19,6 +18,9 @@ public actor ConversionCoordinator {
     }
 
     public func handleConversionRequest(_ request: ConversionRequest) async throws {
+        AppLogger.conversion.notice(
+            "Admitting Finder request: id=\(request.id.uuidString, privacy: .public), preset=\(request.presetID.uuidString, privacy: .public), sourceCount=\(request.sources.count, privacy: .public)"
+        )
         guard let preset = PresetStore.shared.preset(forID: request.presetID) else {
             throw ConversionCoordinatorError.unknownPreset
         }
@@ -35,10 +37,12 @@ public actor ConversionCoordinator {
 
         try validateAdmission(urls: jobs.map(\.sourceURL), preset: preset)
         await ConversionQueue.shared.addJobs(jobs)
+        AppLogger.conversion.notice(
+            "Finder request admitted to conversion queue: id=\(request.id.uuidString, privacy: .public)"
+        )
 
-        await MainActor.run {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        // Finder-initiated work is admitted in the background. The host app is
+        // only brought forward by an explicit setup/error action.
     }
 
     public func convertFiles(urls: [URL], preset: ConversionPreset) async throws {
@@ -65,6 +69,11 @@ public actor ConversionCoordinator {
     private func drainPendingRequests() async {
         do {
             let claims = try IPCChannels.claimPendingRequests()
+            if !claims.isEmpty {
+                AppLogger.conversion.notice(
+                    "Claimed \(claims.count, privacy: .public) Finder request(s)"
+                )
+            }
             let now = Date()
             admittedRequestExpirations = admittedRequestExpirations.filter { $0.value >= now }
 
@@ -101,7 +110,9 @@ public actor ConversionCoordinator {
                     admittedRequestExpirations[claim.request.id] = claim.request.expiresAt
                 } catch {
                     try? IPCChannels.reject(claim)
-                    AppLogger.conversion.error("Finder request rejected: \(error.localizedDescription, privacy: .public)")
+                    AppLogger.conversion.error(
+                        "Finder request rejected: id=\(claim.request.id.uuidString, privacy: .public), error=\(error.localizedDescription, privacy: .public)"
+                    )
                     continue
                 }
 

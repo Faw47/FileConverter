@@ -1,0 +1,10 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Add Files..." : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Files..." } } } },
+    "Choose an output format preset" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose an output format preset" } } } },
+    "Files already exist" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Files already exist" } } } },
+    "Conversion Finished" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Conversion Finished" } } } }
+  },
+  "version" : "1.0"
+}

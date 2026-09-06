@@ -40,7 +40,8 @@ public enum OutputNamingEngine {
     public static func generateFormattedFilename(
         sourceURL: URL,
         preset: ConversionPreset,
-        targetExtension: String
+        targetExtension: String,
+        suffix: String? = nil
     ) -> String {
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
         let cleanExt = targetExtension.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
@@ -74,6 +75,9 @@ public enum OutputNamingEngine {
         let invalidChars = CharacterSet(charactersIn: ":/\\?%*|\"<>")
         formatted = formatted.components(separatedBy: invalidChars).joined(separator: "_")
 
+        if let suffix, !suffix.isEmpty {
+            formatted += "-\(suffix)"
+        }
         return "\(formatted).\(cleanExt)"
     }
 
@@ -81,6 +85,7 @@ public enum OutputNamingEngine {
         sourceURL: URL,
         preset: ConversionPreset,
         targetExtension: String? = nil,
+        suffix: String? = nil,
         reservedURLs: Set<URL> = [],
         customFolderURL: URL? = nil
     ) throws -> URL {
@@ -90,14 +95,14 @@ public enum OutputNamingEngine {
             policy: preset.outputDirectoryPolicy,
             customFolderURL: customFolderURL
         )
-        let filename = generateFormattedFilename(sourceURL: sourceURL, preset: preset, targetExtension: ext)
+        let filename = generateFormattedFilename(sourceURL: sourceURL, preset: preset, targetExtension: ext, suffix: suffix)
         let idealURL = targetDir.appendingPathComponent(filename)
 
         if reservedURLs.contains(idealURL.standardizedFileURL) {
             switch preset.overwritePolicy {
-            case .appendNumber, .ask:
+            case .appendNumber:
                 return findAvailableNumberedURL(for: idealURL, reservedURLs: reservedURLs)
-            case .overwrite, .replaceIfNewer, .skip:
+            case .ask, .overwrite, .replaceIfNewer, .skip:
                 throw ConversionError.outputCollision(path: idealURL.path)
             }
         }
@@ -133,8 +138,9 @@ public enum OutputNamingEngine {
             throw ConversionError.outputCollision(path: idealURL.path)
 
         case .ask:
-            // For batch/CLI automation default to number append if not prompted
-            return findAvailableNumberedURL(for: idealURL, reservedURLs: reservedURLs)
+            // Ask is resolved by the batch conflict UI. Fail during preflight
+            // so the queue can pause before a backend spends time converting.
+            throw ConversionError.outputCollision(path: idealURL.path)
 
         case .replaceIfNewer:
             if let srcAttrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path),
@@ -147,7 +153,7 @@ public enum OutputNamingEngine {
                     throw ConversionError.outputCollision(path: idealURL.path)
                 }
             }
-            return findAvailableNumberedURL(for: idealURL, reservedURLs: reservedURLs)
+            throw ConversionError.outputCollision(path: idealURL.path)
 
         case .appendNumber:
             return findAvailableNumberedURL(for: idealURL, reservedURLs: reservedURLs)
@@ -192,28 +198,126 @@ public enum OutputNamingEngine {
         finalDestinationURL: URL,
         overwrite: Bool = true
     ) throws {
-        guard FileManager.default.fileExists(atPath: temporaryURL.path) else {
-            throw ConversionError.fileNotFound(path: temporaryURL.path)
+        try finalizeConversionOutputs(
+            [PlannedConversionOutput(finalURL: finalDestinationURL, temporaryURL: temporaryURL)],
+            overwrite: overwrite
+        )
+    }
+
+    /// Commits every temporary output as one recoverable operation. If a later
+    /// output cannot be moved, outputs already committed in this attempt are
+    /// removed and any replaced originals are restored.
+    public static func finalizeConversionOutputs(
+        _ outputs: [PlannedConversionOutput],
+        overwrite: Bool = true
+    ) throws {
+        guard !outputs.isEmpty else {
+            throw ConversionError.destinationUnavailable(path: "")
         }
 
-        var isDirectory: ObjCBool = false
-        if FileManager.default.fileExists(atPath: finalDestinationURL.path, isDirectory: &isDirectory) {
-            if isDirectory.boolValue {
-                throw ConversionError.destinationUnavailable(path: finalDestinationURL.path)
+        let fileManager = FileManager.default
+        var seenDestinations = Set<URL>()
+        var existingDestinations = Set<URL>()
+        var backupsByDestination: [URL: URL] = [:]
+
+        for output in outputs {
+            guard fileManager.fileExists(atPath: output.temporaryURL.path) else {
+                throw ConversionError.fileNotFound(path: output.temporaryURL.path)
             }
-            guard overwrite else {
-                throw ConversionError.outputCollision(path: finalDestinationURL.path)
+
+            let destination = output.finalURL.standardizedFileURL
+            guard seenDestinations.insert(destination).inserted else {
+                throw ConversionError.destinationUnavailable(path: output.finalURL.path)
             }
-            _ = try FileManager.default.replaceItemAt(
-                finalDestinationURL,
-                withItemAt: temporaryURL,
-                backupItemName: nil,
-                options: []
+
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: output.finalURL.path, isDirectory: &isDirectory) {
+                if isDirectory.boolValue {
+                    throw ConversionError.destinationUnavailable(path: output.finalURL.path)
+                }
+                guard overwrite else {
+                    throw ConversionError.outputCollision(path: output.finalURL.path)
+                }
+                existingDestinations.insert(destination)
+            }
+        }
+
+        struct CommittedOutput {
+            let finalURL: URL
+            let replacedExistingFile: Bool
+        }
+        var committed: [CommittedOutput] = []
+
+        do {
+            for output in outputs {
+                let destination = output.finalURL.standardizedFileURL
+                guard existingDestinations.contains(destination) else { continue }
+                let backupName = ".\(output.finalURL.lastPathComponent).fileconverter-original-\(UUID().uuidString)"
+                let backupURL = output.finalURL.deletingLastPathComponent().appendingPathComponent(backupName)
+                // Do not rely on FileManager's undocumented backup placement
+                // after replaceItemAt. Keeping our own copy makes the whole
+                // multi-file operation recoverable on every supported volume.
+                try fileManager.copyItem(at: output.finalURL, to: backupURL)
+                backupsByDestination[destination] = backupURL
+            }
+
+            for output in outputs {
+                let destination = output.finalURL.standardizedFileURL
+                if existingDestinations.contains(destination) {
+                    _ = try fileManager.replaceItemAt(
+                        output.finalURL,
+                        withItemAt: output.temporaryURL,
+                        backupItemName: nil,
+                        options: []
+                    )
+                    committed.append(CommittedOutput(finalURL: output.finalURL, replacedExistingFile: true))
+                } else {
+                    try fileManager.moveItem(at: output.temporaryURL, to: output.finalURL)
+                    committed.append(CommittedOutput(finalURL: output.finalURL, replacedExistingFile: false))
+                }
+            }
+
+            for backupURL in backupsByDestination.values {
+                try? fileManager.removeItem(at: backupURL)
+            }
+        } catch {
+            var rollbackError: Error?
+            let committedNewDestinations = Set(
+                committed
+                    .filter { !$0.replacedExistingFile }
+                    .map { $0.finalURL.standardizedFileURL }
             )
-            return
-        }
+            for output in outputs.reversed() {
+                let destination = output.finalURL.standardizedFileURL
+                do {
+                    if let backupURL = backupsByDestination[destination],
+                       fileManager.fileExists(atPath: backupURL.path) {
+                        if fileManager.fileExists(atPath: output.finalURL.path) {
+                            try fileManager.removeItem(at: output.finalURL)
+                        }
+                        try fileManager.moveItem(at: backupURL, to: output.finalURL)
+                    } else if committedNewDestinations.contains(destination),
+                              fileManager.fileExists(atPath: output.finalURL.path) {
+                        try fileManager.removeItem(at: output.finalURL)
+                    }
+                } catch {
+                    rollbackError = rollbackError ?? error
+                }
+            }
 
-        try FileManager.default.moveItem(at: temporaryURL, to: finalDestinationURL)
+            if rollbackError == nil {
+                for backupURL in backupsByDestination.values where fileManager.fileExists(atPath: backupURL.path) {
+                    try? fileManager.removeItem(at: backupURL)
+                }
+            }
+
+            if let rollbackError {
+                throw ConversionError.unknown(
+                    message: "Could not commit all conversion outputs and restore the original files: \(rollbackError.localizedDescription)"
+                )
+            }
+            throw error
+        }
     }
 
     public static func cleanupTemporaryFile(at url: URL?) {

@@ -6,7 +6,6 @@ import os
 
 private let finderLogger = Logger(subsystem: "io.fileconverter", category: "finder")
 
-@objc(FileConverterFinderSync)
 public class FileConverterFinderSync: FIFinderSync {
 
     public override init() {
@@ -64,6 +63,10 @@ public class FileConverterFinderSync: FIFinderSync {
                         keyEquivalent: ""
                     )
                     item.target = self
+                    // Finder serializes menu items between menu construction
+                    // and invocation. Keep this value Foundation-bridgeable;
+                    // custom NSObject payloads are discarded by Finder and
+                    // leave the action without a preset identifier.
                     item.representedObject = entry.id.uuidString
                     catSubMenu.addItem(item)
                 }
@@ -92,22 +95,25 @@ public class FileConverterFinderSync: FIFinderSync {
     // MARK: - Actions
 
     @objc private func conversionPresetSelected(_ sender: NSMenuItem) {
-        guard let idString = sender.representedObject as? String,
-              let presetID = UUID(uuidString: idString),
-              let selectedURLs = FIFinderSyncController.default().selectedItemURLs(),
-              !selectedURLs.isEmpty else {
+        let selectedURLs = FIFinderSyncController.default().selectedItemURLs() ?? []
+        let presetID = resolvePresetID(for: sender, selectedURLs: selectedURLs)
+
+        guard let presetID, !selectedURLs.isEmpty else {
+            finderLogger.error(
+                "Finder conversion action had no usable preset or selection: preset=\(String(describing: presetID), privacy: .public), selectedCount=\(selectedURLs.count, privacy: .public)"
+            )
+            launchMainApp(openSettings: true)
             return
         }
 
         do {
             let configuration = try IPCConfiguration.current()
+            finderLogger.notice(
+                "Preparing Finder conversion request: preset=\(presetID.uuidString, privacy: .public), selectedCount=\(selectedURLs.count, privacy: .public)"
+            )
             let sources = try selectedURLs.map { url in
                 ConversionSourceDescriptor(
-                    bookmarkData: try url.bookmarkData(
-                        options: [],
-                        includingResourceValuesForKeys: nil,
-                        relativeTo: nil
-                    ),
+                    bookmarkData: try makeBookmarkData(for: url),
                     displayName: url.lastPathComponent,
                     lastKnownPath: url.path
                 )
@@ -118,10 +124,81 @@ public class FileConverterFinderSync: FIFinderSync {
                 sources: sources
             )
             try FinderRequestClient.send(request)
+            finderLogger.notice(
+                "Finder conversion request queued: id=\(request.id.uuidString, privacy: .public), preset=\(presetID.uuidString, privacy: .public)"
+            )
             launchMainApp()
         } catch {
-            finderLogger.error("Failed to send conversion request: \(error.localizedDescription, privacy: .public)")
+            finderLogger.error(
+                "Failed to send Finder conversion request: \(error.localizedDescription, privacy: .public) (domain=\((error as NSError).domain, privacy: .public), code=\((error as NSError).code, privacy: .public))"
+            )
+            // A Finder extension cannot present an app-owned error sheet. Bring
+            // the user to the setup screen instead of failing silently.
+            launchMainApp(openSettings: true)
         }
+    }
+
+    private func makeBookmarkData(for url: URL) throws -> Data {
+        let didStartAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            // Finder supplies an implicit scope for the selected item. Keep
+            // that scope active while asking Foundation to create the
+            // explicit, read-only bookmark the host can persist.
+            return try url.bookmarkData(
+                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        } catch {
+            // Some macOS Finder builds expose only the implicit scope to a
+            // Finder Sync extension. A plain bookmark preserves that scope;
+            // SecurityScopedLease has a matching implicit-scope resolution
+            // path, so do not turn a valid Finder selection into a silent
+            // no-op just because explicit scope creation was denied.
+            finderLogger.warning(
+                "Explicit Finder bookmark denied; falling back to implicit scope: domain=\((error as NSError).domain, privacy: .public), code=\((error as NSError).code, privacy: .public)"
+            )
+            return try url.bookmarkData(
+                options: [],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        }
+    }
+
+    private func resolvePresetID(for sender: NSMenuItem, selectedURLs: [URL]) -> UUID? {
+        if let idString = sender.representedObject as? String,
+           let id = UUID(uuidString: idString) {
+            return id
+        }
+
+        // Finder may rebuild NSMenuItem instances for nested extension menus
+        // and drop representedObject entirely. The visible title and parent
+        // category survive that bridge, so resolve the preset from the same
+        // snapshot used to build the menu.
+        let sections = FinderMenuCatalog.shared.sections(for: selectedURLs)
+        let section = sections.first { $0.title == sender.menu?.title }
+        let candidates = (section?.entries ?? sections.flatMap { $0.entries })
+            .filter { $0.title == sender.title }
+        if let candidate = candidates.first {
+            if candidates.count > 1 {
+                finderLogger.warning(
+                    "Finder menu title matched multiple presets; using first: title=\(sender.title, privacy: .public), matches=\(candidates.count, privacy: .public)"
+                )
+            }
+            return candidate.id
+        }
+
+        finderLogger.error(
+            "Finder menu title did not resolve to a preset: title=\(sender.title, privacy: .public), section=\(String(describing: sender.menu?.title), privacy: .public)"
+        )
+        return nil
     }
 
     @objc private func openConfigurationSelected(_ sender: NSMenuItem) {
@@ -137,16 +214,29 @@ public class FileConverterFinderSync: FIFinderSync {
             return
         }
 
+        // Opening the queue URL is the reliable handoff for both a cold host
+        // launch and an already-running host: SwiftUI delivers it to
+        // FileConverterApp.handleIncomingURL, which drains the authenticated
+        // receipt instead of relying only on a Darwin notification observer.
+        if let queueURL = URL(string: "\(configuration.urlScheme)://queue"),
+           NSWorkspace.shared.open(queueURL) {
+            finderLogger.notice("Requested host app queue handoff")
+            return
+        }
+
         if let appURL = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: configuration.hostBundleIdentifier
         ) {
             let config = NSWorkspace.OpenConfiguration()
+            // A Finder command should give immediate, visible feedback. The
+            // host drains the authenticated request on launch, and bringing
+            // its queue forward avoids making a successful command appear to
+            // do nothing behind Finder.
             config.activates = true
+            finderLogger.notice("Queue URL handoff unavailable; opening host app directly")
             NSWorkspace.shared.openApplication(at: appURL, configuration: config, completionHandler: nil)
         } else {
-            if let schemeURL = URL(string: "\(configuration.urlScheme)://queue") {
-                NSWorkspace.shared.open(schemeURL)
-            }
+            finderLogger.error("Could not locate the host app for Finder request handoff")
         }
     }
 

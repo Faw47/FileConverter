@@ -1,7 +1,8 @@
 import XCTest
+import AVFoundation
 @testable import FileConverterCore
 import FileConverterExternalBackends
-import FileConverterNativeBackends
+@testable import FileConverterNativeBackends
 
 final class QTAFormatTests: XCTestCase {
     var tempDirectory: URL!
@@ -32,7 +33,7 @@ final class QTAFormatTests: XCTestCase {
             forURLs: [qtaURL],
             from: BuiltInPresets.makeDefaultPresets(),
             resolver: BackendResolver(
-                backends: NativeBackendCatalog.makeBackends() + ExternalBackendCatalog.makeBackends()
+                backends: NativeBackendCatalog.makeBackends() + [AvailableMediaBackendStub()]
             )
         )
 
@@ -63,7 +64,13 @@ final class QTAFormatTests: XCTestCase {
 
         XCTAssertTrue(backend.supports(sourceFormat: qtaFormat, destinationFormat: m4aFormat, preset: m4aPreset))
         XCTAssertTrue(backend.supports(sourceFormat: qtaFormat, destinationFormat: wavFormat, preset: wavPreset))
-        XCTAssertTrue(backend.supports(sourceFormat: qtaFormat, destinationFormat: qtaFormat, preset: qtaPreset))
+        if #available(macOS 26.0, *) {
+            XCTAssertTrue(backend.supports(sourceFormat: qtaFormat, destinationFormat: qtaFormat, preset: qtaPreset))
+            XCTAssertEqual(AVFoundationBackend.outputFileType(forTarget: "qta"), .qta)
+        } else {
+            XCTAssertFalse(backend.supports(sourceFormat: qtaFormat, destinationFormat: qtaFormat, preset: qtaPreset))
+            XCTAssertNil(AVFoundationBackend.outputFileType(forTarget: "qta"))
+        }
     }
 
     func testQTAToMP3BackendResolution() throws {
@@ -74,7 +81,7 @@ final class QTAFormatTests: XCTestCase {
         let job = ConversionJob(sourceURL: qtaURL, preset: mp3Preset)
 
         let resolver = BackendResolver(
-            backends: NativeBackendCatalog.makeBackends() + ExternalBackendCatalog.makeBackends()
+            backends: NativeBackendCatalog.makeBackends() + [AvailableMediaBackendStub()]
         )
         let backend = try resolver.resolveBackend(for: job)
         XCTAssertEqual(backend.backendType, .ffmpeg, "QTA to MP3 should resolve to FFmpeg backend")

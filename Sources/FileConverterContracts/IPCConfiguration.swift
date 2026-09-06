@@ -39,6 +39,9 @@ public struct IPCConfiguration: Equatable, Sendable {
     }
 
     public func sharedContainerURL(fileManager: FileManager = .default) -> URL? {
+        // A configured local path is an explicit product choice for local,
+        // unsigned artifacts. FileManager may still return an App Group URL
+        // for those builds even though the process cannot use it reliably.
         if let localSharedContainerPath, !localSharedContainerPath.isEmpty {
             let components = NSString(string: localSharedContainerPath).pathComponents
             guard localSharedContainerPath.hasPrefix("/"),
@@ -51,7 +54,9 @@ public struct IPCConfiguration: Equatable, Sendable {
             return URL(fileURLWithPath: String(cString: homePath), isDirectory: true)
                 .appendingPathComponent(String(localSharedContainerPath.dropFirst()), isDirectory: true)
         }
-        return fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroupID)
+        return fileManager.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupID
+        )
     }
 
     public static func current(bundle: Bundle = .main) throws -> IPCConfiguration {

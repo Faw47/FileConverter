@@ -135,11 +135,11 @@ public final class FinderMenuCatalog: @unchecked Sendable {
         guard !url.hasDirectoryPath else { return nil }
 
         let ext = url.pathExtension.lowercased()
-        if let formatID = formatsByExtension[ext] {
-            return formatID
-        }
         if let contentType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType,
            let formatID = formatsByUTType[contentType.identifier.lowercased()] {
+            return formatID
+        }
+        if let formatID = formatsByExtension[ext] {
             return formatID
         }
         if let inferredType = UTType(filenameExtension: ext) {

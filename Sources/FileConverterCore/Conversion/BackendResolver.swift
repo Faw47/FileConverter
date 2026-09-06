@@ -36,10 +36,11 @@ public final class BackendResolver: @unchecked Sendable {
     }
 
     public func resolveBackend(for job: ConversionJob) throws -> any ConversionBackend {
-        guard let sourceFormat = FormatRegistry.shared.format(forURL: job.sourceURL) else {
+        let detection = FormatDetector.detect(url: job.sourceURL)
+        guard let sourceFormat = detection.format else {
             throw ConversionError.unsupportedInputFormat(
                 path: job.sourceURL.path,
-                detectedType: job.sourceURL.pathExtension
+                detectedType: detection.detectedUTType?.identifier ?? job.sourceURL.pathExtension
             )
         }
         guard let destinationFormat = FormatRegistry.shared.format(forID: job.preset.destinationFormat) else {
@@ -88,9 +89,9 @@ public final class BackendResolver: @unchecked Sendable {
         )
     }
 
-    public func canResolve(preset: ConversionPreset, sourceFormat: FormatDefinition) -> Bool {
+    public func evaluate(preset: ConversionPreset, sourceFormat: FormatDefinition) -> BackendEvaluation {
         guard let destinationFormat = FormatRegistry.shared.format(forID: preset.destinationFormat) else {
-            return false
+            return .unknownFormat
         }
 
         let candidates: [any ConversionBackend]
@@ -99,16 +100,30 @@ public final class BackendResolver: @unchecked Sendable {
         } else if let backend = backend(for: preset.backend) {
             candidates = [backend]
         } else {
-            return false
+            return .unavailable(preset.backend)
         }
 
-        return candidates.contains { backend in
-            backend.supports(
+        var unavailableBackend: BackendType?
+        for backend in candidates {
+            guard backend.supports(
                 sourceFormat: sourceFormat,
                 destinationFormat: destinationFormat,
                 preset: preset
-            )
+            ) else { continue }
+            if backend.isAvailable {
+                return .usable(backend.backendType)
+            }
+            unavailableBackend = unavailableBackend ?? backend.backendType
         }
+
+        if let unavailableBackend {
+            return .unavailable(unavailableBackend)
+        }
+        return .unsupported
+    }
+
+    public func canResolve(preset: ConversionPreset, sourceFormat: FormatDefinition) -> Bool {
+        return evaluate(preset: preset, sourceFormat: sourceFormat).isUsable
     }
 
     public func supportsAnySource(for preset: ConversionPreset) -> Bool {
@@ -143,6 +158,8 @@ public final class BackendResolver: @unchecked Sendable {
             )
         case .ghostscript:
             return .dependencyMissing(dependencyName: "Ghostscript", installCommand: "brew install ghostscript")
+        case .calibre:
+            return .dependencyMissing(dependencyName: "Calibre", installCommand: "brew install --cask calibre")
         case .auto, .avFoundation, .imageIO, .pdfKit:
             return .backendUnavailable(backend: type.displayName)
         }

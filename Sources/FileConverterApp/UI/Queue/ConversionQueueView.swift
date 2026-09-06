@@ -51,6 +51,11 @@ public struct ConversionQueueView: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
+                    if queue.skippedCount > 0 {
+                        Text("(\(queue.skippedCount) skipped)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 ProgressView(value: queue.overallProgress)
@@ -60,14 +65,14 @@ public struct ConversionQueueView: View {
 
             Spacer()
 
-            if queue.activeCount > 0 || queue.queuedCount > 0 {
+            if queue.cancelableCount > 0 {
                 Button("Cancel All") {
                     queue.cancelAll()
                 }
                 .controlSize(.small)
             }
 
-            if queue.completedCount > 0 || queue.failedCount > 0 || queue.cancelledCount > 0 {
+            if queue.completedCount > 0 || queue.failedCount > 0 || queue.skippedCount > 0 || queue.cancelledCount > 0 {
                 Button("Clear Finished") {
                     queue.clearCompleted()
                 }

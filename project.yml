@@ -36,10 +36,11 @@ targets:
           - Info.plist
           - Resources
           - "*.entitlements"
-    resources:
       - path: Sources/FileConverterApp/Resources
         excludes:
           - "*.svg"
+          - "*.icns"
+        buildPhase: resources
     settings:
       base:
         CODE_SIGN_ENTITLEMENTS: Sources/FileConverterApp/FileConverter.entitlements
@@ -47,15 +48,14 @@ targets:
         FILE_CONVERTER_APP_GROUP: group.io.fileconverter.shared
         FILE_CONVERTER_EDITION: native
         FILE_CONVERTER_KEYCHAIN_ACCESS_GROUP: $(AppIdentifierPrefix)io.fileconverter.ipc
+        FILE_CONVERTER_LOCAL_IPC_PATH: /Library/Application Support/FileConverter/LocalIPC/native/
         FILE_CONVERTER_URL_SCHEME: fileconverter
         INFOPLIST_FILE: Sources/FileConverterApp/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: io.fileconverter.app
         PRODUCT_NAME: File Converter
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) FILE_CONVERTER_EXTENDED
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: Sources/FileConverterApp/FileConverterDebug.entitlements
-          FILE_CONVERTER_LOCAL_IPC_PATH: /Library/Application Support/FileConverter/LocalIPC/native/
     dependencies:
       - package: FileConverterPackage
         product: FileConverterCore
@@ -85,6 +85,7 @@ targets:
         FILE_CONVERTER_APP_GROUP: group.io.fileconverter.shared
         FILE_CONVERTER_EDITION: native
         FILE_CONVERTER_KEYCHAIN_ACCESS_GROUP: $(AppIdentifierPrefix)io.fileconverter.ipc
+        FILE_CONVERTER_LOCAL_IPC_PATH: /Library/Application Support/FileConverter/LocalIPC/native/
         FILE_CONVERTER_URL_SCHEME: fileconverter
         INFOPLIST_FILE: Sources/FileConverterFinderSync/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: io.fileconverter.app.findersync
@@ -93,7 +94,30 @@ targets:
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: Sources/FileConverterFinderSync/FileConverterFinderDebug.entitlements
-          FILE_CONVERTER_LOCAL_IPC_PATH: /Library/Application Support/FileConverter/LocalIPC/native/
+    dependencies:
+      - package: FileConverterPackage
+        product: FileConverterContracts
+      - package: FileConverterPackage
+        product: FileConverterFinderSupport
+  FileConverterTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/FileConverterTests
+    dependencies:
+      - package: FileConverterPackage
+        product: FileConverterCore
+      - package: FileConverterPackage
+        product: FileConverterContracts
+      - package: FileConverterPackage
+        product: FileConverterNativeBackends
+      - package: FileConverterPackage
+        product: FileConverterExternalBackends
+  FileConverterFinderSupportTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/FileConverterFinderSupportTests
     dependencies:
       - package: FileConverterPackage
         product: FileConverterContracts
@@ -105,6 +129,10 @@ schemes:
       targets:
         FileConverter: all
         FileConverterFinderExtension: all
+    test:
+      targets:
+        - FileConverterTests
+        - FileConverterFinderSupportTests
     run:
       config: Debug
     archive:

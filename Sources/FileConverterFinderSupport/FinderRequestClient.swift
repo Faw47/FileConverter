@@ -1,6 +1,5 @@
 import FileConverterContracts
 import Foundation
-import Security
 
 public enum FinderRequestClient {
     public static func isReady() -> Bool {
@@ -52,35 +51,6 @@ public enum FinderRequestClient {
     }
 
     private static func loadKey(configuration: IPCConfiguration) throws -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "io.fileconverter.ipc.authentication",
-            kSecAttrAccount as String: configuration.edition.rawValue,
-            kSecAttrAccessGroup as String: configuration.keychainAccessGroup,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseDataProtectionKeychain as String: true
-        ]
-
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound {
-            return nil
-        }
-        guard status == errSecSuccess, let data = result as? Data else {
-            throw FinderRequestClientError.keychainReadFailed(status)
-        }
-        return data
-    }
-}
-
-enum FinderRequestClientError: Error, LocalizedError {
-    case keychainReadFailed(OSStatus)
-
-    var errorDescription: String? {
-        switch self {
-        case .keychainReadFailed(let status):
-            return "Could not read the Finder request key (\(status))."
-        }
+        try IPCAuthenticationKeyStore.loadKey(configuration: configuration)
     }
 }

@@ -2,6 +2,28 @@ import XCTest
 @testable import FileConverterCore
 
 final class OutputNamingTests: XCTestCase {
+
+    func testMultiOutputSequenceNamesSortNaturallyBeyondThreeDigits() {
+        let audioParts = (1...1_001).map {
+            ConversionOutputSequence.suffix(prefix: "part", index: $0, totalCount: 1_001)
+        }
+        XCTAssertEqual(audioParts, audioParts.sorted())
+        XCTAssertEqual(audioParts[998], "part-0999")
+        XCTAssertEqual(audioParts[999], "part-1000")
+
+        let pdfPages = (1...1_001).map {
+            ConversionOutputSequence.suffix(
+                prefix: "page",
+                index: $0,
+                totalCount: 1_001,
+                minimumWidth: 3
+            )
+        }
+        XCTAssertEqual(pdfPages, pdfPages.sorted())
+        XCTAssertEqual(pdfPages[998], "page-0999")
+        XCTAssertEqual(pdfPages[999], "page-1000")
+    }
+
     var tempDirectory: URL!
 
     override func setUp() {
@@ -22,6 +44,20 @@ final class OutputNamingTests: XCTestCase {
 
         let formatted = OutputNamingEngine.generateFormattedFilename(sourceURL: sourceURL, preset: preset, targetExtension: "mp4")
         XCTAssertEqual(formatted, "My Vacation Video_converted.mp4")
+    }
+
+    func testExtensionTokenUsesTheDestinationExtension() {
+        let sourceURL = tempDirectory.appendingPathComponent("My Vacation Video.mov")
+        var preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP4" }!
+        preset.filenamePattern = "{name}_{ext}"
+
+        let formatted = OutputNamingEngine.generateFormattedFilename(
+            sourceURL: sourceURL,
+            preset: preset,
+            targetExtension: "mp4"
+        )
+
+        XCTAssertEqual(formatted, "My Vacation Video_mp4.mp4")
     }
 
     func testUnicodeAndArabicFilenameHandling() {
@@ -79,6 +115,27 @@ final class OutputNamingTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: tempURL.path))
     }
 
+    func testMultiOutputFinalizationRollsBackPriorReplacementWhenLaterCommitFails() throws {
+        let firstFinalURL = tempDirectory.appendingPathComponent("first.txt")
+        let firstTemporaryURL = tempDirectory.appendingPathComponent(".first.converting.txt")
+        let secondTemporaryURL = tempDirectory.appendingPathComponent(".second.converting.txt")
+        let secondFinalURL = tempDirectory
+            .appendingPathComponent("missing-parent", isDirectory: true)
+            .appendingPathComponent("second.txt")
+        try Data("original".utf8).write(to: firstFinalURL)
+        try Data("replacement".utf8).write(to: firstTemporaryURL)
+        try Data("second output".utf8).write(to: secondTemporaryURL)
+
+        XCTAssertThrowsError(try OutputNamingEngine.finalizeConversionOutputs([
+            PlannedConversionOutput(finalURL: firstFinalURL, temporaryURL: firstTemporaryURL),
+            PlannedConversionOutput(finalURL: secondFinalURL, temporaryURL: secondTemporaryURL)
+        ]))
+
+        XCTAssertEqual(try Data(contentsOf: firstFinalURL), Data("original".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: secondFinalURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: secondTemporaryURL.path))
+    }
+
     func testNonOverwriteFinalizationNeverDestroysRacingOutput() throws {
         let finalURL = tempDirectory.appendingPathComponent("output.mp4")
         let tempURL = OutputNamingEngine.createTemporaryOutputURL(for: finalURL)
@@ -104,6 +161,43 @@ final class OutputNamingTests: XCTestCase {
         )
 
         XCTAssertEqual(result.lastPathComponent, "output (2).mp4")
+    }
+
+    func testAskPolicyStopsAtExistingOutputDuringPreflight() throws {
+        let sourceURL = tempDirectory.appendingPathComponent("source.jpg")
+        let destinationURL = tempDirectory.appendingPathComponent("source.png")
+        try Data("source".utf8).write(to: sourceURL)
+        try Data("existing".utf8).write(to: destinationURL)
+
+        var preset = try XCTUnwrap(
+            BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
+        )
+        preset.overwritePolicy = .ask
+
+        XCTAssertThrowsError(try OutputNamingEngine.resolveFinalDestinationURL(
+            sourceURL: sourceURL,
+            preset: preset
+        )) { error in
+            XCTAssertEqual(error as? ConversionError, .outputCollision(path: destinationURL.path))
+        }
+        XCTAssertEqual(try Data(contentsOf: destinationURL), Data("existing".utf8))
+    }
+
+    func testMultiOutputSuffixIsDeterministic() throws {
+        let sourceURL = tempDirectory.appendingPathComponent("document.pdf")
+        let preset = try XCTUnwrap(
+            BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.pdf-to-png" }
+        )
+
+        XCTAssertEqual(
+            OutputNamingEngine.generateFormattedFilename(
+                sourceURL: sourceURL,
+                preset: preset,
+                targetExtension: "png",
+                suffix: "page-003"
+            ),
+            "document-page-003.png"
+        )
     }
 
     func testCustomFolderNeverFallsBackToDisplayPath() throws {

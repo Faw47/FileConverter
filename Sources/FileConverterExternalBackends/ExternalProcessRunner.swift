@@ -9,6 +9,7 @@ struct ExternalProcessResult: Sendable {
 
 enum ExternalProcessRunnerError: Error {
     case alreadyStarted
+    case timedOut
 }
 
 final class ExternalProcessAttempt: @unchecked Sendable {
@@ -38,6 +39,7 @@ final class ExternalProcessAttempt: @unchecked Sendable {
     private let stdoutCaptureLimit: Int
     private let stderrCaptureLimit: Int
     private let terminationGracePeriod: TimeInterval
+    private let timeout: TimeInterval?
     private let stdoutLineHandler: (@Sendable (String) -> Void)?
 
     private let stateLock = NSLock()
@@ -46,6 +48,7 @@ final class ExternalProcessAttempt: @unchecked Sendable {
     private var cancellationRequested = false
     private var terminationSent = false
     private var forceTerminationSent = false
+    private var timedOut = false
 
     init(
         executableURL: URL,
@@ -55,6 +58,7 @@ final class ExternalProcessAttempt: @unchecked Sendable {
         stdoutCaptureLimit: Int = 0,
         stderrCaptureLimit: Int = ExternalProcessAttempt.defaultStderrCaptureLimit,
         terminationGracePeriod: TimeInterval = 1.5,
+        timeout: TimeInterval? = nil,
         stdoutLineHandler: (@Sendable (String) -> Void)? = nil
     ) {
         let process = Process()
@@ -69,6 +73,7 @@ final class ExternalProcessAttempt: @unchecked Sendable {
         self.stdoutCaptureLimit = max(0, stdoutCaptureLimit)
         self.stderrCaptureLimit = max(0, stderrCaptureLimit)
         self.terminationGracePeriod = max(0, terminationGracePeriod)
+        self.timeout = timeout.map { max(0, $0) }
         self.stdoutLineHandler = stdoutLineHandler
     }
 
@@ -136,6 +141,16 @@ final class ExternalProcessAttempt: @unchecked Sendable {
 
         markRunning()
         terminateIfRequested()
+        if let timeout, timeout > 0 {
+            Self.executionQueue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                guard let self, self.isRunning else { return }
+                self.stateLock.lock()
+                self.timedOut = true
+                self.cancellationRequested = true
+                self.stateLock.unlock()
+                self.terminateIfRequested()
+            }
+        }
         process.waitUntilExit()
 
         let terminationStatus = process.terminationStatus
@@ -143,6 +158,7 @@ final class ExternalProcessAttempt: @unchecked Sendable {
         drainGroup.wait()
 
         if wasCancellationRequested {
+            if wasTimedOut { throw ExternalProcessRunnerError.timedOut }
             throw CancellationError()
         }
 
@@ -164,6 +180,12 @@ final class ExternalProcessAttempt: @unchecked Sendable {
         stateLock.lock()
         defer { stateLock.unlock() }
         return cancellationRequested
+    }
+
+    private var wasTimedOut: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return timedOut
     }
 
     private func beginLaunching() throws {

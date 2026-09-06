@@ -45,7 +45,7 @@ final class ArchitectureBoundaryTests: XCTestCase {
         let nativeFinder = try section(
             in: project,
             from: "  FileConverterFinderExtension:\n",
-            to: "schemes:\n"
+            to: "  FileConverterTests:\n"
         )
         assertFinderDependencies(nativeFinder)
         XCTAssertFalse(project.contains("ENABLE_USER_SCRIPT_SANDBOXING: YES"), "Non-App Store build must have ENABLE_USER_SCRIPT_SANDBOXING: NO")
@@ -67,6 +67,28 @@ final class ArchitectureBoundaryTests: XCTestCase {
                 )
             }
         }
+    }
+
+    func testFinderExtensionPrincipalClassUsesSwiftModuleQualifiedName() throws {
+        let plist = try read("Sources/FileConverterFinderSync/Info.plist")
+        let source = try read("Sources/FileConverterFinderSync/FileConverterFinderSync.swift")
+
+        XCTAssertTrue(
+            plist.contains("$(PRODUCT_MODULE_NAME).FileConverterFinderSync"),
+            "Finder must be able to resolve the extension's module-qualified Swift class."
+        )
+        XCTAssertTrue(
+            plist.contains("<key>NSExtensionAttributes</key>"),
+            "Finder Sync extensions need an NSExtensionAttributes dictionary in their metadata."
+        )
+        XCTAssertTrue(
+            plist.contains("<key>LSUIElement</key>"),
+            "Finder Sync extensions should not create a separate Dock application."
+        )
+        XCTAssertFalse(
+            source.contains("@objc(FileConverterFinderSync)"),
+            "A custom Objective-C class name breaks the module-qualified principal class declared in Info.plist."
+        )
     }
 
     func testCoreContainsNoConcreteExternalBackendImplementation() throws {

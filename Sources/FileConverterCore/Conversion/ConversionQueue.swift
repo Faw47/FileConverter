@@ -11,14 +11,41 @@ public final class ConversionQueue: ObservableObject {
     @Published public private(set) var queuedCount: Int = 0
     @Published public private(set) var completedCount: Int = 0
     @Published public private(set) var failedCount: Int = 0
+    @Published public private(set) var skippedCount: Int = 0
     @Published public private(set) var cancelledCount: Int = 0
+    @Published public private(set) var cancelableCount: Int = 0
     @Published public private(set) var overallProgress: Double = 0.0
+    @Published public private(set) var pendingCollisions: [CollisionConflict] = []
+
+    public struct CollisionConflict: Identifiable, Sendable, Equatable {
+        public let id: UUID
+        public let jobID: UUID
+        public let destinationURL: URL
+        public let sourceFilename: String
+
+        public init(jobID: UUID, destinationURL: URL, sourceFilename: String) {
+            self.id = jobID
+            self.jobID = jobID
+            self.destinationURL = destinationURL
+            self.sourceFilename = sourceFilename
+        }
+    }
+
+    public enum CollisionDecision: Sendable {
+        case replace
+        case keepBoth
+        case skip
+    }
 
     private var maxConcurrency: Int
     private var activeJobIDs = Set<UUID>()
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
     private var reservedOutputURLs = Set<URL>()
     private var isProcessing = false
+    private var activeBatchID: UUID?
+    private var pendingProgressUpdates: [UUID: ConversionProgress] = [:]
+    private var progressCoalescerTask: Task<Void, Never>?
+    private var notifiedBatchIDs = Set<UUID>()
 
     public init() {
         let stored = UserDefaults.standard.integer(forKey: "maxConcurrentJobs")
@@ -36,7 +63,14 @@ public final class ConversionQueue: ObservableObject {
     }
 
     public func addJobs(_ newJobs: [ConversionJob]) {
-        jobs.append(contentsOf: newJobs)
+        guard !newJobs.isEmpty else { return }
+        let batchID = UUID()
+        activeBatchID = batchID
+        var batchJobs = newJobs
+        for index in batchJobs.indices {
+            batchJobs[index].batchID = batchID
+        }
+        jobs.append(contentsOf: batchJobs)
         updateCountsAndProgress()
         processNextJobs()
     }
@@ -47,11 +81,12 @@ public final class ConversionQueue: ObservableObject {
         var leaseToRelease: SecurityScopedLease?
 
         if let index = jobs.firstIndex(where: { $0.id == id }) {
-            guard !jobs[index].state.isTerminal, jobs[index].state != .finalizing else {
+            guard jobs[index].state.isCancellable else {
                 return
             }
             jobs[index].state = .cancelled
             jobs[index].finishedAt = Date()
+            pendingCollisions.removeAll { $0.jobID == id }
             job = jobs[index]
             task = runningTasks[id]
             if task == nil {
@@ -80,7 +115,7 @@ public final class ConversionQueue: ObservableObject {
         var leasesToRelease: [SecurityScopedLease] = []
 
         for i in 0..<jobs.count {
-            if !jobs[i].state.isTerminal, jobs[i].state != .finalizing {
+            if jobs[i].state.isCancellable {
                 jobs[i].state = .cancelled
                 jobs[i].finishedAt = Date()
                 if activeJobIDs.contains(jobs[i].id) {
@@ -91,7 +126,8 @@ public final class ConversionQueue: ObservableObject {
                 }
             }
         }
-        tasks = Array(runningTasks.values)
+        let activeIDs = Set(activeJobs.map(\.id))
+        tasks = activeIDs.compactMap { runningTasks[$0] }
 
         leasesToRelease.forEach { $0.release() }
         for task in tasks {
@@ -113,6 +149,10 @@ public final class ConversionQueue: ObservableObject {
             return job.sourceAccessLease
         }
         jobs.removeAll { $0.state.isTerminal && !activeJobIDs.contains($0.id) }
+        notifiedBatchIDs.formIntersection(Set(jobs.map(\.batchID)))
+        pendingCollisions.removeAll { conflict in
+            !jobs.contains(where: { $0.id == conflict.jobID })
+        }
 
         leasesToRelease.forEach { $0.release() }
         updateCountsAndProgress()
@@ -122,12 +162,57 @@ public final class ConversionQueue: ObservableObject {
         if let index = jobs.firstIndex(where: { $0.id == id }),
            jobs[index].state.isTerminal,
            !activeJobIDs.contains(id) {
+            notifiedBatchIDs.remove(jobs[index].batchID)
             jobs[index].state = .queued
             jobs[index].progress = ConversionProgress()
             jobs[index].startedAt = nil
             jobs[index].finishedAt = nil
+            jobs[index].destinationURL = nil
+            jobs[index].temporaryOutputURL = nil
+            jobs[index].resolvedBackend = nil
+            jobs[index].plannedOutputs = []
+            jobs[index].outputURLs = []
+            jobs[index].warnings = []
         }
 
+        updateCountsAndProgress()
+        processNextJobs()
+    }
+
+    public func resolveCollisions(
+        _ decision: CollisionDecision,
+        applyToAll: Bool = false,
+        jobIDs: Set<UUID>? = nil
+    ) {
+        let matchingTargets = pendingCollisions.filter { conflict in
+            (jobIDs?.contains(conflict.jobID) ?? true)
+        }
+        let targets = applyToAll ? matchingTargets : Array(matchingTargets.prefix(1))
+        var skippedJobIDs: [UUID] = []
+        for conflict in targets {
+            guard let index = jobs.firstIndex(where: { $0.id == conflict.jobID }) else { continue }
+            switch decision {
+            case .replace:
+                jobs[index].preset.overwritePolicy = .overwrite
+                jobs[index].state = .queued
+                jobs[index].destinationURL = nil
+                jobs[index].temporaryOutputURL = nil
+                jobs[index].plannedOutputs = []
+            case .keepBoth:
+                jobs[index].preset.overwritePolicy = .appendNumber
+                jobs[index].state = .queued
+                jobs[index].destinationURL = nil
+                jobs[index].temporaryOutputURL = nil
+                jobs[index].plannedOutputs = []
+            case .skip:
+                skippedJobIDs.append(jobs[index].id)
+            }
+        }
+        let targetIDs = Set(targets.map(\.jobID))
+        pendingCollisions.removeAll { targetIDs.contains($0.jobID) }
+        for jobID in skippedJobIDs {
+            finishJob(id: jobID, state: .skipped("Output already exists"))
+        }
         updateCountsAndProgress()
         processNextJobs()
     }
@@ -192,32 +277,41 @@ public final class ConversionQueue: ObservableObject {
                 destinationAccessLease = try SecurityScopedLease(bookmarkData: bookmarkData)
             }
 
-            // 3. Reserve a unique output path across concurrently running jobs.
-            let (finalDestURL, tempOutputURL) = try await reserveOutput(
+            // 3. Determine and reserve every output path before conversion.
+            let plannedOutputs = try await reserveOutputs(
                 for: job,
+                backend: backend,
                 customFolderURL: destinationAccessLease?.url
             )
+
+            guard let firstOutput = plannedOutputs.first else {
+                throw ConversionError.destinationUnavailable(path: "")
+            }
+            let finalDestURL = firstOutput.finalURL
+            let tempOutputURL = firstOutput.temporaryURL
 
             // Check destination disk space
             let targetDir = finalDestURL.deletingLastPathComponent()
             let availableSpace = FileAccessManager.shared.checkAvailableDiskSpace(at: targetDir)
-            let srcSize = FileAccessManager.shared.fileSize(at: job.sourceURL)
-            if srcSize > 0 && availableSpace < srcSize {
-                throw ConversionError.insufficientDiskSpace(requiredBytes: srcSize, availableBytes: availableSpace)
+            let requiredSpace = estimateRequiredDiskSpace(for: job, outputCount: plannedOutputs.count)
+            if requiredSpace > 0 && availableSpace < requiredSpace {
+                throw ConversionError.insufficientDiskSpace(requiredBytes: requiredSpace, availableBytes: availableSpace)
             }
 
             job.destinationURL = finalDestURL
             job.temporaryOutputURL = tempOutputURL
+            job.plannedOutputs = plannedOutputs
+            job.outputURLs = plannedOutputs.map(\.finalURL)
 
             await updateJob(job, state: .converting)
             try Task.checkCancellation()
 
             // 4. Run conversion with progress reporting.
-            try await backend.convert(job: job) { [weak self] progress in
-                Task { @MainActor in
-                    self?.updateJobProgress(id: jobID, progress: progress)
-                }
+            let result = try await backend.convert(job: job, outputs: plannedOutputs) { [weak self] progress in
+                Task { @MainActor in self?.enqueueProgressUpdate(id: jobID, progress: progress) }
             }
+            var warnings = result.warnings
+            job.warnings = warnings
             try Task.checkCancellation()
 
             // 5. Finalize output without replacing files for non-overwrite policies.
@@ -228,27 +322,40 @@ public final class ConversionQueue: ObservableObject {
                 throw CancellationError()
             }
             if job.preset.overwritePolicy == .replaceIfNewer {
-                try revalidateReplaceIfNewer(sourceURL: job.sourceURL, destinationURL: finalDestURL)
+                for output in plannedOutputs {
+                    try revalidateReplaceIfNewer(sourceURL: job.sourceURL, destinationURL: output.finalURL)
+                }
             }
             let allowsReplacement = job.preset.overwritePolicy == .overwrite
                 || job.preset.overwritePolicy == .replaceIfNewer
-            try OutputNamingEngine.finalizeConversionOutput(
-                temporaryURL: tempOutputURL,
-                finalDestinationURL: finalDestURL,
+            try OutputNamingEngine.finalizeConversionOutputs(
+                plannedOutputs,
                 overwrite: allowsReplacement
             )
 
-            // 6. Preserve timestamps if requested
+            // 6. Preserve timestamps if requested. Metadata failures should not
+            // discard an otherwise valid output; make them visible as warnings.
             if job.preset.preserveCreationDate {
-                FileAccessManager.shared.preserveTimestamps(from: job.sourceURL, to: finalDestURL)
+                for output in plannedOutputs {
+                    do {
+                        try FileAccessManager.shared.preserveTimestamps(from: job.sourceURL, to: output.finalURL)
+                    } catch {
+                        warnings.append("Could not preserve timestamps for \(output.finalURL.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
             }
+            job.warnings = warnings
+            await updateJob(job, state: .finalizing)
 
             // 7. Mark completed
-            await finishJob(id: jobID, state: .completed)
+            await finishJob(id: jobID, state: warnings.isEmpty ? .completed : .completedWithWarnings(warnings))
 
         } catch {
             // Clean up temporary output file
-            if let tempURL = job.temporaryOutputURL {
+            for output in job.plannedOutputs {
+                OutputNamingEngine.cleanupTemporaryFile(at: output.temporaryURL)
+            }
+            if job.plannedOutputs.isEmpty, let tempURL = job.temporaryOutputURL {
                 OutputNamingEngine.cleanupTemporaryFile(at: tempURL)
             }
 
@@ -258,6 +365,10 @@ public final class ConversionQueue: ObservableObject {
                 AppLogger.conversion.error("Job \(jobID) failed: \(convErr.localizedDescription)")
                 if convErr == .cancelled {
                     await finishJob(id: jobID, state: .cancelled)
+                } else if case .outputCollision(let path) = convErr, job.preset.overwritePolicy == .ask {
+                    await markAwaitingCollision(jobID: jobID, destinationPath: path)
+                } else if case .outputCollision = convErr, job.preset.overwritePolicy == .skip {
+                    await finishJob(id: jobID, state: .skipped("Output already exists"))
                 } else {
                     await finishJob(id: jobID, state: .failed(convErr))
                 }
@@ -269,29 +380,42 @@ public final class ConversionQueue: ObservableObject {
         }
     }
 
-    private func reserveOutput(
+    private func reserveOutputs(
         for job: ConversionJob,
+        backend: any ConversionBackend,
         customFolderURL: URL?
-    ) throws -> (URL, URL) {
+    ) async throws -> [PlannedConversionOutput] {
         guard let index = jobs.firstIndex(where: { $0.id == job.id }),
               !jobs[index].state.isTerminal else {
             throw CancellationError()
         }
 
-        let finalDestinationURL = try OutputNamingEngine.resolveFinalDestinationURL(
-            sourceURL: job.sourceURL,
-            preset: job.preset,
-            reservedURLs: reservedOutputURLs,
-            customFolderURL: customFolderURL
-        )
-        let temporaryURL = OutputNamingEngine.createTemporaryOutputURL(for: finalDestinationURL)
-        reservedOutputURLs.insert(finalDestinationURL.standardizedFileURL)
+        let requirements = try await backend.outputRequirements(for: job)
+        var outputs: [PlannedConversionOutput] = []
+        var localReservations = reservedOutputURLs
+        for requirement in requirements {
+            let finalDestinationURL = try OutputNamingEngine.resolveFinalDestinationURL(
+                sourceURL: job.sourceURL,
+                preset: job.preset,
+                targetExtension: requirement.extensionName,
+                suffix: requirement.suffix,
+                reservedURLs: localReservations,
+                customFolderURL: customFolderURL
+            )
+            let temporaryURL = OutputNamingEngine.createTemporaryOutputURL(for: finalDestinationURL)
+            localReservations.insert(finalDestinationURL.standardizedFileURL)
+            outputs.append(PlannedConversionOutput(finalURL: finalDestinationURL, temporaryURL: temporaryURL))
+        }
+        reservedOutputURLs = localReservations
+        guard let first = outputs.first else { throw ConversionError.destinationUnavailable(path: "") }
         jobs[index].sourceURL = job.sourceURL
         jobs[index].sourceAccessLease = job.sourceAccessLease
-        jobs[index].destinationURL = finalDestinationURL
-        jobs[index].temporaryOutputURL = temporaryURL
+        jobs[index].destinationURL = first.finalURL
+        jobs[index].temporaryOutputURL = first.temporaryURL
+        jobs[index].plannedOutputs = outputs
+        jobs[index].outputURLs = outputs.map(\.finalURL)
         jobs[index].resolvedBackend = job.resolvedBackend
-        return (finalDestinationURL, temporaryURL)
+        return outputs
     }
 
     private func updateJob(_ job: ConversionJob, state: JobState) {
@@ -303,6 +427,9 @@ public final class ConversionQueue: ObservableObject {
             jobs[index].destinationURL = job.destinationURL
             jobs[index].temporaryOutputURL = job.temporaryOutputURL
             jobs[index].resolvedBackend = job.resolvedBackend
+            jobs[index].plannedOutputs = job.plannedOutputs
+            jobs[index].outputURLs = job.outputURLs
+            jobs[index].warnings = job.warnings
         }
         updateCountsAndProgress()
     }
@@ -314,6 +441,21 @@ public final class ConversionQueue: ObservableObject {
             }
         }
         updateCountsAndProgress()
+    }
+
+    private func enqueueProgressUpdate(id: UUID, progress: ConversionProgress) {
+        pendingProgressUpdates[id] = progress
+        guard progressCoalescerTask == nil else { return }
+        progressCoalescerTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard let self else { return }
+            let updates = self.pendingProgressUpdates
+            self.pendingProgressUpdates.removeAll()
+            self.progressCoalescerTask = nil
+            for (id, progress) in updates {
+                self.updateJobProgress(id: id, progress: progress)
+            }
+        }
     }
 
     private func canCommitOutput(for id: UUID) -> Bool {
@@ -346,61 +488,84 @@ public final class ConversionQueue: ObservableObject {
                 jobs[index].state = state
             }
             jobs[index].finishedAt = Date()
-            if jobs[index].state == .completed {
+            if jobs[index].state.isTerminal {
                 jobs[index].progress.fractionCompleted = 1.0
             }
             leaseToRelease = jobs[index].sourceAccessLease
             jobs[index].sourceAccessLease = nil
+            for output in jobs[index].plannedOutputs {
+                reservedOutputURLs.remove(output.finalURL.standardizedFileURL)
+            }
             if let destinationURL = jobs[index].destinationURL {
                 reservedOutputURLs.remove(destinationURL.standardizedFileURL)
             }
         }
         runningTasks.removeValue(forKey: id)
         activeJobIDs.remove(id)
-        let isAllDone = jobs.allSatisfy { $0.state.isTerminal } && activeJobIDs.isEmpty
-        let totalCount = jobs.count
-        let failed = jobs.filter { if case .failed = $0.state { return true }; return false }.count
-        let completed = jobs.filter { $0.state == .completed }.count
+        let batchID = jobs.first(where: { $0.id == id })?.batchID ?? activeBatchID
+        let batchJobs = jobs.filter { $0.batchID == batchID }
+        let isAllDone = !batchJobs.isEmpty && batchJobs.allSatisfy { $0.state.isTerminal }
+        let totalCount = batchJobs.count
+        let failed = batchJobs.filter { if case .failed = $0.state { return true }; return false }.count
+        let completed = batchJobs.filter { $0.state == .completed || ifCaseCompletedWithWarnings($0.state) }.count
+        let skippedOrCancelled = totalCount - completed - failed
+        let shouldNotify: Bool
+        if isAllDone, let batchID {
+            shouldNotify = notifiedBatchIDs.insert(batchID).inserted
+        } else {
+            shouldNotify = false
+        }
 
         leaseToRelease?.release()
         updateCountsAndProgress()
-        if isAllDone && totalCount > 0 {
-            let completedURLs = jobs.compactMap { job -> URL? in
-                guard job.state == .completed, let url = job.destinationURL else { return nil }
-                return url
+        if shouldNotify && totalCount > 0 {
+            let completedURLs = batchJobs.flatMap { job -> [URL] in
+                guard job.state == .completed || ifCaseCompletedWithWarnings(job.state) else { return [] }
+                return job.outputURLs.isEmpty ? (job.destinationURL.map { [$0] } ?? []) : job.outputURLs
             }
-            sendBatchCompletionNotification(total: totalCount, completed: completed, failed: failed, destinationURLs: completedURLs)
+            sendBatchCompletionNotification(
+                total: totalCount,
+                completed: completed,
+                failed: failed,
+                skippedOrCancelled: skippedOrCancelled,
+                destinationURLs: completedURLs
+            )
         }
 
         processNextJobs()
     }
 
     private func updateCountsAndProgress() {
-        let allJobs = jobs
+        let currentJobs = jobs
 
         var active = 0
         var queued = 0
         var completed = 0
         var failed = 0
+        var skipped = 0
         var cancelled = 0
-        var totalProgressSum: Double = 0.0
-
-        for j in allJobs {
+        var cancelable = 0
+        for j in currentJobs {
+            if j.state.isCancellable {
+                cancelable += 1
+            }
             switch j.state {
             case .queued:
                 queued += 1
             case .preparing, .converting, .finalizing:
                 active += 1
-                totalProgressSum += j.progress.fractionCompleted
+            case .awaitingCollision:
+                queued += 1
             case .completed:
                 completed += 1
-                totalProgressSum += 1.0
+            case .completedWithWarnings:
+                completed += 1
             case .failed:
                 failed += 1
-                totalProgressSum += j.progress.fractionCompleted
+            case .skipped:
+                skipped += 1
             case .cancelled:
                 cancelled += 1
-                totalProgressSum += j.progress.fractionCompleted
             }
         }
 
@@ -408,8 +573,51 @@ public final class ConversionQueue: ObservableObject {
         self.queuedCount = queued
         self.completedCount = completed
         self.failedCount = failed
+        self.skippedCount = skipped
         self.cancelledCount = cancelled
-        self.overallProgress = allJobs.isEmpty ? 0.0 : (totalProgressSum / Double(allJobs.count))
+        self.cancelableCount = cancelable
+        self.overallProgress = currentJobs.isEmpty ? 0.0 : (currentJobs.reduce(0) { $0 + ($1.state.isTerminal ? 1 : $1.progress.fractionCompleted) } / Double(currentJobs.count))
+    }
+
+    private func markAwaitingCollision(jobID: UUID, destinationPath: String) {
+        guard let index = jobs.firstIndex(where: { $0.id == jobID }) else { return }
+        let leaseToRelease = jobs[index].sourceAccessLease
+        jobs[index].sourceAccessLease = nil
+        for output in jobs[index].plannedOutputs {
+            reservedOutputURLs.remove(output.finalURL.standardizedFileURL)
+        }
+        jobs[index].state = .awaitingCollision
+        jobs[index].finishedAt = nil
+        let conflict = CollisionConflict(
+            jobID: jobID,
+            destinationURL: URL(fileURLWithPath: destinationPath),
+            sourceFilename: jobs[index].filename
+        )
+        if !pendingCollisions.contains(where: { $0.jobID == jobID }) {
+            pendingCollisions.append(conflict)
+        }
+        runningTasks.removeValue(forKey: jobID)
+        activeJobIDs.remove(jobID)
+        leaseToRelease?.release()
+        updateCountsAndProgress()
+        processNextJobs()
+    }
+
+    nonisolated private func estimateRequiredDiskSpace(for job: ConversionJob, outputCount: Int) -> Int64 {
+        let sourceSize = FileAccessManager.shared.fileSize(at: job.sourceURL)
+        // A conversion backend may not know duration until it probes the file;
+        // reserve a conservative multiple up front and refine this in future
+        // backend-specific preflight implementations.
+        let multiplier = Double(max(1, outputCount)) * 1.2
+        if sourceSize > 0, job.preset.quality == .lossless {
+            return Int64(Double(sourceSize) * 2 * multiplier)
+        }
+        return max(sourceSize * 4, 512 * 1024 * 1024)
+    }
+
+    private func ifCaseCompletedWithWarnings(_ state: JobState) -> Bool {
+        if case .completedWithWarnings = state { return true }
+        return false
     }
 
     private func calculateEffectiveConcurrency() -> Int {
@@ -433,11 +641,13 @@ public final class ConversionQueue: ObservableObject {
         }
     }
 
-    public func requestNotificationAuthorizationIfNeeded() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
-    }
-
-    private func sendBatchCompletionNotification(total: Int, completed: Int, failed: Int, destinationURLs: [URL] = []) {
+    private func sendBatchCompletionNotification(
+        total: Int,
+        completed: Int,
+        failed: Int,
+        skippedOrCancelled: Int,
+        destinationURLs: [URL] = []
+    ) {
         if !destinationURLs.isEmpty {
             NotificationCenter.default.post(
                 name: .fileConverterBatchCompleted,
@@ -446,25 +656,30 @@ public final class ConversionQueue: ObservableObject {
             )
         }
 
-        let enabled = UserDefaults.standard.object(forKey: "enableNotifications") as? Bool ?? true
+        let enabled = UserDefaults.standard.object(forKey: "enableNotifications") as? Bool ?? false
         guard enabled else { return }
         guard Bundle.main.bundleURL.pathExtension.lowercased() == "app" else { return }
 
         let center = UNUserNotificationCenter.current()
         let content = UNMutableNotificationContent()
-        content.title = "Conversion Complete"
+        content.title = "Conversion Finished"
 
         if total == 1 {
             if completed == 1 {
                 content.body = "File converted successfully."
-            } else {
+            } else if failed == 1 {
                 content.body = "File conversion failed."
+            } else {
+                content.body = "File conversion was skipped or cancelled."
             }
         } else {
-            if failed == 0 {
+            if failed == 0 && skippedOrCancelled == 0 {
                 content.body = "\(completed) files converted successfully."
             } else {
-                content.body = "\(completed) converted, \(failed) failed."
+                var outcomes = ["\(completed) converted"]
+                if failed > 0 { outcomes.append("\(failed) failed") }
+                if skippedOrCancelled > 0 { outcomes.append("\(skippedOrCancelled) skipped or cancelled") }
+                content.body = outcomes.joined(separator: ", ") + "."
             }
         }
         content.sound = .default

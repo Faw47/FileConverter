@@ -42,10 +42,17 @@ public final class FileAccessManager: @unchecked Sendable {
     public func checkAvailableDiskSpace(at directoryURL: URL) -> Int64 {
         do {
             let values = try directoryURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
-            if let important = values.volumeAvailableCapacityForImportantUsage {
+            // Some macOS volumes report zero for the "important usage"
+            // estimate even when the regular available-capacity value is
+            // valid. Treat non-positive estimates as unavailable and fall
+            // through to the next source instead of rejecting conversions
+            // with a false zero-byte capacity.
+            if let important = values.volumeAvailableCapacityForImportantUsage,
+               important > 0 {
                 return important
             }
-            if let available = values.volumeAvailableCapacity {
+            if let available = values.volumeAvailableCapacity,
+               available > 0 {
                 return Int64(available)
             }
         } catch {
@@ -54,10 +61,8 @@ public final class FileAccessManager: @unchecked Sendable {
         return Int64.max
     }
 
-    public func preserveTimestamps(from sourceURL: URL, to destinationURL: URL) {
-        guard let sourceAttributes = try? FileManager.default.attributesOfItem(atPath: sourceURL.path) else {
-            return
-        }
+    public func preserveTimestamps(from sourceURL: URL, to destinationURL: URL) throws {
+        let sourceAttributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
 
         var destAttributes: [FileAttributeKey: Any] = [:]
         if let modDate = sourceAttributes[.modificationDate] {
@@ -68,7 +73,7 @@ public final class FileAccessManager: @unchecked Sendable {
         }
 
         if !destAttributes.isEmpty {
-            try? FileManager.default.setAttributes(destAttributes, ofItemAtPath: destinationURL.path)
+            try FileManager.default.setAttributes(destAttributes, ofItemAtPath: destinationURL.path)
         }
     }
 

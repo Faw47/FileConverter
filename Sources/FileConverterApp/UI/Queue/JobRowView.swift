@@ -88,7 +88,7 @@ public struct JobRowView: View {
             // Action Buttons
             HStack(spacing: 4) {
                 switch job.state {
-                case .queued, .preparing, .converting, .finalizing:
+                case .queued, .preparing, .awaitingCollision, .converting:
                     Button(action: {
                         ConversionQueue.shared.cancelJob(id: job.id)
                     }) {
@@ -97,17 +97,26 @@ public struct JobRowView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Cancel conversion")
+                    .accessibilityLabel("Cancel conversion for \(job.filename)")
 
-                case .completed:
-                    if let dest = job.destinationURL {
+                case .finalizing:
+                    EmptyView()
+
+                case .completed, .completedWithWarnings:
+                    let destinations = (job.outputURLs.isEmpty
+                        ? (job.destinationURL.map { [$0] } ?? [])
+                        : job.outputURLs)
+                        .filter { FileManager.default.fileExists(atPath: $0.path) }
+                    if !destinations.isEmpty {
                         Button(action: {
-                            NSWorkspace.shared.activateFileViewerSelecting([dest])
+                            NSWorkspace.shared.activateFileViewerSelecting(destinations)
                         }) {
                             Image(systemName: "magnifyingglass.circle.fill")
                                 .foregroundStyle(Color.accentColor)
                         }
                         .buttonStyle(.plain)
                         .help("Reveal in Finder")
+                        .accessibilityLabel("Reveal converted file in Finder")
                     }
 
                 case .failed(let err):
@@ -125,11 +134,20 @@ public struct JobRowView: View {
                                 .font(.headline)
                             Text(err.localizedDescription)
                                 .font(.subheadline)
+                                .fixedSize(horizontal: false, vertical: true)
                             if let rec = err.recoverySuggestion {
                                 Text("Suggestion: \(rec)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            Divider()
+                            ScrollView {
+                                Text(err.technicalDetails)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(maxHeight: 180)
                             Button("Copy Technical Details") {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(err.technicalDetails, forType: .string)
@@ -137,7 +155,7 @@ public struct JobRowView: View {
                             .controlSize(.small)
                         }
                         .padding()
-                        .frame(width: 320)
+                        .frame(minWidth: 360, idealWidth: 480, maxWidth: 560)
                     }
 
                     Button(action: {
@@ -148,8 +166,9 @@ public struct JobRowView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Retry conversion")
+                    .accessibilityLabel("Retry conversion for \(job.filename)")
 
-                case .cancelled:
+                case .cancelled, .skipped:
                     Button(action: {
                         ConversionQueue.shared.retryJob(id: job.id)
                     }) {
@@ -158,6 +177,7 @@ public struct JobRowView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Restart conversion")
+                    .accessibilityLabel("Restart conversion for \(job.filename)")
                 }
             }
         }
@@ -172,17 +192,26 @@ public struct JobRowView: View {
         )
         .onHover { isHovered = $0 }
         .contextMenu {
-            if let dest = job.destinationURL, FileManager.default.fileExists(atPath: dest.path) {
+            let candidateDestinations = job.outputURLs.isEmpty
+                ? (job.destinationURL.map { [$0] } ?? [])
+                : job.outputURLs
+            let destinations: [URL] = {
+                guard job.state == .completed || isCompletedWithWarnings else { return [] }
+                return candidateDestinations.filter { FileManager.default.fileExists(atPath: $0.path) }
+            }()
+            if !destinations.isEmpty {
                 Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([dest])
+                    NSWorkspace.shared.activateFileViewerSelecting(destinations)
                 }
-                Button("Open Converted File") {
-                    NSWorkspace.shared.open(dest)
+                if let firstDestination = destinations.first {
+                    Button("Open Converted File") {
+                        NSWorkspace.shared.open(firstDestination)
+                    }
                 }
                 Divider()
                 Button("Copy Output Path") {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(dest.path, forType: .string)
+                    NSPasteboard.general.setString(destinations.map(\.path).joined(separator: "\n"), forType: .string)
                 }
             }
 
@@ -193,7 +222,7 @@ public struct JobRowView: View {
 
             Divider()
 
-            if job.state.isActive || job.state == .queued {
+            if job.state.isCancellable {
                 Button("Cancel Conversion") {
                     ConversionQueue.shared.cancelJob(id: job.id)
                 }
@@ -205,8 +234,9 @@ public struct JobRowView: View {
                 }
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(job.filename), converting from \(job.sourceFormat) to \(job.targetFormat), status: \(statusDescription)")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(job.filename), \(job.sourceFormat) to \(job.targetFormat)")
+        .accessibilityValue(statusDescription)
     }
 
     private var iconColor: Color {
@@ -223,6 +253,7 @@ public struct JobRowView: View {
         switch job.state {
         case .queued: return "Queued in line"
         case .preparing: return "Preparing..."
+        case .awaitingCollision: return "Waiting for overwrite decision"
         case .converting:
             if let fps = job.progress.currentFPS, fps > 0 {
                 return String(format: "Encoding (%.1f fps)", fps)
@@ -230,7 +261,9 @@ public struct JobRowView: View {
             return "Converting..."
         case .finalizing: return "Writing to destination..."
         case .completed: return "Converted successfully"
+        case .completedWithWarnings(let warnings): return "Converted with \(warnings.count) warning\(warnings.count == 1 ? "" : "s")"
         case .failed(let error): return error.localizedDescription
+        case .skipped(let reason): return "Skipped: \(reason)"
         case .cancelled: return "Cancelled"
         }
     }
@@ -238,10 +271,16 @@ public struct JobRowView: View {
     private var statusColor: Color {
         switch job.state {
         case .queued: return .secondary
-        case .preparing, .converting, .finalizing: return .primary
+        case .preparing, .converting, .finalizing, .awaitingCollision: return .primary
         case .completed: return .green
+        case .completedWithWarnings: return .orange
         case .failed: return .red
-        case .cancelled: return .secondary
+        case .cancelled, .skipped: return .secondary
         }
+    }
+
+    private var isCompletedWithWarnings: Bool {
+        if case .completedWithWarnings = job.state { return true }
+        return false
     }
 }

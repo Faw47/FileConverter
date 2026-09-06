@@ -26,25 +26,54 @@ public struct ToolInfo: Sendable, Identifiable, Codable {
 
 public final class ExternalToolDiscovery: @unchecked Sendable {
     public static let shared = ExternalToolDiscovery()
+    public static let didRefreshNotification = Notification.Name("io.fileconverter.externalToolsDidRefresh")
 
     private var cachedTools: [String: ToolInfo] = [:]
     private var probedFFmpegEncoders: Set<String>?
+    private var lastRefresh: Date?
+    private var isRefreshing = false
     private let lock = NSLock()
 
-    public init() {
-        refreshAllTools()
-    }
+    public init() {}
 
-    public func refreshAllTools() {
+    public func refreshAllTools(force: Bool = false) {
         lock.lock()
-        defer { lock.unlock() }
+        if !force, let lastRefresh, Date().timeIntervalSince(lastRefresh) < 300 {
+            lock.unlock()
+            return
+        }
+        guard !isRefreshing else {
+            lock.unlock()
+            return
+        }
+        isRefreshing = true
+        lock.unlock()
 
-        cachedTools["ffmpeg"] = discoverTool(name: "ffmpeg", installCommand: "brew install ffmpeg")
-        cachedTools["ffprobe"] = discoverTool(name: "ffprobe", installCommand: "brew install ffmpeg")
-        cachedTools["magick"] = discoverTool(name: "magick", installCommand: "brew install imagemagick")
-        cachedTools["gs"] = discoverTool(name: "gs", installCommand: "brew install ghostscript")
-        cachedTools["soffice"] = discoverLibreOffice()
-        probedFFmpegEncoders = nil
+        // Process launches can take seconds on a cold system. Perform them
+        // without holding the cache lock so availability reads stay instant.
+        var discoveredTools: [String: ToolInfo] = [:]
+        discoveredTools["ffmpeg"] = discoverTool(name: "ffmpeg", installCommand: "brew install ffmpeg")
+        discoveredTools["ffprobe"] = discoverTool(name: "ffprobe", installCommand: "brew install ffmpeg")
+        discoveredTools["magick"] = discoverTool(name: "magick", installCommand: "brew install imagemagick")
+        discoveredTools["gs"] = discoverTool(name: "gs", installCommand: "brew install ghostscript")
+        discoveredTools["soffice"] = discoverLibreOffice()
+        discoveredTools["ebook-convert"] = discoverCalibre()
+
+        let encoders: Set<String>
+        if let ffmpegPath = discoveredTools["ffmpeg"]?.executablePath {
+            encoders = probeFFmpegEncoders(executableURL: URL(fileURLWithPath: ffmpegPath))
+        } else {
+            encoders = []
+        }
+
+        lock.lock()
+        cachedTools = discoveredTools
+        probedFFmpegEncoders = encoders
+        lastRefresh = Date()
+        isRefreshing = false
+        lock.unlock()
+
+        NotificationCenter.default.post(name: Self.didRefreshNotification, object: self)
     }
 
     public func toolInfo(for name: String) -> ToolInfo? {
@@ -71,6 +100,12 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
         return Array(cachedTools.values)
     }
 
+    /// Returns the last completed encoder probe without launching a process.
+    /// A nil value means discovery has not completed yet.
+    public func cachedAvailableFFmpegEncoders() -> Set<String>? {
+        cachedFFmpegEncoders()
+    }
+
     public func availableFFmpegEncoders() -> Set<String> {
         if let cached = cachedFFmpegEncoders() {
             return cached
@@ -80,20 +115,7 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
             return []
         }
 
-        let process = ExternalProcessAttempt(
-            executableURL: URL(fileURLWithPath: ffmpegPath),
-            arguments: ["-encoders", "-hide_banner"],
-            stdoutCaptureLimit: 4 * 1024 * 1024
-        )
-
-        let encoders: Set<String>
-        do {
-            let result = try process.runSynchronously()
-            encoders = result.terminationStatus == 0 ? parseFFmpegEncoders(result.stdout) : []
-        } catch {
-            AppLogger.backends.error("Failed to probe FFmpeg encoders: \(error.localizedDescription)")
-            encoders = []
-        }
+        let encoders = probeFFmpegEncoders(executableURL: URL(fileURLWithPath: ffmpegPath))
 
         cacheFFmpegEncoders(encoders)
         return encoders
@@ -111,7 +133,8 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
         let process = ExternalProcessAttempt(
             executableURL: executableURL,
             arguments: ["-encoders", "-hide_banner"],
-            stdoutCaptureLimit: 4 * 1024 * 1024
+            stdoutCaptureLimit: 4 * 1024 * 1024,
+            timeout: 30
         )
 
         let encoders: Set<String>
@@ -157,6 +180,32 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
         return ToolInfo(name: "soffice", executablePath: nil, version: nil, isInstalled: false, installCommand: "brew install --cask libreoffice")
     }
 
+    private func discoverCalibre() -> ToolInfo {
+        let candidatePaths = [
+            "/Applications/calibre.app/Contents/MacOS/ebook-convert",
+            "/Applications/Calibre.app/Contents/MacOS/ebook-convert",
+            "/opt/homebrew/bin/ebook-convert",
+            "/usr/local/bin/ebook-convert"
+        ] + searchPaths(for: "ebook-convert")
+        for path in candidatePaths where FileManager.default.isExecutableFile(atPath: path) {
+            let version = queryVersion(for: path, args: ["--version"])
+            return ToolInfo(
+                name: "ebook-convert",
+                executablePath: path,
+                version: version,
+                isInstalled: true,
+                installCommand: "brew install --cask calibre"
+            )
+        }
+        return ToolInfo(
+            name: "ebook-convert",
+            executablePath: nil,
+            version: nil,
+            isInstalled: false,
+            installCommand: "brew install --cask calibre"
+        )
+    }
+
     private func searchPaths(for toolName: String) -> [String] {
         var paths: [String] = [
             "/opt/homebrew/bin/\(toolName)",
@@ -181,7 +230,8 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
             let process = ExternalProcessAttempt(
                 executableURL: URL(fileURLWithPath: executablePath),
                 arguments: [arg],
-                stdoutCaptureLimit: 64 * 1024
+                stdoutCaptureLimit: 64 * 1024,
+                timeout: 5
             )
 
             do {
@@ -198,6 +248,23 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    private func probeFFmpegEncoders(executableURL: URL) -> Set<String> {
+        let process = ExternalProcessAttempt(
+            executableURL: executableURL,
+            arguments: ["-encoders", "-hide_banner"],
+            stdoutCaptureLimit: 4 * 1024 * 1024,
+            timeout: 30
+        )
+
+        do {
+            let result = try process.runSynchronously()
+            return result.terminationStatus == 0 ? parseFFmpegEncoders(result.stdout) : []
+        } catch {
+            AppLogger.backends.error("Failed to probe FFmpeg encoders: \(error.localizedDescription)")
+            return []
+        }
     }
 
     private func cachedFFmpegEncoders() -> Set<String>? {

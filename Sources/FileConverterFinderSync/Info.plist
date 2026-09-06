@@ -34,10 +34,14 @@
     <string>$(FILE_CONVERTER_URL_SCHEME)</string>
     <key>NSExtension</key>
     <dict>
+        <key>NSExtensionAttributes</key>
+        <dict/>
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.FinderSync</string>
         <key>NSExtensionPrincipalClass</key>
         <string>$(PRODUCT_MODULE_NAME).FileConverterFinderSync</string>
     </dict>
+    <key>LSUIElement</key>
+    <true/>
 </dict>
 </plist>

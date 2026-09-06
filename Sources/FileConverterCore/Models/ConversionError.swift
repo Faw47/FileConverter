@@ -63,11 +63,7 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
         case .destinationUnavailable(let path):
             return "Destination directory '\(path)' is read-only or unreachable."
 
-        case .externalToolFailed(let tool, let exitCode, let stderr):
-            let cleanStderr = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !cleanStderr.isEmpty {
-                return "\(tool) failed with exit code \(exitCode): \(cleanStderr)"
-            }
+        case .externalToolFailed(let tool, let exitCode, _):
             return "\(tool) failed with exit code \(exitCode)."
 
         case .cancelled:
@@ -96,7 +92,7 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
     public var recoverySuggestion: String? {
         switch self {
         case .backendUnavailable:
-            return "Choose a supported backend or open this preset in File Converter Extended."
+            return "Choose a supported backend or install the optional tool shown in Settings."
         case .dependencyMissing(_, let command):
             return "Run '\(command)' in Terminal or configure external tools in Settings > External Tools."
         case .insufficientDiskSpace:
@@ -111,7 +107,10 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
     public var technicalDetails: String {
         switch self {
         case .externalToolFailed(let tool, let exitCode, let stderr):
-            return "Tool: \(tool)\nExit Code: \(exitCode)\nStderr:\n\(stderr)"
+            let home = NSHomeDirectory()
+            let redacted = stderr.replacingOccurrences(of: home, with: "~")
+            let bounded = String(redacted.suffix(16 * 1024))
+            return "Tool: \(tool)\nExit Code: \(exitCode)\nStderr (last 16 KB):\n\(bounded)"
         default:
             return errorDescription ?? "Unknown error"
         }

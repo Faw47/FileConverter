@@ -6,6 +6,14 @@ import os
 @main
 struct FileConverterApp: App {
     @StateObject private var appState = AppState.shared
+    @StateObject private var conversionQueue = ConversionQueue.shared
+
+    init() {
+        if let idx = CommandLine.arguments.firstIndex(of: "--snapshot"), idx + 1 < CommandLine.arguments.count {
+            let outDir = CommandLine.arguments[idx + 1]
+            SnapshotRunner.run(outputDirectory: outDir)
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +28,8 @@ struct FileConverterApp: App {
             SettingsView()
                 .environmentObject(appState)
         }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1040, height: 700)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open Files to Convert...") {
@@ -33,11 +43,18 @@ struct FileConverterApp: App {
                     ConversionQueue.shared.clearCompleted()
                 }
                 .keyboardShortcut("k", modifiers: .command)
+                .disabled(
+                    conversionQueue.completedCount == 0
+                        && conversionQueue.failedCount == 0
+                        && conversionQueue.skippedCount == 0
+                        && conversionQueue.cancelledCount == 0
+                )
 
                 Button("Cancel All Active") {
                     ConversionQueue.shared.cancelAll()
                 }
                 .keyboardShortcut(".", modifiers: .command)
+                .disabled(conversionQueue.cancelableCount == 0)
             }
 
             CommandMenu("Conversion") {
@@ -50,6 +67,7 @@ struct FileConverterApp: App {
                     }
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(!conversionQueue.jobs.contains { if case .failed = $0.state { return true }; return false })
 
                 Divider()
 
@@ -65,9 +83,8 @@ struct FileConverterApp: App {
 
             CommandGroup(replacing: .help) {
                 Button("File Converter Documentation") {
-                    if let url = URL(string: "https://github.com") {
-                        NSWorkspace.shared.open(url)
-                    }
+                    let helpURL = Bundle.main.url(forResource: "Help", withExtension: "html")
+                    if let helpURL { NSWorkspace.shared.open(helpURL) }
                 }
                 Button("Finder Integration Setup Guide") {
                     appState.openSettings(tab: .finder)
@@ -96,22 +113,15 @@ struct FileConverterApp: App {
                 appState.openSettings(tab: tab)
             } else {
                 Task {
-                    await ConversionCoordinator.shared.checkAndDrainPendingRequests()
+                    await appState.drainFinderRequestsWhenReady()
                 }
             }
         } else if url.isFileURL {
-            let compatible = PresetValidator.compatiblePresets(forURLs: [url])
-            if let firstPreset = compatible.first {
-                Task {
-                    do {
-                        try await ConversionCoordinator.shared.convertFiles(urls: [url], preset: firstPreset)
-                    } catch {
-                        AppLogger.conversion.error(
-                            "Incoming file conversion rejected: \(error.localizedDescription, privacy: .public)"
-                        )
-                    }
-                }
-            }
+            NotificationCenter.default.post(
+                name: NSNotification.Name("OpenFileConverterPresetPicker"),
+                object: nil,
+                userInfo: ["urls": [url]]
+            )
         }
     }
 }

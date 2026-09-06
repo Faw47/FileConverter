@@ -17,6 +17,10 @@ public struct FileConverterMainView: View {
     @ObservedObject private var queue = ConversionQueue.shared
     @State private var batchSelection: ConversionBatchSelection? = nil
     @State private var conversionErrorDescription: String?
+    @State private var dropTargeted = false
+    @State private var presetSearchText = ""
+    @State private var showingConflictSheet = false
+    @State private var isEnqueuingSelection = false
 
     public init() {}
 
@@ -27,7 +31,7 @@ public struct FileConverterMainView: View {
 
             Divider()
 
-            DropZoneView(onSelectFiles: openFilesDialog)
+            DropZoneView(onSelectFiles: openFilesDialog, isDropTargeted: $dropTargeted)
                 .padding(.horizontal, 14)
                 .padding(.bottom, 12)
         }
@@ -35,9 +39,14 @@ public struct FileConverterMainView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenFileConverterOpenPanel"))) { _ in
             openFilesDialog()
         }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenFileConverterPresetPicker"))) { note in
+            if let urls = note.userInfo?["urls"] as? [URL], !urls.isEmpty {
+                batchSelection = ConversionBatchSelection(urls: urls)
+            }
+        }
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             handleDroppedProviders(providers)
-            return true
+            return !providers.isEmpty
         }
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
@@ -57,18 +66,20 @@ public struct FileConverterMainView: View {
                     .accessibilityLabel("Clear Completed Conversions")
                 }
 
-                Button(action: {
-                    appState.openSettings()
-                }) {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .help("Preferences (⌘,)")
-                .keyboardShortcut(",", modifiers: .command)
-                .accessibilityLabel("Open Settings")
             }
         }
-        .sheet(item: $batchSelection) { batch in
+        .sheet(item: $batchSelection, onDismiss: { presetSearchText = "" }) { batch in
             presetSelectionSheet(for: batch.urls)
+        }
+        .sheet(isPresented: $showingConflictSheet) {
+            CollisionResolutionView(conflicts: queue.pendingCollisions) { decision, applyToAll in
+                queue.resolveCollisions(decision, applyToAll: applyToAll)
+                showingConflictSheet = false
+            }
+            .frame(minWidth: 520, idealWidth: 620, minHeight: 360)
+        }
+        .onChange(of: queue.pendingCollisions) { _, conflicts in
+            showingConflictSheet = !conflicts.isEmpty
         }
         .onChange(of: appState.showSettings) { _, shouldShow in
             guard shouldShow else { return }
@@ -106,6 +117,13 @@ public struct FileConverterMainView: View {
                     batchSelection = nil
                 }
                 .keyboardShortcut(.cancelAction)
+                .disabled(isEnqueuingSelection)
+            }
+
+            if !appState.backendDiscoveryComplete {
+                Label("Checking optional conversion tools…", systemImage: "magnifyingglass")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if count == 0 {
@@ -125,11 +143,28 @@ public struct FileConverterMainView: View {
                 }
                 .padding(.vertical, 8)
             } else {
+                if isEnqueuingSelection {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Preparing conversion…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 let grouped = PresetValidator.groupPresetsByCategory(compatible)
+                TextField("Search compatible presets", text: $presetSearchText)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Search compatible presets")
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         ForEach(grouped.keys.sorted(), id: \.self) { cat in
-                            if let presets = grouped[cat], !presets.isEmpty {
+                            let presets = (grouped[cat] ?? []).filter { preset in
+                                let query = presetSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                                return query.isEmpty || preset.menuName.lowercased().contains(query) || preset.name.lowercased().contains(query)
+                            }
+                            if !presets.isEmpty {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Label(cat.displayName, systemImage: cat.systemImage)
                                         .font(.system(size: 11, weight: .bold))
@@ -171,6 +206,7 @@ public struct FileConverterMainView: View {
                                                 )
                                             }
                                             .buttonStyle(.plain)
+                                            .disabled(isEnqueuingSelection)
                                         }
                                     }
                                 }
@@ -183,7 +219,7 @@ public struct FileConverterMainView: View {
             }
         }
         .padding(20)
-        .frame(width: 480)
+        .frame(minWidth: 620, idealWidth: 720, maxWidth: 960, minHeight: 420, idealHeight: 540)
     }
 
     private func handleDroppedProviders(_ providers: [NSItemProvider]) {
@@ -219,7 +255,17 @@ public struct FileConverterMainView: View {
         }
 
         group.notify(queue: .main) {
-            let valid = collector.orderedURLs().filter { !$0.path.isEmpty }
+            let candidates = collector.orderedURLs().filter { !$0.path.isEmpty }
+            let valid = candidates.filter { url in
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else { return false }
+                guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+                      let size = attributes[.size] as? NSNumber else { return false }
+                return size.int64Value > 0
+            }
+            if valid.count != candidates.count {
+                conversionErrorDescription = "Folders, missing files, and zero-byte files cannot be converted."
+            }
             guard !valid.isEmpty else { return }
             self.batchSelection = ConversionBatchSelection(urls: valid)
         }
@@ -239,13 +285,60 @@ public struct FileConverterMainView: View {
     }
 
     private func enqueueSelected(urls: [URL], preset: ConversionPreset) {
+        guard !isEnqueuingSelection else { return }
+        isEnqueuingSelection = true
         Task {
             do {
-                try await ConversionCoordinator.shared.convertFiles(urls: urls, preset: preset)
+                try await appState.convertFilesWhenReady(urls: urls, preset: preset)
                 batchSelection = nil
             } catch {
                 conversionErrorDescription = error.localizedDescription
             }
+            isEnqueuingSelection = false
         }
+    }
+}
+
+private struct CollisionResolutionView: View {
+    let conflicts: [ConversionQueue.CollisionConflict]
+    let onDecision: (ConversionQueue.CollisionDecision, Bool) -> Void
+    @State private var applyToAll = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Files already exist", systemImage: "exclamationmark.triangle.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.orange)
+
+            Text("Choose what to do for each existing output. No file is changed until you choose.")
+                .foregroundStyle(.secondary)
+
+            List(conflicts) { conflict in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(conflict.sourceFilename)
+                        .font(.body.weight(.medium))
+                    Text(conflict.destinationURL.path)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(2)
+                }
+                .padding(.vertical, 3)
+            }
+            .listStyle(.inset)
+
+            Toggle("Apply this choice to all \(conflicts.count) conflicts", isOn: $applyToAll)
+                .toggleStyle(.checkbox)
+
+            HStack {
+                Button(applyToAll ? "Skip All" : "Skip") { onDecision(.skip, applyToAll) }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(applyToAll ? "Keep Both for All" : "Keep Both") { onDecision(.keepBoth, applyToAll) }
+                    .keyboardShortcut(.defaultAction)
+                Button(applyToAll ? "Replace All" : "Replace", role: .destructive) { onDecision(.replace, applyToAll) }
+            }
+        }
+        .padding(22)
     }
 }

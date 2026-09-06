@@ -64,4 +64,25 @@ final class FormatDetectionEdgeCaseTests: XCTestCase {
         XCTAssertEqual(result.format?.id, "pdf")
         XCTAssertEqual(result.confidence, .exactMagicBytes)
     }
+
+    func testMagicBytesWinOverMisleadingExtension() throws {
+        let disguisedPNG = tempDirectory.appendingPathComponent("misleading.mp4")
+        try Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]).write(to: disguisedPNG)
+
+        let result = FormatDetector.detect(url: disguisedPNG)
+
+        XCTAssertEqual(result.format?.id, "png")
+        XCTAssertEqual(result.confidence, .exactMagicBytes)
+    }
+
+    func testQuickTimeAudioExtensionDisambiguatesQuickTimeContainer() throws {
+        let qtaFile = tempDirectory.appendingPathComponent("voice-note.qta")
+        // QuickTime audio and movie files both use an ftyp/qt container header.
+        try Data([0x00, 0x00, 0x00, 0x14, 0x66, 0x74, 0x79, 0x70, 0x71, 0x74, 0x20, 0x20]).write(to: qtaFile)
+
+        let result = FormatDetector.detect(url: qtaFile)
+
+        XCTAssertEqual(result.format?.id, "qta")
+        XCTAssertEqual(result.format?.category, .audio)
+    }
 }

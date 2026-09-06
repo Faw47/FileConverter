@@ -74,6 +74,33 @@ final class ConversionQueueTests: XCTestCase {
         )
         queue.clearCompleted()
     }
+
+    @MainActor
+    func testSkipCollisionFinishesAsSkippedWithoutReplacingOutput() async throws {
+        let queue = ConversionQueue()
+        BackendResolver.shared.configure(backends: [TestImageBackend()])
+
+        let sourceURL = tempDirectory.appendingPathComponent("source.jpg")
+        try Data("source".utf8).write(to: sourceURL)
+        let existingOutput = tempDirectory.appendingPathComponent("existing.png")
+        try Data("keep-me".utf8).write(to: existingOutput)
+
+        var preset = try XCTUnwrap(
+            BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
+        )
+        preset.filenamePattern = "existing"
+        preset.overwritePolicy = .skip
+        queue.addJobs([ConversionJob(sourceURL: sourceURL, preset: preset)])
+
+        for _ in 0..<100 where !queue.jobs.allSatisfy({ $0.state.isTerminal }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        guard case .skipped = try XCTUnwrap(queue.jobs.first).state else {
+            return XCTFail("Expected an existing-output skip to be reported as skipped")
+        }
+        XCTAssertEqual(try Data(contentsOf: existingOutput), Data("keep-me".utf8))
+    }
 }
 
 private final class TestImageBackend: ConversionBackend, Sendable {

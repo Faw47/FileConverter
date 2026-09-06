@@ -1,6 +1,5 @@
 import XCTest
 @testable import FileConverterCore
-import FileConverterExternalBackends
 import FileConverterNativeBackends
 
 final class FinderMenuTests: XCTestCase {
@@ -86,7 +85,7 @@ final class FinderMenuTests: XCTestCase {
 
     private func extendedResolver() -> BackendResolver {
         BackendResolver(
-            backends: NativeBackendCatalog.makeBackends() + ExternalBackendCatalog.makeBackends()
+            backends: NativeBackendCatalog.makeBackends() + [AvailableMediaBackendStub()]
         )
     }
 }
