@@ -80,6 +80,7 @@ let package = Package(
             ],
             path: "Sources/FileConverterApp",
             exclude: [
+                "Assets.xcassets",
                 "FileConverter.entitlements",
                 "FileConverterDebug.entitlements",
                 "Info.plist",

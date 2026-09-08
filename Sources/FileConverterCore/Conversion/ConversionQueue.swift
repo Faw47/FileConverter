@@ -308,7 +308,9 @@ public final class ConversionQueue: ObservableObject {
 
             // 4. Run conversion with progress reporting.
             let result = try await backend.convert(job: job, outputs: plannedOutputs) { [weak self] progress in
-                Task { @MainActor in self?.enqueueProgressUpdate(id: jobID, progress: progress) }
+                Task { @MainActor [weak self] in
+                    self?.enqueueProgressUpdate(id: jobID, progress: progress)
+                }
             }
             var warnings = result.warnings
             job.warnings = warnings
@@ -635,7 +637,7 @@ public final class ConversionQueue: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             AppLogger.conversion.info("Thermal state changed to: \(ProcessInfo.processInfo.thermalState.rawValue)")
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.processNextJobs()
             }
         }
