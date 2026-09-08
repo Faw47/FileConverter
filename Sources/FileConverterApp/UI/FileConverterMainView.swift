@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import FileConverterCore
 import UniformTypeIdentifiers
 
@@ -12,7 +13,6 @@ public struct ConversionBatchSelection: Identifiable {
 }
 
 public struct FileConverterMainView: View {
-    @Environment(\.openSettings) private var openSettings: OpenSettingsAction
     @StateObject private var appState = AppState.shared
     @ObservedObject private var queue = ConversionQueue.shared
     @State private var batchSelection: ConversionBatchSelection? = nil
@@ -83,7 +83,7 @@ public struct FileConverterMainView: View {
         }
         .onChange(of: appState.showSettings) { _, shouldShow in
             guard shouldShow else { return }
-            openSettings()
+            openSettingsWindow()
             appState.showSettings = false
         }
         .alert(
@@ -97,6 +97,13 @@ public struct FileConverterMainView: View {
         } message: {
             Text(conversionErrorDescription ?? "The selected conversion is unavailable.")
         }
+    }
+
+    private func openSettingsWindow() {
+        // Use the AppKit action so the package target also compiles with the
+        // macOS 14 SDK, where SwiftUI's OpenSettingsAction is not exposed by
+        // every installed toolchain. The Settings scene handles the action.
+        NSApp?.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 
     private func presetSelectionSheet(for urls: [URL]) -> some View {
