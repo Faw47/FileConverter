@@ -45,7 +45,11 @@ final class QTAFormatTests: XCTestCase {
         XCTAssertTrue(menuNames.contains("FLAC"), "QTA should be convertible to FLAC")
         XCTAssertTrue(menuNames.contains("WAV"), "QTA should be convertible to WAV")
         XCTAssertTrue(menuNames.contains("ALAC"), "QTA should be convertible to ALAC")
-        XCTAssertTrue(menuNames.contains("QTA"), "QTA output preset should be present")
+        if #available(macOS 26.0, *) {
+            XCTAssertTrue(menuNames.contains("QTA"), "QTA output preset should be present")
+        } else {
+            XCTAssertFalse(menuNames.contains("QTA"), "QTA output requires macOS 26 or later")
+        }
 
         // Should NOT include image presets
         XCTAssertFalse(menuNames.contains("JPEG"))

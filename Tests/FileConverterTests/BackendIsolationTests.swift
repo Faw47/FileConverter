@@ -61,7 +61,11 @@ final class BackendIsolationTests: XCTestCase {
         let qtaMenuNames = Set(qtaPresets.map(\.menuName))
         XCTAssertTrue(qtaMenuNames.contains("M4A"))
         XCTAssertTrue(qtaMenuNames.contains("WAV"))
-        XCTAssertTrue(qtaMenuNames.contains("QTA"))
+        if #available(macOS 26.0, *) {
+            XCTAssertTrue(qtaMenuNames.contains("QTA"))
+        } else {
+            XCTAssertFalse(qtaMenuNames.contains("QTA"))
+        }
         XCTAssertFalse(qtaMenuNames.contains("MP3"))
         XCTAssertFalse(qtaMenuNames.contains("FLAC"))
         XCTAssertFalse(qtaMenuNames.contains("Opus"))
