@@ -1,0 +1,48 @@
+name: Feature request
+description: Suggest a useful improvement to File Converter
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A focused request with a concrete workflow is easier to evaluate than a list of implementation ideas.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the task that is currently slow, confusing, or impossible.
+      placeholder: I frequently need to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe what you want File Converter to do and where it should appear.
+      placeholder: When I ..., File Converter should ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Explain what you use today and why it is not enough.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add example formats, screenshots, links, or other constraints.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues for duplicates.
+          required: true

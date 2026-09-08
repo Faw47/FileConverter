@@ -62,7 +62,7 @@ This document details the architectural design, subsystem relationships, and dat
 * **Performance**: stepper 1…16 bound to `AppSettings` (live `ConversionQueue` sync), effective concurrency display (thermal throttling to 1 under Serious/Critical), system-default reset, live queue counts.
 * **Tools**: startup and manual scans run in `Task.detached` without holding the discovery cache lock; FFmpeg encoder probing completes before optional presets are republished, while the UI remains responsive. The pane shows a sorted list, copyable install commands, and last-checked status.
 * **Finder**: live `FinderRequestClient.isReady()` + snapshot readiness + snapshot age, extension-enabled status, reveal IPC folder, relaunch Finder, and a link to Apple's extension-management UI.
-* **Queue wiring**: `ConversionQueue` reads `maxConcurrentJobs` on init, exposes `current/effectiveMaxConcurrency`, gates notifications on `enableNotifications` (defaults true), coalesces progress updates, pauses Ask collisions in a batch conflict sheet, and posts `.fileConverterBatchCompleted` with all output URLs; `AppState` reveals them when `revealInFinder` is on.
+* **Queue wiring**: `ConversionQueue` reads `maxConcurrentJobs` on init, exposes `current/effectiveMaxConcurrency`, gates notifications on `enableNotifications` (defaults false), coalesces progress updates, pauses Ask collisions in a batch conflict sheet, and posts `.fileConverterBatchCompleted` with all output URLs; `AppState` reveals them when `revealInFinder` is on.
 
 ---
 
