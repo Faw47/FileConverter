@@ -180,7 +180,10 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
             return .mov
         case "qta":
             if #available(macOS 26.0, *) {
-                return .qta
+                // The named `.qta` constant is only present in the macOS 26
+                // SDK. Construct the documented UTI so this package still
+                // compiles with the macOS 14 SDK used for the minimum target.
+                return AVFileType(rawValue: "com.apple.quicktime-audio")
             }
             return nil
         case "m4a":

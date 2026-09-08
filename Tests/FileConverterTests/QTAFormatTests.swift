@@ -66,7 +66,10 @@ final class QTAFormatTests: XCTestCase {
         XCTAssertTrue(backend.supports(sourceFormat: qtaFormat, destinationFormat: wavFormat, preset: wavPreset))
         if #available(macOS 26.0, *) {
             XCTAssertTrue(backend.supports(sourceFormat: qtaFormat, destinationFormat: qtaFormat, preset: qtaPreset))
-            XCTAssertEqual(AVFoundationBackend.outputFileType(forTarget: "qta"), .qta)
+            XCTAssertEqual(
+                AVFoundationBackend.outputFileType(forTarget: "qta"),
+                AVFileType(rawValue: "com.apple.quicktime-audio")
+            )
         } else {
             XCTAssertFalse(backend.supports(sourceFormat: qtaFormat, destinationFormat: qtaFormat, preset: qtaPreset))
             XCTAssertNil(AVFoundationBackend.outputFileType(forTarget: "qta"))
