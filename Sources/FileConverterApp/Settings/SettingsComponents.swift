@@ -376,6 +376,7 @@ public struct CopyableCommandField: View {
 extension View {
     @ViewBuilder
     public func glassActionProminent(tint: Color = .accentColor) -> some View {
+#if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             self.buttonStyle(.glassProminent)
                 .tint(tint)
@@ -383,10 +384,15 @@ extension View {
             self.buttonStyle(.borderedProminent)
                 .tint(tint)
         }
+#else
+        self.buttonStyle(.borderedProminent)
+            .tint(tint)
+#endif
     }
 
     @ViewBuilder
     public func glassAction() -> some View {
+#if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             self.buttonStyle(.glass)
                 .tint(.accentColor)
@@ -394,10 +400,14 @@ extension View {
         } else {
             self.buttonStyle(.bordered)
         }
+#else
+        self.buttonStyle(.bordered)
+#endif
     }
 
     @ViewBuilder
     public func glassActionDestructive() -> some View {
+#if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             self.buttonStyle(.glass)
                 .tint(.red)
@@ -406,14 +416,22 @@ extension View {
             self.buttonStyle(.bordered)
                 .tint(.red)
         }
+#else
+        self.buttonStyle(.bordered)
+            .tint(.red)
+#endif
     }
 
     @ViewBuilder
     public func applySliderThumbVisibility() -> some View {
+#if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             self.sliderThumbVisibility(.visible)
         } else {
             self
         }
+#else
+        self
+#endif
     }
 }

@@ -12,7 +12,7 @@ public struct ConversionBatchSelection: Identifiable {
 }
 
 public struct FileConverterMainView: View {
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openSettings) private var openSettings: OpenSettingsAction
     @StateObject private var appState = AppState.shared
     @ObservedObject private var queue = ConversionQueue.shared
     @State private var batchSelection: ConversionBatchSelection? = nil
