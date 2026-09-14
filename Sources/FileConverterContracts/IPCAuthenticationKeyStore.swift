@@ -111,7 +111,7 @@ public enum IPCAuthenticationKeyStore {
         guard FileManager.default.fileExists(atPath: keyURL.path) else {
             return nil
         }
-        let data = try Data(contentsOf: keyURL, options: .mappedIfSafe)
+        let data = try Data(contentsOf: keyURL)
         try validateKey(data)
         return data
     }

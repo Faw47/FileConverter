@@ -34,6 +34,7 @@ public final class FinderMenuCatalog: @unchecked Sendable {
     private let expectedEditionOverride: ProductEdition?
     private var snapshot: FinderMenuSnapshot?
     private var cachedErrorDescription: String?
+    private var lastSnapshotModificationDate: Date?
 
     public init(snapshotURL: URL? = nil, expectedEdition: ProductEdition? = nil) {
         self.snapshotURLOverride = snapshotURL
@@ -49,10 +50,30 @@ public final class FinderMenuCatalog: @unchecked Sendable {
         lock.withLock { cachedErrorDescription }
     }
 
+    public func ensureFresh() {
+        if !hasUsableSnapshot {
+            reload()
+            return
+        }
+        guard let (url, _) = try? snapshotLocation(),
+              let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {
+            return
+        }
+        let shouldReload = lock.withLock {
+            if let last = lastSnapshotModificationDate {
+                return date > last
+            }
+            return true
+        }
+        if shouldReload {
+            reload()
+        }
+    }
+
     public func reload() {
         do {
             let (url, edition) = try snapshotLocation()
-            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
             guard let fileSize = values.fileSize, fileSize <= FinderMenuSnapshot.maximumFileSize else {
                 throw FinderMenuSnapshotError.snapshotTooLarge
             }
@@ -65,6 +86,7 @@ public final class FinderMenuCatalog: @unchecked Sendable {
             lock.withLock {
                 snapshot = decoded
                 cachedErrorDescription = nil
+                lastSnapshotModificationDate = values.contentModificationDate
             }
         } catch {
             lock.withLock { cachedErrorDescription = error.localizedDescription }
@@ -111,11 +133,26 @@ public final class FinderMenuCatalog: @unchecked Sendable {
 
         return grouped.compactMap { identifier, presets in
             guard let first = presets.first else { return nil }
-            let entries = presets
-                .sorted { lhs, rhs in
-                    lhs.sortOrder == rhs.sortOrder ? lhs.id.uuidString < rhs.id.uuidString : lhs.sortOrder < rhs.sortOrder
+            let sortedPresets = presets.sorted { lhs, rhs in
+                lhs.sortOrder == rhs.sortOrder ? lhs.id.uuidString < rhs.id.uuidString : lhs.sortOrder < rhs.sortOrder
+            }
+            var titleCounts: [String: Int] = [:]
+            for preset in sortedPresets {
+                titleCounts[preset.title, default: 0] += 1
+            }
+            var titleOccurrences: [String: Int] = [:]
+            var entries: [FinderMenuEntry] = []
+            for preset in sortedPresets {
+                let occurrence = titleOccurrences[preset.title, default: 0] + 1
+                titleOccurrences[preset.title] = occurrence
+                let displayTitle: String
+                if (titleCounts[preset.title] ?? 0) > 1 && occurrence > 1 {
+                    displayTitle = "\(preset.title) (\(occurrence))"
+                } else {
+                    displayTitle = preset.title
                 }
-                .map { FinderMenuEntry(id: $0.id, title: $0.title) }
+                entries.append(FinderMenuEntry(id: preset.id, title: displayTitle))
+            }
             return FinderMenuSection(
                 id: identifier,
                 title: first.sectionTitle,

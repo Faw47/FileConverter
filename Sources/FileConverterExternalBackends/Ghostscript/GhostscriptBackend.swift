@@ -12,7 +12,9 @@ public final class GhostscriptBackend: ConversionBackend, @unchecked Sendable {
     public init() {}
 
     public func supports(sourceFormat: FormatDefinition, destinationFormat: FormatDefinition, preset: ConversionPreset) -> Bool {
-        return sourceFormat.id == "pdf" || destinationFormat.id == "pdf"
+        guard destinationFormat.id == "pdf" else { return false }
+        let validSources: Set<String> = ["pdf", "ps", "eps", "postscript"]
+        return validSources.contains(sourceFormat.id.lowercased()) || validSources.contains(sourceFormat.primaryExtension.lowercased())
     }
 
     public func cancel(jobID: UUID) async {
@@ -30,24 +32,57 @@ public final class GhostscriptBackend: ConversionBackend, @unchecked Sendable {
             throw ConversionError.destinationUnavailable(path: "")
         }
 
+        let options = job.preset.processingOptions
         var pdfSettings = "/ebook"
-        switch job.preset.quality {
-        case .low: pdfSettings = "/screen"
-        case .medium: pdfSettings = "/ebook"
-        case .high: pdfSettings = "/printer"
-        case .veryHigh, .lossless, .custom: pdfSettings = "/prepress"
+        if let profile = options?.pdfCompressionProfile {
+            switch profile.lowercased() {
+            case "screen": pdfSettings = "/screen"
+            case "ebook": pdfSettings = "/ebook"
+            case "printer": pdfSettings = "/printer"
+            case "prepress": pdfSettings = "/prepress"
+            default: pdfSettings = "/ebook"
+            }
+        } else {
+            switch job.preset.quality {
+            case .low: pdfSettings = "/screen"
+            case .medium: pdfSettings = "/ebook"
+            case .high: pdfSettings = "/printer"
+            case .veryHigh, .lossless, .custom: pdfSettings = "/prepress"
+            }
         }
 
-        let args = [
+        var args = [
             "-sDEVICE=pdfwrite",
-            "-dCompatibilityLevel=1.4",
+            "-dCompatibilityLevel=\(options?.pdfCompatibilityLevel ?? "1.4")",
             "-dPDFSETTINGS=\(pdfSettings)",
             "-dNOPAUSE",
             "-dQUIET",
-            "-dBATCH",
-            "-sOutputFile=\(destURL.path)",
-            sourceURL.path
+            "-dBATCH"
         ]
+
+        if let dpi = options?.pdfDPI {
+            args.append("-dDownsampleColorImages=true")
+            args.append("-dColorImageResolution=\(dpi)")
+            args.append("-dDownsampleGrayImages=true")
+            args.append("-dGrayImageResolution=\(dpi)")
+            args.append("-dDownsampleMonoImages=true")
+            args.append("-dMonoImageResolution=\(dpi)")
+        }
+
+        if options?.pdfColorMode == "grayscale" {
+            args.append("-sColorConversionStrategy=Gray")
+            args.append("-dProcessColorModel=/DeviceGray")
+        } else if options?.pdfColorMode == "monochrome" {
+            args.append("-sColorConversionStrategy=Mono")
+            args.append("-dProcessColorModel=/DeviceGray")
+        }
+
+        if options?.pdfLinearize == true {
+            args.append("-dFastWebView=true")
+        }
+
+        args.append("-sOutputFile=\(destURL.path)")
+        args.append(sourceURL.path)
 
         let process = ExternalProcessAttempt(
             executableURL: URL(fileURLWithPath: gsPath),

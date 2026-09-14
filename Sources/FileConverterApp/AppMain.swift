@@ -1,10 +1,105 @@
 import SwiftUI
+import AppKit
 import FileConverterContracts
 import FileConverterCore
 import os
 
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.servicesProvider = self
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleActivateApp),
+            name: NSNotification.Name("FileConverterActivateApp"),
+            object: nil
+        )
+    }
+
+    @objc private func handleActivateApp() {
+        isHeadlessBackgroundLaunch = false
+        NSApp.activate(ignoringOtherApps: true)
+        for window in NSApp.windows {
+            if window.canBecomeMain || window.isKeyWindow {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            for window in sender.windows {
+                if window.isMiniaturized {
+                    window.deminiaturize(self)
+                    window.makeKeyAndOrderFront(self)
+                    return true
+                }
+                if window.canBecomeMain || window.isKeyWindow {
+                    window.makeKeyAndOrderFront(self)
+                    return true
+                }
+            }
+        }
+        return true
+    }
+
+    private var isHeadlessBackgroundLaunch = false
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let fileURLs = urls.filter(\.isFileURL)
+        let customURLs = urls.filter { !$0.isFileURL }
+
+        let shouldActivate = !fileURLs.isEmpty || customURLs.contains { url in
+            url.host == "settings"
+        }
+        if shouldActivate {
+            isHeadlessBackgroundLaunch = false
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            isHeadlessBackgroundLaunch = true
+            DispatchQueue.main.async {
+                if self.isHeadlessBackgroundLaunch {
+                    for window in NSApplication.shared.windows {
+                        window.orderOut(nil)
+                    }
+                }
+            }
+        }
+
+        for url in customURLs {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("HandleIncomingURL"),
+                object: nil,
+                userInfo: ["url": url]
+            )
+        }
+
+        if !fileURLs.isEmpty {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("OpenFileConverterPresetPicker"),
+                object: nil,
+                userInfo: ["urls": fileURLs]
+            )
+        }
+    }
+
+    @objc func openFilesFromService(_ pboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>?) {
+        guard let items = pboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], !items.isEmpty else {
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(
+            name: NSNotification.Name("OpenFileConverterPresetPicker"),
+            object: nil,
+            userInfo: ["urls": items]
+        )
+    }
+}
+
 @main
 struct FileConverterApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
     @StateObject private var conversionQueue = ConversionQueue.shared
 
@@ -21,6 +116,11 @@ struct FileConverterApp: App {
                 .environmentObject(appState)
                 .onOpenURL { url in
                     handleIncomingURL(url)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("HandleIncomingURL"))) { note in
+                    if let url = note.userInfo?["url"] as? URL {
+                        handleIncomingURL(url)
+                    }
                 }
         }
         .defaultSize(width: 600, height: 480)
@@ -97,6 +197,7 @@ struct FileConverterApp: App {
         let configuredScheme = try? IPCConfiguration.current().urlScheme
         if url.scheme == configuredScheme {
             if url.host == "settings" {
+                NSApp.activate(ignoringOtherApps: true)
                 let tab: AppState.SettingsTab? = {
                     guard let tabName = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                         .queryItems?.first(where: { $0.name == "tab" })?.value else { return nil }
@@ -117,6 +218,7 @@ struct FileConverterApp: App {
                 }
             }
         } else if url.isFileURL {
+            NSApp.activate(ignoringOtherApps: true)
             NotificationCenter.default.post(
                 name: NSNotification.Name("OpenFileConverterPresetPicker"),
                 object: nil,

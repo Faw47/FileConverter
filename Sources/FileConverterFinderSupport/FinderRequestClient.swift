@@ -15,6 +15,21 @@ public enum FinderRequestClient {
         }
     }
 
+    public static func statusDescription() -> String {
+        do {
+            let configuration = try IPCConfiguration.current()
+            guard let container = configuration.sharedContainerURL() else {
+                return "sharedContainerURL is nil (appGroupID: \(configuration.appGroupID), localPath: \(configuration.localSharedContainerPath ?? "nil"))"
+            }
+            guard let key = try loadKey(configuration: configuration) else {
+                return "authentication key is nil (container: \(container.path))"
+            }
+            return "ready (key length: \(key.count))"
+        } catch {
+            return "error: \(error.localizedDescription)"
+        }
+    }
+
     public static func send(_ request: ConversionRequest) throws {
         let configuration = try IPCConfiguration.current()
         try request.validate(expectedEdition: configuration.edition)

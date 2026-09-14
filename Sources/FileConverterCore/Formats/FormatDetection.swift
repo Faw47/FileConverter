@@ -50,13 +50,15 @@ public enum FormatDetector {
             let headerData = (try? fileHandle.read(upToCount: 512)) ?? Data()
             try? fileHandle.close()
 
-            if let magicFormat = detectFromMagicBytes(headerData) {
+            if let magicFormat = detectFromMagicBytes(headerData, fileExtension: ext) {
                 // QuickTime audio and movie files share the same container
                 // signature. When a .qta suffix disambiguates that container,
                 // retain the audio type instead of treating it as video.
                 let resolvedFormat: FormatDefinition
                 if magicFormat.id == "mov", fallbackFormat?.id == "qta" {
                     resolvedFormat = fallbackFormat ?? magicFormat
+                } else if magicFormat.id == "mp4", (ext == "heic" || ext == "heif") {
+                    resolvedFormat = FormatRegistry.shared.format(forID: "heic") ?? magicFormat
                 } else {
                     resolvedFormat = magicFormat
                 }
@@ -112,7 +114,7 @@ public enum FormatDetector {
         )
     }
 
-    private static func detectFromMagicBytes(_ data: Data) -> FormatDefinition? {
+    private static func detectFromMagicBytes(_ data: Data, fileExtension: String? = nil) -> FormatDefinition? {
         guard data.count >= 4 else { return nil }
         let bytes = [UInt8](data)
 
@@ -152,22 +154,56 @@ public enum FormatDetector {
 
         // MP4 / MOV / QTA / M4A / HEIC / AVIF ftyp box at offset 4
         if bytes.count >= 12 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
-            let brand = String(decoding: data[8..<12], as: UTF8.self)
-            if brand.starts(with: "qta") {
-                return FormatRegistry.shared.format(forID: "qta")
+            let boxLength: Int
+            if bytes.count >= 4 {
+                let declared = Int(bytes[0]) << 24 | Int(bytes[1]) << 16 | Int(bytes[2]) << 8 | Int(bytes[3])
+                if declared >= 8 && declared <= bytes.count {
+                    boxLength = declared
+                } else {
+                    boxLength = bytes.count
+                }
+            } else {
+                boxLength = bytes.count
             }
-            if brand.starts(with: "M4A") || brand.starts(with: "m4a") {
-                return FormatRegistry.shared.format(forID: "m4a")
+
+            let majorBrand = String(decoding: bytes[8..<12], as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            var brands: [String] = [majorBrand]
+            var offset = 16
+            while offset + 4 <= boxLength {
+                let brand = String(decoding: bytes[offset..<offset+4], as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                brands.append(brand)
+                offset += 4
             }
-            if brand.starts(with: "heic") || brand.starts(with: "mif1") || brand.starts(with: "msf1") {
+
+            let heicBrands: Set<String> = [
+                "heic", "heix", "hevc", "hevx", "heim", "heis", "miaf", "mihb", "mif1", "msf1", "heif", "hevm", "hevs"
+            ]
+            let lowerBrands = brands.map { $0.lowercased() }
+
+            if lowerBrands.contains(where: { brand in
+                heicBrands.contains(brand) || brand.starts(with: "heic") || brand.starts(with: "mif1") || brand.starts(with: "msf1")
+            }) {
                 return FormatRegistry.shared.format(forID: "heic")
             }
-            if brand.starts(with: "avif") {
+
+            if lowerBrands.contains(where: { $0.starts(with: "qta") }) {
+                return FormatRegistry.shared.format(forID: "qta")
+            }
+            if lowerBrands.contains(where: { $0.starts(with: "m4a") }) {
+                return FormatRegistry.shared.format(forID: "m4a")
+            }
+            if lowerBrands.contains(where: { $0.starts(with: "avif") || $0.starts(with: "avis") }) {
                 return FormatRegistry.shared.format(forID: "avif")
             }
-            if brand.starts(with: "qt  ") || brand.starts(with: "moov") {
+            if lowerBrands.contains(where: { $0.starts(with: "qt") || $0.starts(with: "moov") }) {
                 return FormatRegistry.shared.format(forID: "mov")
             }
+
+            let cleanExt = fileExtension?.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+            if cleanExt == "heic" || cleanExt == "heif" {
+                return FormatRegistry.shared.format(forID: "heic")
+            }
+
             return FormatRegistry.shared.format(forID: "mp4")
         }
 

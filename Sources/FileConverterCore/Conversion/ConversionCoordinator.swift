@@ -1,5 +1,6 @@
 import Foundation
 import FileConverterContracts
+import UserNotifications
 
 public actor ConversionCoordinator {
     public static let shared = ConversionCoordinator()
@@ -25,6 +26,34 @@ public actor ConversionCoordinator {
             throw ConversionCoordinatorError.unknownPreset
         }
 
+        if preset.isInteractiveWorkflow {
+            let leases = try request.sources.map { source in
+                try SecurityScopedLease(bookmarkData: source.bookmarkData)
+            }
+            let urls = leases.map(\.url)
+            try validateAdmission(urls: urls, preset: preset)
+
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("FileConverterActivateApp"),
+                    object: nil
+                )
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("OpenFileConverterWorkflowDialog"),
+                    object: nil,
+                    userInfo: [
+                        "preset": preset,
+                        "urls": urls,
+                        "leases": leases
+                    ]
+                )
+            }
+            AppLogger.conversion.notice(
+                "Finder request routed to interactive workflow dialog: id=\(request.id.uuidString, privacy: .public)"
+            )
+            return
+        }
+
         let jobs = try request.sources.map { source in
             let lease = try SecurityScopedLease(bookmarkData: source.bookmarkData)
             return ConversionJob(
@@ -40,14 +69,38 @@ public actor ConversionCoordinator {
         AppLogger.conversion.notice(
             "Finder request admitted to conversion queue: id=\(request.id.uuidString, privacy: .public)"
         )
-
-        // Finder-initiated work is admitted in the background. The host app is
-        // only brought forward by an explicit setup/error action.
+        postUserNotification(
+            title: "Conversion Started",
+            body: jobs.count == 1
+                ? "Queued \(jobs.first?.sourceURL.lastPathComponent ?? "file") for \(preset.name)."
+                : "Queued \(jobs.count) files for \(preset.name)."
+        )
     }
 
-    public func convertFiles(urls: [URL], preset: ConversionPreset) async throws {
+    public func convertFiles(
+        urls: [URL],
+        preset: ConversionPreset,
+        leases: [SecurityScopedLease]? = nil
+    ) async throws {
         try validateAdmission(urls: urls, preset: preset)
-        let jobs = urls.map { ConversionJob(sourceURL: $0, preset: preset) }
+        let leasesByURL = Dictionary(
+            (leases ?? []).map { ($0.url, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let jobs = urls.map { url in
+            let lease = leasesByURL[url]
+            let bookmark = try? url.bookmarkData(
+                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            return ConversionJob(
+                sourceURL: url,
+                sourceBookmarkData: bookmark,
+                sourceAccessLease: lease,
+                preset: preset
+            )
+        }
         await ConversionQueue.shared.addJobs(jobs)
     }
 
@@ -113,6 +166,10 @@ public actor ConversionCoordinator {
                     AppLogger.conversion.error(
                         "Finder request rejected: id=\(claim.request.id.uuidString, privacy: .public), error=\(error.localizedDescription, privacy: .public)"
                     )
+                    postUserNotification(
+                        title: "Conversion Request Failed",
+                        body: error.localizedDescription
+                    )
                     continue
                 }
 
@@ -174,6 +231,21 @@ public actor ConversionCoordinator {
             throw ConversionCoordinatorError.incompatiblePreset
         }
     }
+}
+
+func postUserNotification(title: String, body: String) {
+    let enabled = UserDefaults.standard.object(forKey: "enableNotifications") as? Bool ?? false
+    guard enabled else { return }
+    guard Bundle.main.bundleURL.pathExtension.lowercased() == "app" else { return }
+
+    let center = UNUserNotificationCenter.current()
+    let content = UNMutableNotificationContent()
+    content.title = title
+    content.body = body
+    content.sound = .default
+
+    let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+    center.add(request, withCompletionHandler: nil)
 }
 
 public enum ConversionCoordinatorError: LocalizedError, Sendable {

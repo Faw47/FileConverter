@@ -822,6 +822,7 @@ public struct PresetEditorView: View {
                                 .frame(width: 160)
                                 .onChange(of: subfolderName) { _, newName in
                                     preset.wrappedValue.outputDirectoryPolicy = .sourceSubfolder(subfolderName: newName)
+                                    onDirtyChange(true)
                                 }
                         }
                     }

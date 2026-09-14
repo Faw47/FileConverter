@@ -615,109 +615,7 @@ public enum BuiltInPresets {
             isBuiltIn: true
         ))
 
-        // Explicit source-to-destination recipes make the most common photo
-        // conversions discoverable. The broad image presets above remain
-        // useful for batch work, while these labels answer the user's exact
-        // question in Finder (for example, “HEIC → PNG”).
-        add("image.heic-to-jpeg", ConversionPreset(
-            name: "HEIC Photo to JPEG",
-            menuName: "HEIC → JPEG",
-            category: .image,
-            sourceFormats: ["heic"],
-            destinationFormat: "jpg",
-            backend: .imageIO,
-            quality: .high,
-            isBuiltIn: true
-        ))
-
-        add("image.heic-to-png", ConversionPreset(
-            name: "HEIC Photo to PNG",
-            menuName: "HEIC → PNG",
-            category: .image,
-            sourceFormats: ["heic"],
-            destinationFormat: "png",
-            backend: .imageIO,
-            quality: .lossless,
-            isBuiltIn: true
-        ))
-
-        add("image.heic-to-webp", ConversionPreset(
-            name: "HEIC Photo to WebP",
-            menuName: "HEIC → WebP",
-            category: .image,
-            sourceFormats: ["heic"],
-            destinationFormat: "webp",
-            backend: .imageIO,
-            quality: .high,
-            isBuiltIn: true
-        ))
-
-        add("image.jpeg-to-heic", ConversionPreset(
-            name: "JPEG Photo to HEIC",
-            menuName: "JPEG → HEIC",
-            category: .image,
-            sourceFormats: ["jpeg"],
-            destinationFormat: "heic",
-            backend: .imageIO,
-            quality: .high,
-            isBuiltIn: true
-        ))
-
-        add("image.png-to-jpeg", ConversionPreset(
-            name: "PNG Image to JPEG",
-            menuName: "PNG → JPEG",
-            category: .image,
-            sourceFormats: ["png"],
-            destinationFormat: "jpg",
-            backend: .imageIO,
-            quality: .high,
-            isBuiltIn: true
-        ))
-
-        add("image.png-to-heic", ConversionPreset(
-            name: "PNG Image to HEIC",
-            menuName: "PNG → HEIC",
-            category: .image,
-            sourceFormats: ["png"],
-            destinationFormat: "heic",
-            backend: .imageIO,
-            quality: .high,
-            isBuiltIn: true
-        ))
-
-        add("image.webp-to-jpeg", ConversionPreset(
-            name: "WebP Image to JPEG",
-            menuName: "WebP → JPEG",
-            category: .image,
-            sourceFormats: ["webp"],
-            destinationFormat: "jpg",
-            backend: .imageIO,
-            quality: .high,
-            isBuiltIn: true
-        ))
-
-        add("image.tiff-to-jpeg", ConversionPreset(
-            name: "TIFF Image to JPEG",
-            menuName: "TIFF → JPEG",
-            category: .image,
-            sourceFormats: ["tiff"],
-            destinationFormat: "jpg",
-            backend: .imageIO,
-            quality: .high,
-            isBuiltIn: true
-        ))
-
-        add("image.raw-to-jpeg", ConversionPreset(
-            name: "Camera RAW to JPEG",
-            menuName: "RAW → JPEG",
-            category: .image,
-            sourceFormats: ["raw"],
-            destinationFormat: "jpg",
-            backend: .imageIO,
-            quality: .high,
-            isBuiltIn: true
-        ))
-
+        // Specialized format conversions that require external backends
         add("image.svg-to-png", ConversionPreset(
             name: "SVG Artwork to PNG",
             menuName: "SVG → PNG",
@@ -791,7 +689,7 @@ public enum BuiltInPresets {
             category: .document,
             sourceFormats: ["pdf", "document"],
             destinationFormat: "pdf",
-            backend: .ghostscript,
+            backend: .auto,
             quality: .low,
             isBuiltIn: true
         ))

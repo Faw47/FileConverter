@@ -101,6 +101,66 @@ final class ConversionQueueTests: XCTestCase {
         }
         XCTAssertEqual(try Data(contentsOf: existingOutput), Data("keep-me".utf8))
     }
+
+    @MainActor
+    func testReplaceIfNewerCollisionFinishesAsSkippedIfTargetIsNewer() async throws {
+        let queue = ConversionQueue()
+        BackendResolver.shared.configure(backends: [TestImageBackend()])
+
+        let sourceURL = tempDirectory.appendingPathComponent("older_source.jpg")
+        try Data("older source".utf8).write(to: sourceURL)
+        let existingOutput = tempDirectory.appendingPathComponent("existing_newer.png")
+        try Data("newer target".utf8).write(to: existingOutput)
+
+        let pastDate = Date().addingTimeInterval(-60)
+        try FileManager.default.setAttributes([.modificationDate: pastDate], ofItemAtPath: sourceURL.path)
+
+        var preset = try XCTUnwrap(
+            BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
+        )
+        preset.filenamePattern = "existing_newer"
+        preset.overwritePolicy = .replaceIfNewer
+        queue.addJobs([ConversionJob(sourceURL: sourceURL, preset: preset)])
+
+        for _ in 0..<100 where !queue.jobs.allSatisfy({ $0.state.isTerminal }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        guard case .skipped = try XCTUnwrap(queue.jobs.first).state else {
+            return XCTFail("Expected older source to be reported as skipped when target is newer")
+        }
+        XCTAssertEqual(try Data(contentsOf: existingOutput), Data("newer target".utf8))
+    }
+
+    @MainActor
+    func testReplaceIfNewerReplacesWhenSourceIsNewer() async throws {
+        let queue = ConversionQueue()
+        BackendResolver.shared.configure(backends: [TestImageBackend()])
+
+        let sourceURL = tempDirectory.appendingPathComponent("newer_source.jpg")
+        try Data("newer source".utf8).write(to: sourceURL)
+        let existingOutput = tempDirectory.appendingPathComponent("existing_older.png")
+        try Data("older target".utf8).write(to: existingOutput)
+
+        let pastDate = Date().addingTimeInterval(-60)
+        try FileManager.default.setAttributes([.modificationDate: pastDate], ofItemAtPath: existingOutput.path)
+
+        var preset = try XCTUnwrap(
+            BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
+        )
+        preset.filenamePattern = "existing_older"
+        preset.overwritePolicy = .replaceIfNewer
+        queue.addJobs([ConversionJob(sourceURL: sourceURL, preset: preset)])
+
+        for _ in 0..<100 where !queue.jobs.allSatisfy({ $0.state.isTerminal }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        guard case .completed = try XCTUnwrap(queue.jobs.first).state else {
+            return XCTFail("Expected older target to be replaced when source is newer")
+        }
+        XCTAssertNotEqual(try Data(contentsOf: existingOutput), Data("older target".utf8))
+    }
 }
 
 private final class TestImageBackend: ConversionBackend, Sendable {

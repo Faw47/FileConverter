@@ -1,5 +1,7 @@
 import Foundation
 import AVFoundation
+import CoreMedia
+import CoreAudio
 import FileConverterCore
 
 public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
@@ -7,6 +9,8 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
     public var isAvailable: Bool { true }
 
     private var activeSessions: [UUID: AVAssetExportSession] = [:]
+    private var activePCMSessions: [UUID: (reader: AVAssetReader, writer: AVAssetWriter)] = [:]
+    private var cancelledJobs = Set<UUID>()
     private let lock = NSLock()
 
     public init() {}
@@ -17,7 +21,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         if sourceFormat.nativeDecoderAvailable && destinationFormat.nativeEncoderAvailable {
             let targetExt = destinationFormat.primaryExtension.lowercased()
             if targetExt == "qta" {
-                guard #available(macOS 26.0, *) else { return false }
+                guard #available(macOS 14.0, *) else { return false }
             }
             if targetExt == "wav" || targetExt == "aiff" {
                 return sourceFormat.category == .audio || sourceFormat.category == .video
@@ -27,29 +31,71 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         return false
     }
 
-    private func registerSession(jobID: UUID, session: AVAssetExportSession) {
-        lock.lock()
-        activeSessions[jobID] = session
-        lock.unlock()
+    private func checkCancelled(jobID: UUID) -> Bool {
+        lock.withLock { cancelledJobs.contains(jobID) }
+    }
+
+    private func clearCancelled(jobID: UUID) {
+        lock.withLock { _ = cancelledJobs.remove(jobID) }
+    }
+
+    private func registerSession(jobID: UUID, session: AVAssetExportSession) -> Bool {
+        lock.withLock {
+            if cancelledJobs.contains(jobID) {
+                session.cancelExport()
+                return false
+            }
+            activeSessions[jobID] = session
+            return true
+        }
     }
 
     private func removeSession(jobID: UUID) -> AVAssetExportSession? {
-        lock.lock()
-        defer { lock.unlock() }
-        return activeSessions.removeValue(forKey: jobID)
+        lock.withLock { activeSessions.removeValue(forKey: jobID) }
+    }
+
+    private func registerPCMSession(jobID: UUID, reader: AVAssetReader, writer: AVAssetWriter) -> Bool {
+        lock.withLock {
+            if cancelledJobs.contains(jobID) {
+                reader.cancelReading()
+                writer.cancelWriting()
+                return false
+            }
+            activePCMSessions[jobID] = (reader, writer)
+            return true
+        }
+    }
+
+    private func removePCMSession(jobID: UUID) -> (reader: AVAssetReader, writer: AVAssetWriter)? {
+        lock.withLock { activePCMSessions.removeValue(forKey: jobID) }
     }
 
     public func cancel(jobID: UUID) async {
-        let session = removeSession(jobID: jobID)
+        let (session, pcm) = lock.withLock { () -> (AVAssetExportSession?, (reader: AVAssetReader, writer: AVAssetWriter)?) in
+            cancelledJobs.insert(jobID)
+            let s = activeSessions.removeValue(forKey: jobID)
+            let p = activePCMSessions.removeValue(forKey: jobID)
+            return (s, p)
+        }
+
         session?.cancelExport()
+        pcm?.reader.cancelReading()
+        pcm?.writer.cancelWriting()
     }
 
     public func convert(job: ConversionJob, progressHandler: @escaping @Sendable (ConversionProgress) -> Void) async throws {
         let jobID = job.id
+        if Task.isCancelled || checkCancelled(jobID: jobID) {
+            throw ConversionError.cancelled
+        }
+        defer { clearCancelled(jobID: jobID) }
         let sourceURL = job.sourceURL
         guard let destURL = job.temporaryOutputURL ?? job.destinationURL else {
             throw ConversionError.destinationUnavailable(path: "")
         }
+
+        let destDir = destURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
 
         // Check if output file already exists at temp URL and remove it
         if FileManager.default.fileExists(atPath: destURL.path) {
@@ -80,13 +126,16 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         exportSession.outputFileType = outputFileType
         exportSession.shouldOptimizeForNetworkUse = true
 
-        registerSession(jobID: jobID, session: exportSession)
+        guard registerSession(jobID: jobID, session: exportSession) else {
+            throw ConversionError.cancelled
+        }
         defer {
             _ = removeSession(jobID: jobID)
         }
 
         let startTime = Date()
 
+        try Task.checkCancellation()
         // Start export
         exportSession.exportAsynchronously {}
 
@@ -179,9 +228,9 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         case "mov":
             return .mov
         case "qta":
-            if #available(macOS 26.0, *) {
-                // The named `.qta` constant is only present in the macOS 26
-                // SDK. Construct the documented UTI so this package still
+            if #available(macOS 14.0, *) {
+                // The named `.qta` constant is only present in newer macOS
+                // SDKs. Construct the documented UTI so this package still
                 // compiles with the macOS 14 SDK used for the minimum target.
                 return AVFileType(rawValue: "com.apple.quicktime-audio")
             }
@@ -201,19 +250,59 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         jobID: UUID,
         progressHandler: @escaping @Sendable (ConversionProgress) -> Void
     ) async throws {
+        try Task.checkCancellation()
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
             throw ConversionError.decoderUnavailable(codec: "audio", reason: "The source has no audio track.")
         }
 
+        var sampleRate: Double = 44100.0
+        var channels: Int = 2
+        var channelLayoutData: Data? = nil
+        if let descriptions = try? await track.load(.formatDescriptions),
+           let firstDesc = descriptions.first {
+            let audioDesc = firstDesc as CMAudioFormatDescription
+            if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(audioDesc)?.pointee {
+                if asbd.mSampleRate > 0 {
+                    sampleRate = asbd.mSampleRate
+                }
+                if asbd.mChannelsPerFrame > 0 {
+                    channels = Int(asbd.mChannelsPerFrame)
+                }
+            }
+            var layoutSize: Int = 0
+            if let layoutPtr = CMAudioFormatDescriptionGetChannelLayout(audioDesc, sizeOut: &layoutSize), layoutSize > 0 {
+                channelLayoutData = Data(bytes: layoutPtr, count: layoutSize)
+            }
+        }
+
         let reader = try AVAssetReader(asset: asset)
         let bigEndian = ["aiff", "aif"].contains(targetExtension.lowercased())
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+        var pcmSettings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: channels,
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsFloatKey: false,
             AVLinearPCMIsBigEndianKey: bigEndian,
             AVLinearPCMIsNonInterleaved: false
-        ])
+        ]
+        if let channelLayoutData {
+            pcmSettings[AVChannelLayoutKey] = channelLayoutData
+        } else if channels > 2 {
+            if channels == 6 {
+                var layout = AudioChannelLayout()
+                layout.mChannelLayoutTag = kAudioChannelLayoutTag_MPEG_5_1_A
+                pcmSettings[AVChannelLayoutKey] = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
+            } else if channels == 8 {
+                var layout = AudioChannelLayout()
+                layout.mChannelLayoutTag = kAudioChannelLayoutTag_MPEG_7_1_A
+                pcmSettings[AVChannelLayoutKey] = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
+            } else {
+                channels = 2
+                pcmSettings[AVNumberOfChannelsKey] = channels
+            }
+        }
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: pcmSettings)
         guard reader.canAdd(output) else {
             throw ConversionError.decoderUnavailable(codec: "audio", reason: "Could not read the source audio stream.")
         }
@@ -221,46 +310,84 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
 
         let fileType: AVFileType = bigEndian ? .aiff : .wav
         let writer = try AVAssetWriter(outputURL: destinationURL, fileType: fileType)
-        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: bigEndian,
-            AVLinearPCMIsNonInterleaved: false
-        ])
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: pcmSettings)
         input.expectsMediaDataInRealTime = false
         guard writer.canAdd(input) else {
             throw ConversionError.encoderUnavailable(codec: targetExtension, reason: "Could not create a PCM writer.")
         }
         writer.add(input)
-        guard reader.startReading(), writer.startWriting() else {
-            throw ConversionError.malformedSource(path: sourcePath, reason: "Could not start the PCM conversion.")
+        guard reader.startReading() else {
+            throw ConversionError.malformedSource(path: sourcePath, reason: reader.error?.localizedDescription ?? "Could not start reading the source audio.")
+        }
+        guard writer.startWriting() else {
+            reader.cancelReading()
+            throw writer.error ?? ConversionError.destinationUnavailable(path: destinationURL.path)
         }
         writer.startSession(atSourceTime: .zero)
+        guard registerPCMSession(jobID: jobID, reader: reader, writer: writer) else {
+            throw ConversionError.cancelled
+        }
+        defer {
+            _ = removePCMSession(jobID: jobID)
+        }
 
         let duration = max(0, CMTimeGetSeconds(try await asset.load(.duration)))
         let start = Date()
-        while reader.status == .reading {
-            try Task.checkCancellation()
-            if input.isReadyForMoreMediaData, let sample = output.copyNextSampleBuffer() {
+        do {
+            while reader.status == .reading {
+                try Task.checkCancellation()
+                if checkCancelled(jobID: jobID) {
+                    throw CancellationError()
+                }
+                if writer.status != .writing {
+                    break
+                }
+                if !input.isReadyForMoreMediaData {
+                    try await Task.sleep(for: .milliseconds(10))
+                    continue
+                }
+                guard let sample = output.copyNextSampleBuffer() else {
+                    break
+                }
                 guard input.append(sample) else {
-                    throw ConversionError.destinationUnavailable(path: destinationURL.path)
+                    throw writer.error ?? ConversionError.destinationUnavailable(path: destinationURL.path)
                 }
                 let end = CMSampleBufferGetPresentationTimeStamp(sample) + CMSampleBufferGetDuration(sample)
                 let seconds = CMTimeGetSeconds(end)
-                progressHandler(ConversionProgress(
-                    fractionCompleted: duration > 0 ? min(0.99, max(0, seconds / duration)) : 0,
-                    elapsedTime: Date().timeIntervalSince(start)
-                ))
-            } else {
-                try await Task.sleep(for: .milliseconds(10))
+                if seconds.isFinite && duration > 0 {
+                    progressHandler(ConversionProgress(
+                        fractionCompleted: min(0.99, max(0, seconds / duration)),
+                        elapsedTime: Date().timeIntervalSince(start)
+                    ))
+                }
+                await Task.yield()
             }
+        } catch {
+            reader.cancelReading()
+            writer.cancelWriting()
+            if error is CancellationError {
+                throw ConversionError.cancelled
+            }
+            throw error
         }
-        input.markAsFinished()
+
+        if Task.isCancelled || checkCancelled(jobID: jobID) || reader.status == .cancelled || writer.status == .cancelled {
+            reader.cancelReading()
+            writer.cancelWriting()
+            throw ConversionError.cancelled
+        }
 
         if reader.status == .failed {
+            writer.cancelWriting()
             throw ConversionError.malformedSource(path: sourcePath, reason: reader.error?.localizedDescription ?? "Could not read audio.")
         }
+
+        if writer.status == .failed {
+            reader.cancelReading()
+            throw writer.error ?? ConversionError.destinationUnavailable(path: destinationURL.path)
+        }
+
+        input.markAsFinished()
 
         await writer.finishWriting()
         guard writer.status == .completed else {

@@ -19,6 +19,11 @@ cleanup_build() {
 }
 trap cleanup_build EXIT
 
+if command -v xcodegen >/dev/null 2>&1; then
+  echo "==> Regenerating Xcode project with xcodegen..."
+  xcodegen generate --spec "${PROJECT_DIR}/project.yml" --project "${PROJECT_DIR}"
+fi
+
 echo "==> Archiving File Converter (${CONFIG}) via Xcode (scheme: FileConverter)..."
 xcodebuild -project "${PROJECT_DIR}/FileConverter.xcodeproj" \
   -scheme FileConverter \
@@ -62,6 +67,7 @@ mv "${STAGING_DIR}/${APP_NAME}.app.dSYM" "${DIST_DIR}/${APP_NAME}.app.dSYM"
 APP_BUNDLE="${DIST_DIR}/${APP_NAME}.app"
 APPEX_BUNDLE="${APP_BUNDLE}/Contents/PlugIns/FileConverterFinderExtension.appex"
 LOCAL_FINDER_ENTITLEMENTS="${PROJECT_DIR}/Scripts/FileConverterFinderLocal.entitlements"
+LOCAL_APP_ENTITLEMENTS="${PROJECT_DIR}/Scripts/FileConverterAppLocal.entitlements"
 SIGNING_IDENTITY="${FILE_CONVERTER_LOCAL_SIGNING_IDENTITY:-}"
 if [ -z "${SIGNING_IDENTITY}" ]; then
   # Prefer the user's Apple Development identity so Finder can reuse an
@@ -119,6 +125,10 @@ else
     echo "Local Finder entitlements not found: ${LOCAL_FINDER_ENTITLEMENTS}" >&2
     exit 1
   fi
+  if [ ! -f "${LOCAL_APP_ENTITLEMENTS}" ]; then
+    echo "Local app entitlements not found: ${LOCAL_APP_ENTITLEMENTS}" >&2
+    exit 1
+  fi
 
   # A local artifact has no provisioning profile on this machine. Ad-hoc
   # signing still gives Finder a sealed, entitlement-bearing extension while
@@ -129,10 +139,15 @@ else
   # archive-build signature (and its unresolved build-setting placeholders)
   # on the executable, which makes macOS ignore the local entitlements and
   # prevents PlugInKit from registering the extension.
-  codesign --force --deep --sign "${SIGNING_IDENTITY}" \
+  codesign --force --sign "${SIGNING_IDENTITY}" \
+    --entitlements "${LOCAL_FINDER_ENTITLEMENTS}" \
+    "${APPEX_EXECUTABLE}"
+  codesign --force --sign "${SIGNING_IDENTITY}" \
     --entitlements "${LOCAL_FINDER_ENTITLEMENTS}" \
     "${APPEX_BUNDLE}"
-  codesign --force --sign "${SIGNING_IDENTITY}" "${APP_BUNDLE}"
+  codesign --force --sign "${SIGNING_IDENTITY}" \
+    --entitlements "${LOCAL_APP_ENTITLEMENTS}" \
+    "${APP_BUNDLE}"
   codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
 fi
 

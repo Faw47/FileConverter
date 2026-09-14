@@ -17,7 +17,9 @@ public enum OutputNamingEngine {
             return sourceURL.deletingLastPathComponent()
 
         case .sourceSubfolder(let subfolder):
-            let cleanSubfolder = subfolder.trimmingCharacters(in: .whitespacesAndNewlines)
+            var cleanSubfolder = subfolder.trimmingCharacters(in: .whitespacesAndNewlines)
+            let baseName = sourceURL.deletingPathExtension().lastPathComponent
+            cleanSubfolder = cleanSubfolder.replacingOccurrences(of: "{name}", with: baseName)
             guard !cleanSubfolder.isEmpty,
                   cleanSubfolder != ".",
                   cleanSubfolder != "..",
@@ -81,6 +83,25 @@ public enum OutputNamingEngine {
         return "\(formatted).\(cleanExt)"
     }
 
+    public static var globalDefaultOutputPolicy: OutputDirectoryPolicy {
+        let policyRaw = UserDefaults.standard.string(forKey: "outputDirectoryPolicy")
+            ?? UserDefaults.standard.string(forKey: "fc.defaultOutputPolicy")
+            ?? "sameAsSource"
+        switch policyRaw {
+        case "downloads":
+            return .downloads
+        case "custom":
+            if let bookmark = UserDefaults.standard.data(forKey: "fc.customOutputFolderBookmark"),
+               let path = UserDefaults.standard.string(forKey: "fc.customOutputFolderPath"),
+               !path.isEmpty {
+                return .customFolder(bookmarkData: bookmark, displayPath: path)
+            }
+            return .sameAsSource
+        default:
+            return .sameAsSource
+        }
+    }
+
     public static func resolveFinalDestinationURL(
         sourceURL: URL,
         preset: ConversionPreset,
@@ -90,10 +111,52 @@ public enum OutputNamingEngine {
         customFolderURL: URL? = nil
     ) throws -> URL {
         let ext = targetExtension ?? preset.destinationFormat
+        let effectivePolicy: OutputDirectoryPolicy
+        var effectiveCustomFolderURL = customFolderURL
+        if preset.outputDirectoryPolicy == .sameAsSource {
+            let globalPolicy = globalDefaultOutputPolicy
+            if globalPolicy != .sameAsSource {
+                effectivePolicy = globalPolicy
+                if case .customFolder(let bookmarkData, _) = globalPolicy, effectiveCustomFolderURL == nil {
+                    var isStale = false
+                    effectiveCustomFolderURL = (try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: [.withSecurityScope, .withoutUI],
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    )) ?? (try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: [.withoutUI],
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    ))
+                }
+            } else {
+                effectivePolicy = .sameAsSource
+            }
+        } else {
+            effectivePolicy = preset.outputDirectoryPolicy
+        }
+
+        if case .customFolder(let bookmarkData, _) = effectivePolicy, effectiveCustomFolderURL == nil {
+            var isStale = false
+            effectiveCustomFolderURL = (try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [.withSecurityScope, .withoutUI],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )) ?? (try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [.withoutUI],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ))
+        }
+
         let targetDir = try resolveDestinationDirectory(
             forSourceURL: sourceURL,
-            policy: preset.outputDirectoryPolicy,
-            customFolderURL: customFolderURL
+            policy: effectivePolicy,
+            customFolderURL: effectiveCustomFolderURL
         )
         let filename = generateFormattedFilename(sourceURL: sourceURL, preset: preset, targetExtension: ext, suffix: suffix)
         let idealURL = targetDir.appendingPathComponent(filename)

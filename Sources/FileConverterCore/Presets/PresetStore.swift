@@ -3,6 +3,7 @@ import FileConverterContracts
 
 public enum PresetStoreError: Error, LocalizedError {
     case appGroupContainerUnavailable(String)
+    case storageUnavailable
     case readOnlyExtension
     case invalidPresetDocument
     case invalidPreset(reason: String)
@@ -11,6 +12,8 @@ public enum PresetStoreError: Error, LocalizedError {
         switch self {
         case .appGroupContainerUnavailable(let identifier):
             return "The preset App Group container is unavailable: \(identifier)"
+        case .storageUnavailable:
+            return "Application Support directory is unavailable."
         case .readOnlyExtension:
             return "Finder extensions cannot modify presets."
         case .invalidPresetDocument:
@@ -38,6 +41,7 @@ public final class PresetStore: @unchecked Sendable {
 
     private var cachedPresets: [ConversionPreset] = []
     private var cachedErrorDescription: String?
+    private var cachedImportWarning: String?
     private var hasLoadedPresetsSuccessfully = false
     private var lastSaveSucceededValue = true
     private let lock = NSLock()
@@ -64,6 +68,14 @@ public final class PresetStore: @unchecked Sendable {
 
     public var lastSaveSucceeded: Bool {
         lock.withLock { lastSaveSucceededValue }
+    }
+
+    public var lastImportWarning: String? {
+        lock.withLock { cachedImportWarning }
+    }
+
+    public func clearLastImportWarning() {
+        lock.withLock { cachedImportWarning = nil }
     }
 
     public func preset(forID id: UUID) -> ConversionPreset? {
@@ -133,6 +145,9 @@ public final class PresetStore: @unchecked Sendable {
 
         let updated = lock.withLock { () -> [ConversionPreset] in
             var result = cachedPresets
+            if result.contains(where: { $0.id == customPreset.id }) {
+                customPreset.id = UUID()
+            }
             result.append(customPreset)
             return result.sorted(by: presetSort)
         }
@@ -226,11 +241,51 @@ public final class PresetStore: @unchecked Sendable {
     public func importPresetsJSON(_ data: Data, overwrite: Bool = false) throws {
         let decoded = try decodePresets(data)
         try validatePresetCollection(decoded)
+        var unresolvablePresetNames: [String] = []
+        let sanitized = decoded.map { preset -> ConversionPreset in
+            var p = preset
+            if case .customFolder(let bookmarkData, _) = p.outputDirectoryPolicy {
+                var isStale = false
+                let resolvable: Bool
+                if let url = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: [.withSecurityScope, .withoutUI],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ), FileManager.default.fileExists(atPath: url.path) {
+                    resolvable = true
+                } else if let url = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: [.withoutUI],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ), FileManager.default.fileExists(atPath: url.path) {
+                    resolvable = true
+                } else {
+                    resolvable = false
+                }
+
+                if !resolvable {
+                    p.outputDirectoryPolicy = .sameAsSource
+                    AppLogger.presets.warning(
+                        "Custom folder bookmark for preset '\(p.name, privacy: .public)' could not be resolved. Falling back to same directory as source."
+                    )
+                    unresolvablePresetNames.append(p.name)
+                }
+            }
+            return p
+        }
+
+        let warningMessage: String? = unresolvablePresetNames.isEmpty
+            ? nil
+            : "The custom destination folder for \(unresolvablePresetNames.joined(separator: ", ")) could not be resolved on this Mac and was reset to 'Same Directory as Original'."
+
         let updated = lock.withLock { () -> [ConversionPreset] in
+            cachedImportWarning = warningMessage
             var result = overwrite
                 ? cachedPresets.filter(\.isBuiltIn)
                 : cachedPresets
-            for var item in decoded {
+            for var item in sanitized {
                 if item.isBuiltIn, let key = item.builtInKey,
                    let existingIndex = result.firstIndex(where: { $0.isBuiltIn && $0.builtInKey == key }) {
                     // Keep the factory identity stable while accepting the user's full edited state.
@@ -252,9 +307,24 @@ public final class PresetStore: @unchecked Sendable {
     }
 
     private func mergeBuiltIns(into storedPresets: [ConversionPreset]) -> [ConversionPreset] {
-        var merged = storedPresets
+        let defaultPresets = BuiltInPresets.makeDefaultPresets()
+        let knownBuiltInKeys = Set(defaultPresets.compactMap(\.builtInKey))
 
-        for defaultPreset in BuiltInPresets.makeDefaultPresets() {
+        // Retain only valid current built-in presets and all user-created presets.
+        // Retired built-ins (such as redundant source-to-destination recipes) are pruned.
+        var merged = storedPresets.filter { stored in
+            guard stored.isBuiltIn else { return true }
+            if let key = stored.builtInKey {
+                return knownBuiltInKeys.contains(key)
+            }
+            return defaultPresets.contains { def in
+                def.name == stored.name
+                    && def.category == stored.category
+                    && def.destinationFormat == stored.destinationFormat
+            }
+        }
+
+        for defaultPreset in defaultPresets {
             let matchIndex = merged.firstIndex { stored in
                 guard stored.isBuiltIn else { return false }
                 if let key = stored.builtInKey {
@@ -280,6 +350,9 @@ public final class PresetStore: @unchecked Sendable {
             // Matching rules are part of the built-in identity; do not let
             // malformed legacy entries hide a factory preset from Finder.
             updated.sourceFormats = defaultPreset.sourceFormats
+            if defaultPreset.builtInKey == "document.pdf-compressed" && updated.backend == .ghostscript {
+                updated.backend = .auto
+            }
             merged[matchIndex] = updated
         }
 
@@ -304,7 +377,9 @@ public final class PresetStore: @unchecked Sendable {
                 .appendingPathComponent(Self.presetsFileName)
         }
 
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw PresetStoreError.storageUnavailable
+        }
         return appSupport
             .appendingPathComponent("FileConverter", isDirectory: true)
             .appendingPathComponent(Self.presetsFileName)

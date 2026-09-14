@@ -43,23 +43,54 @@ public struct IPCConfiguration: Equatable, Sendable {
         // unsigned artifacts. FileManager may still return an App Group URL
         // for those builds even though the process cannot use it reliably.
         if let localSharedContainerPath, !localSharedContainerPath.isEmpty {
-            let components = NSString(string: localSharedContainerPath).pathComponents
-            guard localSharedContainerPath.hasPrefix("/"),
-                  components.count > 1,
+            let relativePath = localSharedContainerPath.hasPrefix("/") ? String(localSharedContainerPath.dropFirst()) : localSharedContainerPath
+            let components = NSString(string: relativePath).pathComponents
+            guard !relativePath.isEmpty,
+                  components.count >= 1,
                   !components.contains(".."),
-                  let userRecord = getpwuid(getuid()),
-                  let homePath = userRecord.pointee.pw_dir else {
+                  let homePath = Self.resolveUserHomeDirectory() else {
                 return nil
             }
-            return URL(fileURLWithPath: String(cString: homePath), isDirectory: true)
-                .appendingPathComponent(String(localSharedContainerPath.dropFirst()), isDirectory: true)
+            return URL(fileURLWithPath: homePath, isDirectory: true)
+                .appendingPathComponent(relativePath, isDirectory: true)
         }
         return fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupID
         )
     }
 
+    private static func resolveUserHomeDirectory() -> String? {
+        if let userRecord = getpwuid(getuid()), let homePath = userRecord.pointee.pw_dir {
+            return String(cString: homePath)
+        }
+        if let user = ProcessInfo.processInfo.environment["USER"], !user.isEmpty,
+           let home = NSHomeDirectoryForUser(user) {
+            return home
+        }
+        let sandboxHome = NSHomeDirectory()
+        if let range = sandboxHome.range(of: "/Library/Containers/") {
+            return String(sandboxHome[..<range.lowerBound])
+        }
+        return sandboxHome.isEmpty ? nil : sandboxHome
+    }
+
     public static func current(bundle: Bundle = .main) throws -> IPCConfiguration {
+        let candidateBundles: [Bundle] = [
+            bundle,
+            Bundle(for: BundleToken.self),
+            Bundle(identifier: "io.fileconverter.app.findersync"),
+            Bundle(identifier: "io.fileconverter.app")
+        ].compactMap { $0 }
+
+        for candidate in candidateBundles {
+            if let config = tryParse(bundle: candidate) {
+                return config
+            }
+        }
+        throw IPCConfigurationError.missingBuildConfiguration
+    }
+
+    private static func tryParse(bundle: Bundle) -> IPCConfiguration? {
         guard let appGroupID = bundle.object(forInfoDictionaryKey: "FileConverterAppGroup") as? String,
               !appGroupID.isEmpty,
               let editionValue = bundle.object(forInfoDictionaryKey: "FileConverterEdition") as? String,
@@ -71,7 +102,7 @@ public struct IPCConfiguration: Equatable, Sendable {
               !keychainAccessGroup.contains("$("),
               let urlScheme = bundle.object(forInfoDictionaryKey: "FileConverterURLScheme") as? String,
               !urlScheme.isEmpty else {
-            throw IPCConfigurationError.missingBuildConfiguration
+            return nil
         }
 
         let localSharedContainerPath = bundle.object(
@@ -90,6 +121,8 @@ public struct IPCConfiguration: Equatable, Sendable {
         )
     }
 }
+
+private final class BundleToken: NSObject {}
 
 public enum IPCConfigurationError: LocalizedError, Sendable {
     case missingBuildConfiguration

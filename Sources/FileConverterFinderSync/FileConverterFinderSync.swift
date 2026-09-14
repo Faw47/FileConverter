@@ -33,13 +33,21 @@ public class FileConverterFinderSync: FIFinderSync {
             return nil
         }
 
+        FinderMenuCatalog.shared.ensureFresh()
+
         let sections = FinderMenuCatalog.shared.sections(for: selectedURLs)
 
         let rootMenu = NSMenu(title: "File Converter")
         let mainMenuItem = NSMenuItem(title: "File Converter", action: nil, keyEquivalent: "")
         let subMenu = NSMenu(title: "File Converter Options")
 
-        if !FinderRequestClient.isReady() || !FinderMenuCatalog.shared.hasUsableSnapshot {
+        let isClientReady = FinderRequestClient.isReady()
+        let hasSnapshot = FinderMenuCatalog.shared.hasUsableSnapshot
+
+        if !isClientReady || !hasSnapshot {
+            finderLogger.notice(
+                "Menu setup required: isReady=\(isClientReady), hasSnapshot=\(hasSnapshot), snapshotError=\(FinderMenuCatalog.shared.lastErrorDescription ?? "none"), clientStatus=\(FinderRequestClient.statusDescription())"
+            )
             let setupItem = NSMenuItem(
                 title: "Open File Converter to Finish Setup",
                 action: #selector(openConfigurationSelected(_:)),
@@ -47,8 +55,14 @@ public class FileConverterFinderSync: FIFinderSync {
             )
             setupItem.target = self
             subMenu.addItem(setupItem)
+        } else if selectedURLs.count > ConversionRequestLimits.production.maximumSourceCount {
+            let limitItem = NSMenuItem(title: "Maximum \(ConversionRequestLimits.production.maximumSourceCount) Files Supported", action: nil, keyEquivalent: "")
+            limitItem.isEnabled = false
+            subMenu.addItem(limitItem)
         } else if sections.isEmpty {
-            let noItem = NSMenuItem(title: "No Compatible Formats", action: nil, keyEquivalent: "")
+            let hasOnlyDirectories = selectedURLs.allSatisfy(\.hasDirectoryPath)
+            let title = hasOnlyDirectories ? "Folders Cannot Be Converted" : "No Compatible Formats"
+            let noItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             noItem.isEnabled = false
             subMenu.addItem(noItem)
         } else {
@@ -188,6 +202,15 @@ public class FileConverterFinderSync: FIFinderSync {
             .filter { $0.title == sender.title }
         if let candidate = candidates.first {
             if candidates.count > 1 {
+                if let menu = sender.menu, let entries = section?.entries {
+                    let index = menu.index(of: sender)
+                    if index >= 0 && index < entries.count {
+                        let indexedCandidate = entries[index]
+                        if indexedCandidate.title == sender.title {
+                            return indexedCandidate.id
+                        }
+                    }
+                }
                 finderLogger.warning(
                     "Finder menu title matched multiple presets; using first: title=\(sender.title, privacy: .public), matches=\(candidates.count, privacy: .public)"
                 )
@@ -208,33 +231,37 @@ public class FileConverterFinderSync: FIFinderSync {
     private func launchMainApp(openSettings: Bool = false) {
         guard let configuration = try? IPCConfiguration.current() else { return }
 
-        if openSettings,
-           let settingsURL = URL(string: "\(configuration.urlScheme)://settings?tab=presets") {
-            NSWorkspace.shared.open(settingsURL)
-            return
-        }
-
-        // Opening the queue URL is the reliable handoff for both a cold host
-        // launch and an already-running host: SwiftUI delivers it to
-        // FileConverterApp.handleIncomingURL, which drains the authenticated
-        // receipt instead of relying only on a Darwin notification observer.
-        if let queueURL = URL(string: "\(configuration.urlScheme)://queue"),
-           NSWorkspace.shared.open(queueURL) {
-            finderLogger.notice("Requested host app queue handoff")
-            return
-        }
+        let targetURL = openSettings
+            ? URL(string: "\(configuration.urlScheme)://settings?tab=presets")
+            : URL(string: "\(configuration.urlScheme)://queue")
 
         if let appURL = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: configuration.hostBundleIdentifier
         ) {
             let config = NSWorkspace.OpenConfiguration()
-            // A Finder command should give immediate, visible feedback. The
-            // host drains the authenticated request on launch, and bringing
-            // its queue forward avoids making a successful command appear to
-            // do nothing behind Finder.
-            config.activates = true
-            finderLogger.notice("Queue URL handoff unavailable; opening host app directly")
-            NSWorkspace.shared.openApplication(at: appURL, configuration: config, completionHandler: nil)
+            config.activates = openSettings
+            if let targetURL {
+                NSWorkspace.shared.open([targetURL], withApplicationAt: appURL, configuration: config) { _, error in
+                    if let error {
+                        finderLogger.error("Failed to open target URL with host app: \(error.localizedDescription, privacy: .public)")
+                        let fallbackConfig = NSWorkspace.OpenConfiguration()
+                        fallbackConfig.activates = openSettings
+                        NSWorkspace.shared.openApplication(at: appURL, configuration: fallbackConfig, completionHandler: nil)
+                    } else {
+                        finderLogger.notice("Successfully notified host app (activates=\(openSettings))")
+                    }
+                }
+            } else {
+                finderLogger.notice("Opening host app directly with activates=\(openSettings)")
+                NSWorkspace.shared.openApplication(at: appURL, configuration: config, completionHandler: nil)
+            }
+            return
+        }
+
+        if let targetURL {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = openSettings
+            NSWorkspace.shared.open(targetURL, configuration: config, completionHandler: nil)
         } else {
             finderLogger.error("Could not locate the host app for Finder request handoff")
         }
@@ -258,5 +285,11 @@ public class FileConverterFinderSync: FIFinderSync {
             nil,
             .deliverImmediately
         )
+    }
+
+    deinit {
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+        CFNotificationCenterRemoveEveryObserver(center, observer)
     }
 }

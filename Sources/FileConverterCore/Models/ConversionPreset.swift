@@ -34,20 +34,116 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     public var audioTargetFileSizeBytes: Int?
     public var splitPDFIntoPages: Bool
 
+    // PDF Splitting Options
+    public var pdfSplitMode: String? // "all", "ranges", "chunks", "evenOdd", "selected"
+    public var pdfPageRanges: String? // e.g. "1-5, 8, 11-15"
+    public var pdfChunkSize: Int? // e.g. 2
+    public var pdfSelectedPages: [Int]? // e.g. [1, 3, 5]
+    public var pdfMergeSplitOutputs: Bool
+    public var pdfNamingPattern: String? // e.g. "{name}_page_{index}", "{name}_pages_{range}"
+    public var pdfZeroPadDigits: Int? // e.g. 3 -> "001"
+    public var pdfOutputSubfolder: String? // e.g. "{name} - Pages"
+
+    // PDF Compression Options
+    public var pdfCompressionProfile: String? // "screen", "ebook", "printer", "prepress", "custom"
+    public var pdfDPI: Int? // 72, 96, 150, 200, 300
+    public var pdfImageQuality: Double? // 0.1 to 1.0
+    public var pdfColorMode: String? // "color", "grayscale", "monochrome"
+    public var pdfRemoveMetadata: Bool
+    public var pdfRemoveAnnotations: Bool
+    public var pdfRemoveThumbnails: Bool
+    public var pdfLinearize: Bool
+    public var pdfCompatibilityLevel: String? // "1.4", "1.5", "1.6", "1.7"
+
     public init(
         audioSplitDurationSeconds: Int? = nil,
         audioTargetFileSizeBytes: Int? = nil,
-        splitPDFIntoPages: Bool = false
+        splitPDFIntoPages: Bool = false,
+        pdfSplitMode: String? = nil,
+        pdfPageRanges: String? = nil,
+        pdfChunkSize: Int? = nil,
+        pdfSelectedPages: [Int]? = nil,
+        pdfMergeSplitOutputs: Bool = false,
+        pdfNamingPattern: String? = nil,
+        pdfZeroPadDigits: Int? = nil,
+        pdfOutputSubfolder: String? = nil,
+        pdfCompressionProfile: String? = nil,
+        pdfDPI: Int? = nil,
+        pdfImageQuality: Double? = nil,
+        pdfColorMode: String? = nil,
+        pdfRemoveMetadata: Bool = false,
+        pdfRemoveAnnotations: Bool = false,
+        pdfRemoveThumbnails: Bool = false,
+        pdfLinearize: Bool = false,
+        pdfCompatibilityLevel: String? = nil
     ) {
         self.audioSplitDurationSeconds = audioSplitDurationSeconds
         self.audioTargetFileSizeBytes = audioTargetFileSizeBytes
         self.splitPDFIntoPages = splitPDFIntoPages
+        self.pdfSplitMode = pdfSplitMode
+        self.pdfPageRanges = pdfPageRanges
+        self.pdfChunkSize = pdfChunkSize
+        self.pdfSelectedPages = pdfSelectedPages
+        self.pdfMergeSplitOutputs = pdfMergeSplitOutputs
+        self.pdfNamingPattern = pdfNamingPattern
+        self.pdfZeroPadDigits = pdfZeroPadDigits
+        self.pdfOutputSubfolder = pdfOutputSubfolder
+        self.pdfCompressionProfile = pdfCompressionProfile
+        self.pdfDPI = pdfDPI
+        self.pdfImageQuality = pdfImageQuality
+        self.pdfColorMode = pdfColorMode
+        self.pdfRemoveMetadata = pdfRemoveMetadata
+        self.pdfRemoveAnnotations = pdfRemoveAnnotations
+        self.pdfRemoveThumbnails = pdfRemoveThumbnails
+        self.pdfLinearize = pdfLinearize
+        self.pdfCompatibilityLevel = pdfCompatibilityLevel
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.audioSplitDurationSeconds = try container.decodeIfPresent(Int.self, forKey: .audioSplitDurationSeconds)
+        self.audioTargetFileSizeBytes = try container.decodeIfPresent(Int.self, forKey: .audioTargetFileSizeBytes)
+        self.splitPDFIntoPages = try container.decodeIfPresent(Bool.self, forKey: .splitPDFIntoPages) ?? false
+        self.pdfSplitMode = try container.decodeIfPresent(String.self, forKey: .pdfSplitMode)
+        self.pdfPageRanges = try container.decodeIfPresent(String.self, forKey: .pdfPageRanges)
+        self.pdfChunkSize = try container.decodeIfPresent(Int.self, forKey: .pdfChunkSize)
+        self.pdfSelectedPages = try container.decodeIfPresent([Int].self, forKey: .pdfSelectedPages)
+        self.pdfMergeSplitOutputs = try container.decodeIfPresent(Bool.self, forKey: .pdfMergeSplitOutputs) ?? false
+        self.pdfNamingPattern = try container.decodeIfPresent(String.self, forKey: .pdfNamingPattern)
+        self.pdfZeroPadDigits = try container.decodeIfPresent(Int.self, forKey: .pdfZeroPadDigits)
+        self.pdfOutputSubfolder = try container.decodeIfPresent(String.self, forKey: .pdfOutputSubfolder)
+        self.pdfCompressionProfile = try container.decodeIfPresent(String.self, forKey: .pdfCompressionProfile)
+        self.pdfDPI = try container.decodeIfPresent(Int.self, forKey: .pdfDPI)
+        self.pdfImageQuality = try container.decodeIfPresent(Double.self, forKey: .pdfImageQuality)
+        self.pdfColorMode = try container.decodeIfPresent(String.self, forKey: .pdfColorMode)
+        self.pdfRemoveMetadata = try container.decodeIfPresent(Bool.self, forKey: .pdfRemoveMetadata) ?? false
+        self.pdfRemoveAnnotations = try container.decodeIfPresent(Bool.self, forKey: .pdfRemoveAnnotations) ?? false
+        self.pdfRemoveThumbnails = try container.decodeIfPresent(Bool.self, forKey: .pdfRemoveThumbnails) ?? false
+        self.pdfLinearize = try container.decodeIfPresent(Bool.self, forKey: .pdfLinearize) ?? false
+        self.pdfCompatibilityLevel = try container.decodeIfPresent(String.self, forKey: .pdfCompatibilityLevel)
     }
 
     public var isEmpty: Bool {
         audioSplitDurationSeconds == nil
             && audioTargetFileSizeBytes == nil
             && !splitPDFIntoPages
+            && pdfSplitMode == nil
+            && pdfPageRanges == nil
+            && pdfChunkSize == nil
+            && pdfSelectedPages == nil
+            && !pdfMergeSplitOutputs
+            && pdfNamingPattern == nil
+            && pdfZeroPadDigits == nil
+            && pdfOutputSubfolder == nil
+            && pdfCompressionProfile == nil
+            && pdfDPI == nil
+            && pdfImageQuality == nil
+            && pdfColorMode == nil
+            && !pdfRemoveMetadata
+            && !pdfRemoveAnnotations
+            && !pdfRemoveThumbnails
+            && !pdfLinearize
+            && pdfCompatibilityLevel == nil
     }
 }
 
@@ -316,5 +412,20 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
 
     public var requiresExternalAudioProcessing: Bool {
         audioSplitDurationSeconds != nil || audioTargetFileSizeBytes != nil
+    }
+
+    public var isPDFCompressWorkflow: Bool {
+        builtInKey == "document.pdf-compressed"
+            || (category == .document && destinationFormat == "pdf" && (menuName.lowercased().contains("compress") || processingOptions?.pdfCompressionProfile != nil))
+    }
+
+    public var isPDFSplitWorkflow: Bool {
+        builtInKey == "document.pdf-split-pages"
+            || splitPDFIntoPages
+            || (category == .document && destinationFormat == "pdf" && menuName.lowercased().contains("split"))
+    }
+
+    public var isInteractiveWorkflow: Bool {
+        isPDFCompressWorkflow || isPDFSplitWorkflow
     }
 }

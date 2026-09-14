@@ -98,6 +98,40 @@ final class FinderMenuCatalogTests: XCTestCase {
         }
     }
 
+    func testDuplicatePresetTitlesDisambiguated() throws {
+        let snapshot = FinderMenuSnapshot(
+            edition: .native,
+            formats: [
+                FinderInputFormatRecord(id: "png", extensions: ["png"], utTypeIdentifiers: ["public.png"])
+            ],
+            presets: [
+                FinderPresetRecord(
+                    id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+                    title: "JPEG",
+                    sectionIdentifier: "image",
+                    sectionTitle: "Image",
+                    sectionOrder: 0,
+                    sortOrder: 0,
+                    compatibleFormatIDs: ["png"]
+                ),
+                FinderPresetRecord(
+                    id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+                    title: "JPEG",
+                    sectionIdentifier: "image",
+                    sectionTitle: "Image",
+                    sectionOrder: 0,
+                    sortOrder: 10,
+                    compatibleFormatIDs: ["png"]
+                )
+            ]
+        )
+        try writeSnapshot(snapshot)
+        let catalog = FinderMenuCatalog(snapshotURL: snapshotURL, expectedEdition: .native)
+        let sections = catalog.sections(for: [URL(fileURLWithPath: "/tmp/photo.png")])
+        XCTAssertEqual(sections.count, 1)
+        XCTAssertEqual(sections[0].entries.map(\.title), ["JPEG", "JPEG (2)"])
+    }
+
     private func writeSnapshot(_ snapshot: FinderMenuSnapshot) throws {
         try JSONEncoder().encode(snapshot).write(to: snapshotURL, options: .atomic)
     }
@@ -147,5 +181,26 @@ final class FinderMenuCatalogTests: XCTestCase {
                 )
             ]
         )
+    }
+
+    func testLiveSnapshotFileIsDecodable() throws {
+        guard let home = getpwuid(getuid())?.pointee.pw_dir else { return }
+        let homeURL = URL(fileURLWithPath: String(cString: home))
+        let liveSnapshotURL = homeURL
+            .appendingPathComponent("Library/Application Support/FileConverter/LocalIPC/native/FileConverter/finder-menu-snapshot.json")
+        guard FileManager.default.fileExists(atPath: liveSnapshotURL.path),
+              (try? Data(contentsOf: liveSnapshotURL)) != nil else { return }
+        let catalog = FinderMenuCatalog(snapshotURL: liveSnapshotURL, expectedEdition: .native)
+        XCTAssertTrue(catalog.hasUsableSnapshot)
+        let sections = catalog.sections(for: [URL(fileURLWithPath: "/tmp/sample.png")])
+        XCTAssertFalse(sections.isEmpty)
+    }
+
+    func testLiveFinderRequestClientIsReady() throws {
+        let extensionURL = URL(fileURLWithPath: "/Applications/File Converter.app/Contents/PlugIns/FileConverterFinderExtension.appex")
+        guard let bundle = Bundle(url: extensionURL) else { return }
+        let config = try IPCConfiguration.current(bundle: bundle)
+        let key = try IPCAuthenticationKeyStore.loadKey(configuration: config)
+        XCTAssertNotNil(key)
     }
 }

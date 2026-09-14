@@ -34,7 +34,50 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
     private var isRefreshing = false
     private let lock = NSLock()
 
-    public init() {}
+    public init() {
+        prepopulateFastToolPaths()
+    }
+
+    private func prepopulateFastToolPaths() {
+        let tools: [(name: String, command: String, paths: [String])] = [
+            ("ffmpeg", "brew install ffmpeg", ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]),
+            ("ffprobe", "brew install ffmpeg", ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"]),
+            ("magick", "brew install imagemagick", ["/opt/homebrew/bin/magick", "/usr/local/bin/magick"]),
+            ("gs", "brew install ghostscript", ["/opt/homebrew/bin/gs", "/usr/local/bin/gs"]),
+            ("soffice", "brew install --cask libreoffice", [
+                "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+                "/opt/homebrew/bin/soffice",
+                "/usr/local/bin/soffice"
+            ]),
+            ("ebook-convert", "brew install --cask calibre", [
+                "/Applications/calibre.app/Contents/MacOS/ebook-convert",
+                "/Applications/Calibre.app/Contents/MacOS/ebook-convert",
+                "/opt/homebrew/bin/ebook-convert",
+                "/usr/local/bin/ebook-convert"
+            ])
+        ]
+
+        var fastCached: [String: ToolInfo] = [:]
+        for tool in tools {
+            var foundPath: String?
+            for path in tool.paths {
+                if FileManager.default.isExecutableFile(atPath: path) {
+                    foundPath = path
+                    break
+                }
+            }
+            fastCached[tool.name] = ToolInfo(
+                name: tool.name,
+                executablePath: foundPath,
+                version: nil,
+                isInstalled: foundPath != nil,
+                installCommand: tool.command
+            )
+        }
+        lock.lock()
+        cachedTools = fastCached
+        lock.unlock()
+    }
 
     public func refreshAllTools(force: Bool = false) {
         lock.lock()

@@ -13,6 +13,7 @@ public final class AppState: ObservableObject {
     @Published public var showSettings: Bool = false
     @Published public var dropZoneActive: Bool = false
     @Published public private(set) var backendDiscoveryComplete = false
+    @Published public var activeWorkflowDialog: ActiveWorkflowDialog?
 
     private var cancellables = Set<AnyCancellable>()
     private var backendDiscoveryTask: Task<Void, Never>?
@@ -92,17 +93,21 @@ public final class AppState: ObservableObject {
     }
 
     public func drainFinderRequestsWhenReady() async {
-        // Drain once immediately so native requests are admitted while
-        // optional backend discovery is still running, then drain again after
-        // discovery for requests that depend on an external tool.
-        await ConversionCoordinator.shared.checkAndDrainPendingRequests()
         await backendDiscoveryTask?.value
         await ConversionCoordinator.shared.checkAndDrainPendingRequests()
     }
 
-    public func convertFilesWhenReady(urls: [URL], preset: ConversionPreset) async throws {
+    public func convertFilesWhenReady(urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]? = nil) async throws {
         await backendDiscoveryTask?.value
-        try await ConversionCoordinator.shared.convertFiles(urls: urls, preset: preset)
+        try await ConversionCoordinator.shared.convertFiles(urls: urls, preset: preset, leases: leases)
+    }
+
+    public func presentWorkflowDialog(preset: ConversionPreset, urls: [URL], leases: [SecurityScopedLease]? = nil) {
+        if preset.isPDFSplitWorkflow {
+            activeWorkflowDialog = .splitPDF(urls: urls, preset: preset, leases: leases)
+        } else if preset.isPDFCompressWorkflow {
+            activeWorkflowDialog = .compressPDF(urls: urls, preset: preset, leases: leases)
+        }
     }
 
     private func handleBatchCompleted(_ note: Notification) {
@@ -111,5 +116,23 @@ public final class AppState: ObservableObject {
         let existing = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
         guard !existing.isEmpty else { return }
         NSWorkspace.shared.activateFileViewerSelecting(existing)
+    }
+}
+
+public enum ActiveWorkflowDialog: Identifiable, Equatable {
+    case compressPDF(urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
+    case splitPDF(urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
+
+    public var id: String {
+        switch self {
+        case .compressPDF(let urls, let preset, _):
+            return "compress-\(preset.id)-\(urls.first?.path ?? "")"
+        case .splitPDF(let urls, let preset, _):
+            return "split-\(preset.id)-\(urls.first?.path ?? "")"
+        }
+    }
+
+    public static func == (lhs: ActiveWorkflowDialog, rhs: ActiveWorkflowDialog) -> Bool {
+        lhs.id == rhs.id
     }
 }

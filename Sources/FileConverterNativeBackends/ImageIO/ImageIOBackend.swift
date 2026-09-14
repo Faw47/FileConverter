@@ -21,21 +21,21 @@ public final class ImageIOBackend: ConversionBackend, @unchecked Sendable {
     }
 
     private func markCancelled(jobID: UUID) {
-        lock.lock()
-        cancelledJobs.insert(jobID)
-        lock.unlock()
+        lock.withLock {
+            _ = cancelledJobs.insert(jobID)
+        }
     }
 
     private func clearCancelled(jobID: UUID) {
-        lock.lock()
-        cancelledJobs.remove(jobID)
-        lock.unlock()
+        lock.withLock {
+            _ = cancelledJobs.remove(jobID)
+        }
     }
 
     private func checkCancelled(jobID: UUID) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return cancelledJobs.contains(jobID)
+        lock.withLock {
+            cancelledJobs.contains(jobID)
+        }
     }
 
     public func cancel(jobID: UUID) async {
@@ -44,14 +44,21 @@ public final class ImageIOBackend: ConversionBackend, @unchecked Sendable {
 
     public func convert(job: ConversionJob, progressHandler: @escaping @Sendable (ConversionProgress) -> Void) async throws {
         let jobID = job.id
-        clearCancelled(jobID: jobID)
+        if Task.isCancelled || checkCancelled(jobID: jobID) {
+            throw ConversionError.cancelled
+        }
+        defer { clearCancelled(jobID: jobID) }
 
         let sourceURL = job.sourceURL
         guard let destURL = job.temporaryOutputURL ?? job.destinationURL else {
             throw ConversionError.destinationUnavailable(path: "")
         }
 
+        let destDir = destURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+
         let isCancelled = { [weak self] () -> Bool in
+            if Task.isCancelled { return true }
             guard let self = self else { return false }
             return self.checkCancelled(jobID: jobID)
         }

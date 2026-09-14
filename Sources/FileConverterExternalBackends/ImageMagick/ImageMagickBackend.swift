@@ -30,7 +30,8 @@ public final class ImageMagickBackend: ConversionBackend, @unchecked Sendable {
             throw ConversionError.destinationUnavailable(path: "")
         }
 
-        var args: [String] = [sourceURL.path]
+        let sourceArg = job.preset.destinationFormat.lowercased() != "gif" ? "\(sourceURL.path)[0]" : sourceURL.path
+        var args: [String] = [sourceArg]
 
         switch job.preset.quality {
         case .low:

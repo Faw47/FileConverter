@@ -14,6 +14,8 @@ public struct PresetsSettingsView: View {
     @State private var showingResetConfirmation = false
     @State private var showingImportError = false
     @State private var importErrorMessage = ""
+    @State private var showingImportWarning = false
+    @State private var importWarningMessage = ""
     @State private var replaceOnImport = false
     @State private var isEditorDirty = false
     @State private var showingUnsavedChangesConfirmation = false
@@ -79,6 +81,11 @@ public struct PresetsSettingsView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(importErrorMessage.isEmpty ? "That file is not a valid presets export." : importErrorMessage)
+        }
+        .alert("Import Notice", isPresented: $showingImportWarning) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(importWarningMessage)
         }
         .confirmationDialog(
             "Delete this preset?",
@@ -321,6 +328,7 @@ public struct PresetsSettingsView: View {
 
     private func addPreset(_ template: ConversionPreset) {
         var preset = template
+        preset.id = UUID()
         preset.outputDirectoryPolicy = settings.defaultOutputPolicy
         preset.filenamePattern = settings.defaultFilenamePattern
         preset.overwritePolicy = settings.defaultOverwritePolicy
@@ -411,6 +419,10 @@ public struct PresetsSettingsView: View {
                 try PresetStore.shared.importPresetsJSON(data, overwrite: replaceOnImport)
                 Task { @MainActor in
                     reload()
+                    if let warning = PresetStore.shared.lastImportWarning {
+                        importWarningMessage = warning
+                        showingImportWarning = true
+                    }
                 }
             } catch {
                 Task { @MainActor in

@@ -15,11 +15,31 @@ public struct ConversionBatchSelection: Identifiable {
 public struct FileConverterMainView: View {
     @StateObject private var appState = AppState.shared
     @ObservedObject private var queue = ConversionQueue.shared
+    private enum PresentedSheet: Identifiable {
+        case presetSelection(ConversionBatchSelection)
+        case conflictResolution([ConversionQueue.CollisionConflict])
+        case pdfCompress(urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
+        case pdfSplit(urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
+
+        var id: String {
+            switch self {
+            case .presetSelection(let selection):
+                return "preset-\(selection.id.uuidString)"
+            case .conflictResolution:
+                return "conflicts"
+            case .pdfCompress(let urls, let preset, _):
+                return "compress-\(preset.id)-\(urls.first?.path ?? "")"
+            case .pdfSplit(let urls, let preset, _):
+                return "split-\(preset.id)-\(urls.first?.path ?? "")"
+            }
+        }
+    }
+
     @State private var batchSelection: ConversionBatchSelection? = nil
+    @State private var presentedSheet: PresentedSheet? = nil
     @State private var conversionErrorDescription: String?
     @State private var dropTargeted = false
     @State private var presetSearchText = ""
-    @State private var showingConflictSheet = false
     @State private var isEnqueuingSelection = false
 
     public init() {}
@@ -41,7 +61,16 @@ public struct FileConverterMainView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenFileConverterPresetPicker"))) { note in
             if let urls = note.userInfo?["urls"] as? [URL], !urls.isEmpty {
-                batchSelection = ConversionBatchSelection(urls: urls)
+                let selection = ConversionBatchSelection(urls: urls)
+                batchSelection = selection
+                presentedSheet = .presetSelection(selection)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenFileConverterWorkflowDialog"))) { note in
+            if let preset = note.userInfo?["preset"] as? ConversionPreset,
+               let urls = note.userInfo?["urls"] as? [URL], !urls.isEmpty {
+                let leases = note.userInfo?["leases"] as? [SecurityScopedLease]
+                appState.presentWorkflowDialog(preset: preset, urls: urls, leases: leases)
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
@@ -54,7 +83,6 @@ public struct FileConverterMainView: View {
                     Label("Add Files...", systemImage: "plus.circle")
                 }
                 .help("Select files to convert (⌘O)")
-                .keyboardShortcut("o", modifiers: .command)
                 .accessibilityLabel("Add Files to Convert")
 
                 if queue.completedCount > 0 || queue.failedCount > 0 || queue.cancelledCount > 0 {
@@ -62,24 +90,66 @@ public struct FileConverterMainView: View {
                         Label("Clear", systemImage: "trash")
                     }
                     .help("Clear completed jobs (⌘K)")
-                    .keyboardShortcut("k", modifiers: .command)
                     .accessibilityLabel("Clear Completed Conversions")
                 }
 
             }
         }
-        .sheet(item: $batchSelection, onDismiss: { presetSearchText = "" }) { batch in
-            presetSelectionSheet(for: batch.urls)
-        }
-        .sheet(isPresented: $showingConflictSheet) {
-            CollisionResolutionView(conflicts: queue.pendingCollisions) { decision, applyToAll in
-                queue.resolveCollisions(decision, applyToAll: applyToAll)
-                showingConflictSheet = false
+        .sheet(item: $presentedSheet, onDismiss: {
+            presetSearchText = ""
+            batchSelection = nil
+        }) { sheet in
+            switch sheet {
+            case .presetSelection(let batch):
+                presetSelectionSheet(for: batch.urls)
+            case .conflictResolution(let conflicts):
+                CollisionResolutionView(conflicts: conflicts) { decision, applyToAll in
+                    queue.resolveCollisions(decision, applyToAll: applyToAll)
+                    presentedSheet = nil
+                }
+                .frame(minWidth: 520, idealWidth: 620, minHeight: 360)
+            case .pdfCompress(let urls, let preset, let leases):
+                PDFCompressDialogView(
+                    urls: urls,
+                    initialPreset: preset,
+                    onCancel: {
+                        presentedSheet = nil
+                    },
+                    onStart: { customizedPreset in
+                        presentedSheet = nil
+                        startConversion(urls: urls, preset: customizedPreset, leases: leases)
+                    }
+                )
+            case .pdfSplit(let urls, let preset, let leases):
+                PDFSplitDialogView(
+                    urls: urls,
+                    initialPreset: preset,
+                    onCancel: {
+                        presentedSheet = nil
+                    },
+                    onStart: { customizedPreset in
+                        presentedSheet = nil
+                        startConversion(urls: urls, preset: customizedPreset, leases: leases)
+                    }
+                )
             }
-            .frame(minWidth: 520, idealWidth: 620, minHeight: 360)
+        }
+        .onChange(of: appState.activeWorkflowDialog) { _, dialog in
+            guard let dialog else { return }
+            switch dialog {
+            case .compressPDF(let urls, let preset, let leases):
+                presentedSheet = .pdfCompress(urls: urls, preset: preset, leases: leases)
+            case .splitPDF(let urls, let preset, let leases):
+                presentedSheet = .pdfSplit(urls: urls, preset: preset, leases: leases)
+            }
+            appState.activeWorkflowDialog = nil
         }
         .onChange(of: queue.pendingCollisions) { _, conflicts in
-            showingConflictSheet = !conflicts.isEmpty
+            if !conflicts.isEmpty {
+                presentedSheet = .conflictResolution(conflicts)
+            } else if case .conflictResolution = presentedSheet {
+                presentedSheet = nil
+            }
         }
         .onChange(of: appState.showSettings) { _, shouldShow in
             guard shouldShow else { return }
@@ -138,17 +208,57 @@ public struct FileConverterMainView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical)
             } else if compatible.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("No compatible presets found for:", systemImage: "exclamationmark.triangle")
-                        .font(.subheadline)
+                VStack(spacing: 16) {
+                    Spacer()
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 36))
                         .foregroundStyle(.orange)
-                    ForEach(urls, id: \.self) { url in
-                        Text("• \(url.lastPathComponent)")
-                            .font(.system(size: 11, design: .monospaced))
+
+                    VStack(spacing: 4) {
+                        Text("No Compatible Presets Found")
+                            .font(.headline)
+                        Text("None of your enabled presets accept these files.")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(urls.prefix(5), id: \.self) { url in
+                            HStack(spacing: 8) {
+                                Image(systemName: "doc")
+                                    .foregroundStyle(.secondary)
+                                Text(url.lastPathComponent)
+                                    .font(.system(size: 11, design: .monospaced))
+                                Spacer()
+                                Text(url.pathExtension.uppercased())
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        if urls.count > 5 {
+                            Text("+ \(urls.count - 5) more files")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 4)
+                        }
+                    }
+                    .frame(maxWidth: 360)
+
+                    Button("Manage Presets in Settings…") {
+                        batchSelection = nil
+                        appState.openSettings(tab: .presets)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Spacer()
                 }
-                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
             } else {
                 if isEnqueuingSelection {
                     HStack(spacing: 8) {
@@ -264,17 +374,28 @@ public struct FileConverterMainView: View {
         group.notify(queue: .main) {
             let candidates = collector.orderedURLs().filter { !$0.path.isEmpty }
             let valid = candidates.filter { url in
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer {
+                    if accessed {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
                 var isDirectory: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else { return false }
                 guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                       let size = attributes[.size] as? NSNumber else { return false }
                 return size.int64Value > 0
             }
-            if valid.count != candidates.count {
-                conversionErrorDescription = "Folders, missing files, and zero-byte files cannot be converted."
+            guard !valid.isEmpty else {
+                self.batchSelection = nil
+                self.presentedSheet = nil
+                self.conversionErrorDescription = "Folders, missing files, and zero-byte files cannot be converted."
+                return
             }
-            guard !valid.isEmpty else { return }
-            self.batchSelection = ConversionBatchSelection(urls: valid)
+            self.conversionErrorDescription = nil
+            let selection = ConversionBatchSelection(urls: valid)
+            self.batchSelection = selection
+            self.presentedSheet = .presetSelection(selection)
         }
     }
 
@@ -286,22 +407,47 @@ public struct FileConverterMainView: View {
         panel.prompt = "Choose"
         panel.begin { response in
             if response == .OK && !panel.urls.isEmpty {
-                self.batchSelection = ConversionBatchSelection(urls: panel.urls)
+                let selection = ConversionBatchSelection(urls: panel.urls)
+                self.batchSelection = selection
+                self.presentedSheet = .presetSelection(selection)
             }
         }
     }
 
     private func enqueueSelected(urls: [URL], preset: ConversionPreset) {
+        if preset.isPDFSplitWorkflow {
+            presentedSheet = .pdfSplit(urls: urls, preset: preset, leases: nil)
+            return
+        }
+        if preset.isPDFCompressWorkflow {
+            presentedSheet = .pdfCompress(urls: urls, preset: preset, leases: nil)
+            return
+        }
         guard !isEnqueuingSelection else { return }
         isEnqueuingSelection = true
         Task {
             do {
                 try await appState.convertFilesWhenReady(urls: urls, preset: preset)
+                presentedSheet = nil
                 batchSelection = nil
             } catch {
+                presentedSheet = nil
+                batchSelection = nil
+                try? await Task.sleep(for: .milliseconds(150))
                 conversionErrorDescription = error.localizedDescription
             }
             isEnqueuingSelection = false
+        }
+    }
+
+    private func startConversion(urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?) {
+        Task {
+            do {
+                try await appState.convertFilesWhenReady(urls: urls, preset: preset, leases: leases)
+            } catch {
+                try? await Task.sleep(for: .milliseconds(150))
+                conversionErrorDescription = error.localizedDescription
+            }
         }
     }
 }

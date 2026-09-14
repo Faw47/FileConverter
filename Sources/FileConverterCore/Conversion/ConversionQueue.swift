@@ -139,6 +139,7 @@ public final class ConversionQueue: ObservableObject {
             }
         }
 
+        pendingCollisions.removeAll()
         updateCountsAndProgress()
     }
 
@@ -190,7 +191,8 @@ public final class ConversionQueue: ObservableObject {
         let targets = applyToAll ? matchingTargets : Array(matchingTargets.prefix(1))
         var skippedJobIDs: [UUID] = []
         for conflict in targets {
-            guard let index = jobs.firstIndex(where: { $0.id == conflict.jobID }) else { continue }
+            guard let index = jobs.firstIndex(where: { $0.id == conflict.jobID }),
+                  jobs[index].state != .cancelled else { continue }
             switch decision {
             case .replace:
                 jobs[index].preset.overwritePolicy = .overwrite
@@ -272,9 +274,16 @@ public final class ConversionQueue: ObservableObject {
             // 2. Resolve the backend before creating destination directories or temporary files.
             let backend = try BackendResolver.shared.resolveBackend(for: job)
             job.resolvedBackend = backend.backendType
+            let effectiveOutputPolicy: OutputDirectoryPolicy = {
+                if job.preset.outputDirectoryPolicy == .sameAsSource {
+                    let global = OutputNamingEngine.globalDefaultOutputPolicy
+                    return global != .sameAsSource ? global : .sameAsSource
+                }
+                return job.preset.outputDirectoryPolicy
+            }()
 
-            if case .customFolder(let bookmarkData, _) = job.preset.outputDirectoryPolicy {
-                destinationAccessLease = try SecurityScopedLease(bookmarkData: bookmarkData)
+            if case .customFolder(let bookmarkData, _) = effectiveOutputPolicy {
+                destinationAccessLease = try? SecurityScopedLease(bookmarkData: bookmarkData)
             }
 
             // 3. Determine and reserve every output path before conversion.
@@ -369,7 +378,8 @@ public final class ConversionQueue: ObservableObject {
                     await finishJob(id: jobID, state: .cancelled)
                 } else if case .outputCollision(let path) = convErr, job.preset.overwritePolicy == .ask {
                     await markAwaitingCollision(jobID: jobID, destinationPath: path)
-                } else if case .outputCollision = convErr, job.preset.overwritePolicy == .skip {
+                } else if case .outputCollision = convErr,
+                          job.preset.overwritePolicy == .skip || job.preset.overwritePolicy == .replaceIfNewer {
                     await finishJob(id: jobID, state: .skipped("Output already exists"))
                 } else {
                     await finishJob(id: jobID, state: .failed(convErr))
@@ -603,6 +613,15 @@ public final class ConversionQueue: ObservableObject {
         leaseToRelease?.release()
         updateCountsAndProgress()
         processNextJobs()
+
+        NotificationCenter.default.post(
+            name: NSNotification.Name("FileConverterActivateApp"),
+            object: nil
+        )
+        postUserNotification(
+            title: "File Conflict",
+            body: "A file named \(jobs[index].filename) already exists. Please choose whether to replace it."
+        )
     }
 
     nonisolated private func estimateRequiredDiskSpace(for job: ConversionJob, outputCount: Int) -> Int64 {
@@ -658,7 +677,7 @@ public final class ConversionQueue: ObservableObject {
             )
         }
 
-        let enabled = UserDefaults.standard.object(forKey: "enableNotifications") as? Bool ?? false
+        let enabled = UserDefaults.standard.object(forKey: "enableNotifications") as? Bool ?? true
         guard enabled else { return }
         guard Bundle.main.bundleURL.pathExtension.lowercased() == "app" else { return }
 

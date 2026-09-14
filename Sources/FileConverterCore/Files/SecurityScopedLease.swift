@@ -13,11 +13,13 @@ public final class SecurityScopedLease: @unchecked Sendable {
                 options: [.withSecurityScope, .withoutUI],
                 relativeTo: nil,
                 bookmarkDataIsStale: &scopedBookmarkIsStale
-           ), !scopedBookmarkIsStale,
-           scopedURL.startAccessingSecurityScopedResource() {
-            url = scopedURL
-            isActive = true
-            return
+           ) {
+            let accessed = scopedURL.startAccessingSecurityScopedResource()
+            if accessed || FileManager.default.isReadableFile(atPath: scopedURL.path) {
+                url = scopedURL
+                isActive = accessed
+                return
+            }
         }
 
         // Finder bookmarks carry implicit scope rather than app-scoped bookmark metadata.
@@ -28,14 +30,12 @@ public final class SecurityScopedLease: @unchecked Sendable {
             relativeTo: nil,
             bookmarkDataIsStale: &ephemeralBookmarkIsStale
         )
-        guard !ephemeralBookmarkIsStale else {
-            throw SecurityScopedLeaseError.staleBookmark
-        }
-        guard ephemeralURL.startAccessingSecurityScopedResource() else {
+        let accessed = ephemeralURL.startAccessingSecurityScopedResource()
+        if !accessed && !FileManager.default.isReadableFile(atPath: ephemeralURL.path) {
             throw SecurityScopedLeaseError.accessDenied
         }
         url = ephemeralURL
-        isActive = true
+        isActive = accessed
     }
 
     public func release() {

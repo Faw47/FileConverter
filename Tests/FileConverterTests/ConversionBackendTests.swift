@@ -47,6 +47,88 @@ final class ConversionBackendTests: XCTestCase {
         XCTAssertEqual(progressTracker.values.last, 1.0)
     }
 
+    func testImageIOCancellationAndCleanup() async throws {
+        let srcPNG = tempDirectory.appendingPathComponent("test_cancel.png")
+        createTestPNGImage(at: srcPNG, width: 200, height: 200)
+
+        let backend = ImageIOBackend()
+        let jpegPreset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "JPEG" }!
+        let destJPEG = tempDirectory.appendingPathComponent("test_cancel.jpg")
+        let job = ConversionJob(
+            sourceURL: srcPNG,
+            destinationURL: destJPEG,
+            preset: jpegPreset
+        )
+
+        let cancellationGate = CancellationGate()
+        do {
+            try await backend.convert(job: job) { _ in
+                guard cancellationGate.beginCancellation() else { return }
+                Task {
+                    await backend.cancel(jobID: job.id)
+                    cancellationGate.signalCancellation()
+                }
+                _ = cancellationGate.waitForCancellation()
+            }
+            XCTFail("Should have thrown cancellation error")
+        } catch let error as ConversionError {
+            XCTAssertEqual(error, .cancelled)
+        }
+    }
+
+    func testImageIOPreConversionCancellation() async throws {
+        let srcPNG = tempDirectory.appendingPathComponent("test_precancel.png")
+        createTestPNGImage(at: srcPNG, width: 200, height: 200)
+
+        let backend = ImageIOBackend()
+        let jpegPreset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "JPEG" }!
+        let destJPEG = tempDirectory.appendingPathComponent("test_precancel.jpg")
+        let job = ConversionJob(
+            sourceURL: srcPNG,
+            destinationURL: destJPEG,
+            preset: jpegPreset
+        )
+
+        await backend.cancel(jobID: job.id)
+        do {
+            try await backend.convert(job: job) { _ in }
+            XCTFail("Should have thrown cancellation error")
+        } catch let error as ConversionError {
+            XCTAssertEqual(error, .cancelled)
+        }
+    }
+
+    func testNativeImageIOHEICToPNGConversion() async throws {
+        let srcHEIC = tempDirectory.appendingPathComponent("test_photo.heic")
+        createTestHEICImage(at: srcHEIC, width: 100, height: 100)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: srcHEIC.path))
+
+        let detected = FormatDetector.detect(url: srcHEIC)
+        XCTAssertEqual(detected.format?.id, "heic")
+        XCTAssertEqual(detected.format?.category, .image)
+
+        let backend = ImageIOBackend()
+        let pngPreset = try XCTUnwrap(BuiltInPresets.makeDefaultPresets().first { $0.menuName == "PNG" })
+
+        let destPNG = tempDirectory.appendingPathComponent("test_photo.png")
+        let job = ConversionJob(
+            sourceURL: srcHEIC,
+            destinationURL: destPNG,
+            preset: pngPreset
+        )
+
+        let progressTracker = TestProgressTracker()
+        try await backend.convert(job: job) { progress in
+            progressTracker.add(progress.fractionCompleted)
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destPNG.path))
+        XCTAssertGreaterThan(FileAccessManager.shared.fileSize(at: destPNG), 0)
+        let convertedDetected = FormatDetector.detect(url: destPNG)
+        XCTAssertEqual(convertedDetected.format?.id, "png")
+        XCTAssertEqual(progressTracker.values.last, 1.0)
+    }
+
     func testNativePDFKitImageToPDFConversion() async throws {
         let srcPNG = tempDirectory.appendingPathComponent("test_document.png")
         createTestPNGImage(at: srcPNG, width: 300, height: 300)
@@ -220,6 +302,29 @@ final class ConversionBackendTests: XCTestCase {
                 try? pngData.write(to: url)
             }
         }
+    }
+
+    private func createTestHEICImage(at url: URL, width: Int, height: Int) {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+
+        context.setFillColor(red: 0.8, green: 0.2, blue: 0.4, alpha: 1.0)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard let cgImage = context.makeImage(),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.heic" as CFString, 1, nil) else {
+            return
+        }
+        CGImageDestinationAddImage(dest, cgImage, nil)
+        CGImageDestinationFinalize(dest)
     }
 }
 

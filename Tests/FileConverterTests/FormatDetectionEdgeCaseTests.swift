@@ -85,4 +85,48 @@ final class FormatDetectionEdgeCaseTests: XCTestCase {
         XCTAssertEqual(result.format?.id, "qta")
         XCTAssertEqual(result.format?.category, .audio)
     }
+
+    func testHEICBrandSniffing() throws {
+        for brand in ["heic", "heix", "hevc", "hevx", "heim", "heis", "miaf", "MiHB"] {
+            let file = tempDirectory.appendingPathComponent("test_\(brand).bin")
+            var data = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])
+            data.append(brand.data(using: .utf8)!)
+            data.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+            data.append("mif1".data(using: .utf8)!)
+            data.append("heic".data(using: .utf8)!)
+            try data.write(to: file)
+
+            let result = FormatDetector.detect(url: file)
+            XCTAssertEqual(result.format?.id, "heic", "Failed for brand \(brand)")
+            XCTAssertEqual(result.format?.category, .image)
+        }
+    }
+
+    func testHEICCompatibleBrandsDetection() throws {
+        let file = tempDirectory.appendingPathComponent("generic_heic.bin")
+        var data = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])
+        data.append("mif1".data(using: .utf8)!)
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+        data.append("mif1".data(using: .utf8)!)
+        data.append("heix".data(using: .utf8)!)
+        try data.write(to: file)
+
+        let result = FormatDetector.detect(url: file)
+        XCTAssertEqual(result.format?.id, "heic")
+        XCTAssertEqual(result.format?.category, .image)
+    }
+
+    func testHEICExtensionNeverDefaultsToMP4() throws {
+        let file = tempDirectory.appendingPathComponent("photo.heic")
+        var data = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])
+        data.append("isom".data(using: .utf8)!)
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+        data.append("mp42".data(using: .utf8)!)
+        data.append("isom".data(using: .utf8)!)
+        try data.write(to: file)
+
+        let result = FormatDetector.detect(url: file)
+        XCTAssertEqual(result.format?.id, "heic")
+        XCTAssertNotEqual(result.format?.id, "mp4")
+    }
 }

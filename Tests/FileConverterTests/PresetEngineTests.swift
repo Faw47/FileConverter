@@ -30,12 +30,12 @@ final class PresetEngineTests: XCTestCase {
         XCTAssertTrue(presets.contains { $0.menuName == "ICO" })
         XCTAssertTrue(presets.contains { $0.menuName == "WebP Lossless" })
         XCTAssertTrue(presets.contains { $0.menuName == "PDF to PNG" })
-        XCTAssertTrue(presets.contains { $0.menuName == "HEIC → JPEG" })
-        XCTAssertTrue(presets.contains { $0.menuName == "HEIC → PNG" })
-        XCTAssertTrue(presets.contains { $0.menuName == "HEIC → WebP" })
-        XCTAssertTrue(presets.contains { $0.menuName == "JPEG → HEIC" })
-        XCTAssertTrue(presets.contains { $0.menuName == "PNG → JPEG" })
-        XCTAssertTrue(presets.contains { $0.menuName == "RAW → JPEG" })
+        XCTAssertTrue(presets.contains { $0.menuName == "JPEG" })
+        XCTAssertTrue(presets.contains { $0.menuName == "PNG" })
+        XCTAssertTrue(presets.contains { $0.menuName == "WebP" })
+        XCTAssertTrue(presets.contains { $0.menuName == "HEIC" })
+        XCTAssertFalse(presets.contains { $0.menuName == "HEIC → JPEG" })
+        XCTAssertFalse(presets.contains { $0.menuName == "HEIC → PNG" })
         XCTAssertTrue(presets.contains { $0.menuName == "PDF to TIFF" })
         XCTAssertTrue(presets.contains { $0.menuName == "WAV → MP3" })
         XCTAssertTrue(presets.contains { $0.menuName == "MKV → MP4" })
@@ -186,18 +186,21 @@ final class PresetEngineTests: XCTestCase {
         let jpeg = try XCTUnwrap(FormatRegistry.shared.format(forID: "jpeg"))
 
         let heicCompatible = presets.filter { PresetValidator.isPresetCompatible($0, forFormat: heic) }
-        XCTAssertTrue(heicCompatible.contains { $0.menuName == "HEIC → JPEG" })
-        XCTAssertTrue(heicCompatible.contains { $0.menuName == "HEIC → PNG" })
-        XCTAssertFalse(heicCompatible.contains { $0.menuName == "PNG → JPEG" })
+        XCTAssertTrue(heicCompatible.contains { $0.menuName == "JPEG" })
+        XCTAssertTrue(heicCompatible.contains { $0.menuName == "PNG" })
+        XCTAssertTrue(heicCompatible.contains { $0.menuName == "WebP" })
+        XCTAssertFalse(heicCompatible.contains { $0.menuName == "HEIC → JPEG" })
+        XCTAssertFalse(heicCompatible.contains { $0.menuName == "HEIC → PNG" })
 
         let pngCompatible = presets.filter { PresetValidator.isPresetCompatible($0, forFormat: png) }
-        XCTAssertTrue(pngCompatible.contains { $0.menuName == "PNG → JPEG" })
-        XCTAssertTrue(pngCompatible.contains { $0.menuName == "PNG → HEIC" })
-        XCTAssertFalse(pngCompatible.contains { $0.menuName == "HEIC → PNG" })
+        XCTAssertTrue(pngCompatible.contains { $0.menuName == "JPEG" })
+        XCTAssertTrue(pngCompatible.contains { $0.menuName == "HEIC" })
+        XCTAssertFalse(pngCompatible.contains { $0.menuName == "PNG → JPEG" })
 
         let jpegCompatible = presets.filter { PresetValidator.isPresetCompatible($0, forFormat: jpeg) }
-        XCTAssertTrue(jpegCompatible.contains { $0.menuName == "JPEG → HEIC" })
-        XCTAssertFalse(jpegCompatible.contains { $0.menuName == "HEIC → JPEG" })
+        XCTAssertTrue(jpegCompatible.contains { $0.menuName == "PNG" })
+        XCTAssertTrue(jpegCompatible.contains { $0.menuName == "HEIC" })
+        XCTAssertFalse(jpegCompatible.contains { $0.menuName == "JPEG → HEIC" })
     }
 
     func testEmptyEnabledPresetListStaysEmpty() {
@@ -250,6 +253,28 @@ final class PresetEngineTests: XCTestCase {
         )
         XCTAssertFalse(reloadedPreset.isEnabled)
         XCTAssertEqual(reloadedPreset.id, defaultPreset.id)
+    }
+
+    func testLegacyCompressPDFMigrationUpdatesGhostscriptToAuto() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PresetPDFMigrationTests-\(UUID().uuidString)", isDirectory: true)
+        let storageURL = directory.appendingPathComponent("presets.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let defaultPreset = try XCTUnwrap(
+            BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "document.pdf-compressed" }
+        )
+        var legacyPreset = defaultPreset
+        legacyPreset.backend = .ghostscript
+
+        try JSONEncoder().encode([legacyPreset]).write(to: storageURL, options: .atomic)
+
+        let migratedStore = PresetStore(storageURL: storageURL, postsDarwinNotifications: false)
+        let migratedPreset = try XCTUnwrap(
+            migratedStore.presets.first { $0.builtInKey == "document.pdf-compressed" }
+        )
+        XCTAssertEqual(migratedPreset.backend, .auto)
     }
 
     func testCorruptPresetFileIsNotOverwritten() throws {
@@ -321,5 +346,61 @@ final class PresetEngineTests: XCTestCase {
 
         XCTAssertNotNil(store.lastErrorDescription)
         XCTAssertEqual(try Data(contentsOf: storageURL), futureDocument)
+    }
+
+    func testImportPresetWithInvalidCustomFolderBookmarkFallsBackToSameAsSource() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PresetImportTests-\(UUID().uuidString)", isDirectory: true)
+        let storageURL = directory.appendingPathComponent("presets.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let store = PresetStore(storageURL: storageURL, postsDarwinNotifications: false)
+
+        var customPreset = ConversionPreset(
+            id: UUID(),
+            name: "Foreign Custom Folder Preset",
+            category: .image,
+            sourceFormats: ["image"],
+            destinationFormat: "png"
+        )
+        let dummyBookmark = Data([0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04])
+        customPreset.outputDirectoryPolicy = .customFolder(bookmarkData: dummyBookmark, displayPath: "/NonExistent/Folder")
+
+        struct TestDoc: Codable {
+            let schemaVersion: Int
+            let presets: [ConversionPreset]
+        }
+        let docData = try JSONEncoder().encode(TestDoc(schemaVersion: 2, presets: [customPreset]))
+        try store.importPresetsJSON(docData, overwrite: false)
+
+        let imported = try XCTUnwrap(store.preset(forID: customPreset.id))
+        XCTAssertEqual(imported.outputDirectoryPolicy, .sameAsSource)
+        XCTAssertNotNil(store.lastImportWarning)
+        XCTAssertTrue(store.lastImportWarning?.contains("Foreign Custom Folder Preset") == true)
+    }
+
+    func testAddPresetWithDuplicateIDAssignsNewUUID() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PresetAddTests-\(UUID().uuidString)", isDirectory: true)
+        let storageURL = directory.appendingPathComponent("presets.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let store = PresetStore(storageURL: storageURL, postsDarwinNotifications: false)
+        let existingPreset = try XCTUnwrap(store.presets.first)
+
+        let duplicate = ConversionPreset(
+            id: existingPreset.id,
+            name: "Duplicate ID Preset",
+            category: .image,
+            sourceFormats: ["image"],
+            destinationFormat: "png"
+        )
+
+        store.addPreset(duplicate)
+        let found = store.presets.first { $0.name == "Duplicate ID Preset" }
+        XCTAssertNotNil(found)
+        XCTAssertNotEqual(found?.id, existingPreset.id)
     }
 }
