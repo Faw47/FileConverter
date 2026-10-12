@@ -27,7 +27,6 @@ public enum BuiltInPresets {
             videoCodec: .h264,
             audioCodec: .aac,
             quality: .high,
-            videoBitrateKbps: 4500,
             crf: 22,
             hardwareAcceleration: .auto,
             isBuiltIn: true
@@ -35,7 +34,7 @@ public enum BuiltInPresets {
 
         add("video.mp4-smaller", ConversionPreset(
             name: "MP4 (Smaller File)",
-            menuName: "MP4 - Smaller File",
+            menuName: "MP4 – Smaller",
             category: .video,
             sourceFormats: ["video"],
             destinationFormat: "mp4",
@@ -43,7 +42,6 @@ public enum BuiltInPresets {
             videoCodec: .h264,
             audioCodec: .aac,
             quality: .low,
-            videoBitrateKbps: 2000,
             crf: 28,
             hardwareAcceleration: .auto,
             isBuiltIn: true,
@@ -52,7 +50,7 @@ public enum BuiltInPresets {
 
         add("video.mp4-high-quality", ConversionPreset(
             name: "MP4 (High Quality)",
-            menuName: "MP4 - High Quality",
+            menuName: "MP4 – High Quality",
             category: .video,
             sourceFormats: ["video"],
             destinationFormat: "mp4",
@@ -60,7 +58,6 @@ public enum BuiltInPresets {
             videoCodec: .h264,
             audioCodec: .aac,
             quality: .veryHigh,
-            videoBitrateKbps: 9000,
             crf: 18,
             hardwareAcceleration: .auto,
             isBuiltIn: true,
@@ -69,7 +66,7 @@ public enum BuiltInPresets {
 
         add("video.mp4-1080p", ConversionPreset(
             name: "MP4 Video (1080p Full HD)",
-            menuName: "1080p MP4",
+            menuName: "MP4 – 1080p",
             category: .video,
             sourceFormats: ["video"],
             destinationFormat: "mp4",
@@ -77,7 +74,6 @@ public enum BuiltInPresets {
             videoCodec: .h264,
             audioCodec: .aac,
             quality: .high,
-            videoBitrateKbps: 6000,
             crf: 20,
             resolution: .hd1080p,
             hardwareAcceleration: .auto,
@@ -87,7 +83,7 @@ public enum BuiltInPresets {
 
         add("video.mp4-720p", ConversionPreset(
             name: "MP4 Video (720p Web / Email)",
-            menuName: "720p MP4",
+            menuName: "MP4 – 720p",
             category: .video,
             sourceFormats: ["video"],
             destinationFormat: "mp4",
@@ -95,7 +91,6 @@ public enum BuiltInPresets {
             videoCodec: .h264,
             audioCodec: .aac,
             quality: .medium,
-            videoBitrateKbps: 2500,
             crf: 24,
             resolution: .hd720p,
             hardwareAcceleration: .auto,
@@ -114,14 +109,14 @@ public enum BuiltInPresets {
             audioCodec: .aac,
             quality: .high,
             crf: 24,
-            hardwareAcceleration: .forceAppleHardware,
+            hardwareAcceleration: .auto,
             isBuiltIn: true,
             sameFormatSuffix: "hevc"
         ))
 
         add("video.hevc-smaller", ConversionPreset(
             name: "HEVC Video (Smaller File - H.265)",
-            menuName: "HEVC - Smaller File",
+            menuName: "HEVC – Smaller",
             category: .video,
             sourceFormats: ["video"],
             destinationFormat: "mp4",
@@ -129,7 +124,6 @@ public enum BuiltInPresets {
             videoCodec: .hevc,
             audioCodec: .aac,
             quality: .low,
-            videoBitrateKbps: 1500,
             crf: 28,
             hardwareAcceleration: .auto,
             isBuiltIn: true,
@@ -209,12 +203,12 @@ public enum BuiltInPresets {
 
         add("video.animated-gif", ConversionPreset(
             name: "Animated GIF",
-            menuName: "GIF",
+            menuName: "Animated GIF",
             category: .video,
             sourceFormats: ["video", "image"],
             destinationFormat: "gif",
             backend: .auto,
-            resolution: .custom(width: 640, height: 360),
+            resolution: .custom(width: 480, height: 480),
             framerate: 15,
             isBuiltIn: true
         ))
@@ -230,7 +224,8 @@ public enum BuiltInPresets {
             audioCodec: .aac,
             quality: .high,
             crf: 22,
-            isBuiltIn: true
+            isBuiltIn: true,
+            allowsStreamCopy: true
         ))
 
         add("video.mov-to-mp4", ConversionPreset(
@@ -243,13 +238,14 @@ public enum BuiltInPresets {
             videoCodec: .h264,
             audioCodec: .aac,
             quality: .high,
-            isBuiltIn: true
+            isBuiltIn: true,
+            allowsStreamCopy: true
         ))
 
         // MARK: - AUDIO PRESETS
         add("audio.mp3-320", ConversionPreset(
             name: "MP3 Audio (320 kbps)",
-            menuName: "MP3",
+            menuName: "MP3 – 320 kbps",
             category: .audio,
             sourceFormats: ["audio", "video"],
             destinationFormat: "mp3",
@@ -262,7 +258,7 @@ public enum BuiltInPresets {
 
         add("audio.mp3-192", ConversionPreset(
             name: "MP3 Audio (192 kbps - Balanced)",
-            menuName: "MP3 (192k)",
+            menuName: "MP3 – 192 kbps",
             category: .audio,
             sourceFormats: ["audio", "video"],
             destinationFormat: "mp3",
@@ -276,7 +272,7 @@ public enum BuiltInPresets {
 
         add("audio.mp3-128", ConversionPreset(
             name: "MP3 Audio (128 kbps - Voice / Small)",
-            menuName: "MP3 (128k)",
+            menuName: "MP3 – 128 kbps",
             category: .audio,
             sourceFormats: ["audio", "video"],
             destinationFormat: "mp3",
@@ -290,20 +286,7 @@ public enum BuiltInPresets {
 
         add("audio.aac-256", ConversionPreset(
             name: "AAC Audio (256 kbps)",
-            menuName: "AAC",
-            category: .audio,
-            sourceFormats: ["audio", "video"],
-            destinationFormat: "m4a",
-            backend: .avFoundation,
-            audioCodec: .aac,
-            quality: .high,
-            audioBitrateKbps: 256,
-            isBuiltIn: true
-        ))
-
-        add("audio.m4a", ConversionPreset(
-            name: "M4A Audio",
-            menuName: "M4A",
+            menuName: "M4A – AAC",
             category: .audio,
             sourceFormats: ["audio", "video"],
             destinationFormat: "m4a",
@@ -316,7 +299,7 @@ public enum BuiltInPresets {
 
         add("audio.alac", ConversionPreset(
             name: "Apple Lossless (ALAC)",
-            menuName: "ALAC",
+            menuName: "M4A – Apple Lossless",
             category: .audio,
             sourceFormats: ["audio", "video"],
             destinationFormat: "m4a",
@@ -352,7 +335,7 @@ public enum BuiltInPresets {
 
         add("audio.wav-44k", ConversionPreset(
             name: "PCM WAV (CD Quality - 44.1 kHz / 16-bit)",
-            menuName: "WAV (CD Quality)",
+            menuName: "WAV – CD Quality",
             category: .audio,
             sourceFormats: ["audio", "video"],
             destinationFormat: "wav",
@@ -418,7 +401,7 @@ public enum BuiltInPresets {
 
         add("audio.split-mp3-5min", ConversionPreset(
             name: "Split Audio into 5-Minute MP3 Files",
-            menuName: "Split Audio (5 min)",
+            menuName: "MP3 – 5-Minute Parts",
             category: .audio,
             sourceFormats: ["audio"],
             destinationFormat: "mp3",
@@ -432,7 +415,7 @@ public enum BuiltInPresets {
 
         add("audio.fit-5mb", ConversionPreset(
             name: "Audio Sized for Sharing (Up to 5 MB)",
-            menuName: "Audio ≤ 5 MB",
+            menuName: "M4A – Fit in 5 MB",
             category: .audio,
             sourceFormats: ["audio"],
             destinationFormat: "m4a",
@@ -510,7 +493,7 @@ public enum BuiltInPresets {
 
         add("image.jpeg-web", ConversionPreset(
             name: "JPEG Image (Web Optimized)",
-            menuName: "JPEG - Web",
+            menuName: "JPEG – Web",
             category: .image,
             sourceFormats: ["image"],
             destinationFormat: "jpg",
@@ -555,7 +538,7 @@ public enum BuiltInPresets {
 
         add("image.webp-lossless", ConversionPreset(
             name: "WebP Image (Lossless)",
-            menuName: "WebP Lossless",
+            menuName: "WebP – Lossless",
             category: .image,
             sourceFormats: ["image"],
             destinationFormat: "webp",
@@ -621,7 +604,7 @@ public enum BuiltInPresets {
 
         add("image.gif", ConversionPreset(
             name: "GIF Image",
-            menuName: "GIF Image",
+            menuName: "GIF",
             category: .image,
             sourceFormats: ["image"],
             destinationFormat: "gif",
@@ -655,7 +638,7 @@ public enum BuiltInPresets {
 
         add("image.pdf-to-png", ConversionPreset(
             name: "PDF pages to PNG images",
-            menuName: "PDF to PNG",
+            menuName: "PDF → PNG",
             category: .image,
             sourceFormats: ["pdf"],
             destinationFormat: "png",
@@ -666,7 +649,7 @@ public enum BuiltInPresets {
 
         add("image.pdf-to-jpg", ConversionPreset(
             name: "PDF pages to JPEG images",
-            menuName: "PDF to JPEG",
+            menuName: "PDF → JPEG",
             category: .image,
             sourceFormats: ["pdf"],
             destinationFormat: "jpg",
@@ -677,7 +660,7 @@ public enum BuiltInPresets {
 
         add("image.pdf-to-tiff", ConversionPreset(
             name: "PDF pages to TIFF images",
-            menuName: "PDF to TIFF",
+            menuName: "PDF → TIFF",
             category: .image,
             sourceFormats: ["pdf"],
             destinationFormat: "tiff",
@@ -712,7 +695,7 @@ public enum BuiltInPresets {
 
         add("document.pdf-split-pages", ConversionPreset(
             name: "Split PDF into Individual Pages",
-            menuName: "Split PDF Pages",
+            menuName: "Split PDF",
             category: .document,
             sourceFormats: ["pdf"],
             destinationFormat: "pdf",
@@ -774,7 +757,7 @@ public enum BuiltInPresets {
 
         add("document.epub-to-pdf", ConversionPreset(
             name: "EPUB eBook to PDF",
-            menuName: "EPUB to PDF",
+            menuName: "EPUB → PDF",
             category: .document,
             sourceFormats: ["epub"],
             destinationFormat: "pdf",

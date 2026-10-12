@@ -10,6 +10,7 @@ public struct MediaProbeMetadata: Sendable, Equatable {
     public var height: Int?
     public var frameRate: Double?
     public var streamCount: Int?
+    public var sourceInfo: SourceMediaInfo?
 
     public init(
         duration: Double? = nil,

@@ -423,6 +423,9 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
     /// Appended to the name when the output keeps the source's file type and
     /// the pattern is just `{name}` (for example "-web" for "photo-web.jpg").
     public var sameFormatSuffix: String?
+    /// Container-change presets (MKV → MP4) copy compatible streams instead
+    /// of re-encoding them.
+    public var allowsStreamCopy: Bool?
 
     public var resolvedInheritance: PresetInheritance {
         inheritance ?? .legacy(for: self)
@@ -464,7 +467,8 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
         inheritance: PresetInheritance? = nil,
         preserveModificationDate: Bool? = nil,
         removeLocationData: Bool? = nil,
-        sameFormatSuffix: String? = nil
+        sameFormatSuffix: String? = nil,
+        allowsStreamCopy: Bool? = nil
     ) {
         self.id = id
         self.builtInKey = builtInKey
@@ -502,6 +506,7 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
         self.preserveModificationDate = preserveModificationDate
         self.removeLocationData = removeLocationData
         self.sameFormatSuffix = sameFormatSuffix
+        self.allowsStreamCopy = allowsStreamCopy
     }
 
     public var audioSplitDurationSeconds: Int? {

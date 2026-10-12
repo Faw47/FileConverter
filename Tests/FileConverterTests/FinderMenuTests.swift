@@ -27,8 +27,8 @@ final class FinderMenuTests: XCTestCase {
         )
         XCTAssertTrue(compatible.contains { $0.menuName == "MP4" })
         XCTAssertTrue(compatible.contains { $0.menuName == "HEVC" })
-        XCTAssertTrue(compatible.contains { $0.menuName == "MP3" })
-        XCTAssertTrue(compatible.contains { $0.menuName == "AAC" })
+        XCTAssertTrue(compatible.contains { $0.menuName == "MP3 – 320 kbps" })
+        XCTAssertTrue(compatible.contains { $0.menuName == "M4A – AAC" })
         XCTAssertFalse(compatible.contains { $0.menuName == "PNG" })
     }
 

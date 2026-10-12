@@ -38,7 +38,8 @@ if have ffmpeg; then
     -f lavfi -i sine=frequency=440:duration=2 \
     -c:v libx265 -tag:v hvc1 -pix_fmt yuv420p10le \
     -color_primaries bt2020 -color_trc arib-std-b67 -colorspace bt2020nc \
-    -x265-params log-level=error -c:a aac -shortest \
+    -x265-params log-level=error:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc \
+    -c:a aac -shortest \
     "${OUT}/hdr_hlg_hevc_10bit.mov"
 
   printf '1\n00:00:00,000 --> 00:00:01,500\nHello\n' > "${OUT}/subs.srt"

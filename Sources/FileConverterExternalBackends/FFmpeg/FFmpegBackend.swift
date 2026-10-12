@@ -112,12 +112,17 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
         var singleOutputJob = job
         singleOutputJob.destinationURL = first.finalURL
         singleOutputJob.temporaryOutputURL = first.temporaryURL
-        try await convert(job: singleOutputJob, progressHandler: progressHandler)
-        return BackendConversionResult()
+        let warnings = try await convertSingle(job: singleOutputJob, progressHandler: progressHandler)
+        return BackendConversionResult(warnings: warnings)
     }
 
     public func convert(job: ConversionJob, progressHandler: @escaping @Sendable (ConversionProgress) -> Void) async throws {
-        // Validate extra backend options at execution boundary (TASK-011 / REQ-004)
+        _ = try await convertSingle(job: job, progressHandler: progressHandler)
+    }
+
+    /// Converts to one output and returns warnings for the queue row.
+    private func convertSingle(job: ConversionJob, progressHandler: @escaping @Sendable (ConversionProgress) -> Void) async throws -> [String] {
+        // Validate extra backend options at execution boundary.
         for (key, value) in job.preset.extraBackendOptions {
             guard PresetValidator.isAllowlistedFFmpegOption(key) else {
                 throw ConversionError.invalidPreset(reason: "Unsupported backend option '\(key)'")
@@ -216,14 +221,24 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
                 jobID: jobID,
                 progressHandler: progressHandler
             )
-            return
+            return []
         }
 
+        let isAudioOnly = job.preset.category == .audio || job.preset.videoCodec == .none
+        let sourceInfo: SourceMediaInfo?
+        do {
+            sourceInfo = isAudioOnly ? nil : try await probeSourceInfo(sourceURL: sourceURL, jobID: jobID)
+        } catch is CancellationError {
+            throw ConversionError.cancelled
+        }
+        var warnings: [String] = []
         let arguments = buildFFmpegArguments(
             sourceURL: sourceURL,
             destURL: destURL,
             preset: job.preset,
-            availableEncoders: availableEncoders
+            availableEncoders: availableEncoders,
+            sourceInfo: sourceInfo,
+            warn: { warnings.append($0) }
         )
         try await runFFmpeg(
             executablePath: ffmpegPath,
@@ -232,6 +247,77 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
             totalDurationSeconds: totalDurationSeconds,
             progressHandler: progressHandler
         )
+        return warnings
+    }
+
+    /// Everything the video arguments need, from one ffprobe call.
+    func probeSourceInfo(sourceURL: URL, jobID: UUID) async throws -> SourceMediaInfo? {
+        if let cached = await MediaProbeCache.shared.metadata(for: sourceURL)?.sourceInfo {
+            return cached
+        }
+        guard let ffprobePath = executablePathProvider("ffprobe") else { return nil }
+        let process = ExternalProcessAttempt(
+            executableURL: URL(fileURLWithPath: ffprobePath),
+            arguments: ["-v", "error", "-show_streams", "-show_format", "-show_chapters", "-of", "json", sourceURL.path],
+            stdoutCaptureLimit: 4 * 1024 * 1024,
+            timeout: 30
+        )
+        let result: ExternalProcessResult
+        do {
+            result = try await processRegistry.run(process, for: jobID)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return nil
+        }
+        guard result.terminationStatus == 0, let info = Self.parseSourceInfo(result.stdout) else { return nil }
+        await MediaProbeCache.shared.update(for: sourceURL) { $0.sourceInfo = info }
+        return info
+    }
+
+    static func parseSourceInfo(_ data: Data) -> SourceMediaInfo? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let streams = json["streams"] as? [[String: Any]] ?? []
+        var info = SourceMediaInfo()
+        if let video = streams.first(where: { ($0["codec_type"] as? String) == "video"
+            && (($0["disposition"] as? [String: Any])?["attached_pic"] as? Int ?? 0) == 0 }) {
+            info.width = video["width"] as? Int
+            info.height = video["height"] as? Int
+            info.videoCodec = video["codec_name"] as? String
+            info.pixelFormat = video["pix_fmt"] as? String
+            info.colorTransfer = video["color_transfer"] as? String
+            info.colorPrimaries = video["color_primaries"] as? String
+            info.colorSpace = video["color_space"] as? String
+            if let rate = video["avg_frame_rate"] as? String ?? video["r_frame_rate"] as? String {
+                let parts = rate.split(separator: "/").compactMap { Double($0) }
+                if parts.count == 2, parts[1] > 0, parts[0] > 0 { info.frameRate = parts[0] / parts[1] }
+            }
+            if let bitRate = (video["bit_rate"] as? String).flatMap(Double.init) {
+                info.bitRateKbps = bitRate / 1_000
+            }
+            var rotation = 0
+            for side in video["side_data_list"] as? [[String: Any]] ?? [] {
+                if let value = side["rotation"] as? Int { rotation = value }
+                if let value = side["rotation"] as? Double { rotation = Int(value) }
+            }
+            if rotation == 0, let tag = (video["tags"] as? [String: Any])?["rotate"] as? String, let value = Int(tag) {
+                rotation = value
+            }
+            info.rotation = ((rotation % 360) + 360) % 360
+        }
+        info.audioCodecs = streams.filter { ($0["codec_type"] as? String) == "audio" }.compactMap { $0["codec_name"] as? String }
+        info.subtitleStreams = streams.compactMap { stream in
+            guard (stream["codec_type"] as? String) == "subtitle",
+                  let index = stream["index"] as? Int else { return nil }
+            return (index, stream["codec_name"] as? String ?? "")
+        }
+        info.chapterCount = (json["chapters"] as? [Any])?.count ?? 0
+        let format = json["format"] as? [String: Any] ?? [:]
+        info.duration = (format["duration"] as? String).flatMap(Double.init)
+        if info.bitRateKbps == nil, let total = (format["bit_rate"] as? String).flatMap(Double.init) {
+            info.bitRateKbps = total / 1_000
+        }
+        return info
     }
 
     private func runFFmpeg(
@@ -648,13 +734,15 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
         )
     }
 
-    private func buildFFmpegArguments(
+    func buildFFmpegArguments(
         sourceURL: URL,
         destURL: URL,
         preset: ConversionPreset,
         availableEncoders: Set<String>,
         audioBitrateOverride: Int? = nil,
-        segmentDuration: Int? = nil
+        segmentDuration: Int? = nil,
+        sourceInfo: SourceMediaInfo? = nil,
+        warn: (String) -> Void = { _ in }
     ) -> [String] {
         var args: [String] = [
             "-y",
@@ -772,185 +860,41 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
                     args.append(contentsOf: ["-ac", "\(channels)"])
                 }
             }
-        } else if targetExt == "gif" {
-            // High quality animated GIF filter palettegen/paletteuse
-            let fps = preset.framerate.map { String(format: "%.3g", $0) } ?? "15"
-            let scale: String = {
-                switch preset.resolution {
-                case .uhd4k: return "3840:-1"
-                case .hd1080p: return "1920:-1"
-                case .hd720p: return "1280:-1"
-                case .sd480p: return "854:-1"
-                case .custom(let width, _): return "\(width):-1"
-                case .original: return "640:-1"
-                }
-            }()
-            args.append(contentsOf: [
-                "-dn",
-                "-vf", "fps=\(fps),scale=\(scale):flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
-                "-loop", "0"
-            ])
         } else {
-            args.append(contentsOf: ["-dn"])
-            // Video encoding
-            switch preset.videoCodec {
-            case .h264:
-                let wantsHardware = preset.hardwareAcceleration != .softwareOnly
-                if hasH264HardwareEncoder && wantsHardware {
-                    args.append(contentsOf: ["-c:v", "h264_videotoolbox"])
-                    if let bitrate = preset.videoBitrateKbps {
-                        args.append(contentsOf: ["-b:v", "\(bitrate)k"])
-                    } else {
-                        args.append(contentsOf: ["-q:v", "65"])
-                    }
-                } else {
-                    args.append(contentsOf: ["-c:v", "libx264", "-preset", "medium"])
-                    if let bitrate = preset.videoBitrateKbps {
-                        args.append(contentsOf: ["-b:v", "\(bitrate)k"])
-                    }
-                    if let crf = preset.crf {
-                        args.append(contentsOf: ["-crf", "\(crf)"])
-                    }
-                }
-
-            case .hevc:
-                let wantsHardware = preset.hardwareAcceleration != .softwareOnly
-                if hasHEVCHardwareEncoder && wantsHardware {
-                    args.append(contentsOf: ["-c:v", "hevc_videotoolbox"])
-                    if let bitrate = preset.videoBitrateKbps {
-                        args.append(contentsOf: ["-b:v", "\(bitrate)k"])
-                    } else {
-                        args.append(contentsOf: ["-q:v", "65"])
-                    }
-                } else {
-                    args.append(contentsOf: ["-c:v", "libx265", "-preset", "medium"])
-                    if let bitrate = preset.videoBitrateKbps {
-                        args.append(contentsOf: ["-b:v", "\(bitrate)k"])
-                    }
-                    if let crf = preset.crf {
-                        args.append(contentsOf: ["-crf", "\(crf)"])
-                    }
-                }
-
-            case .vp9:
-                args.append(contentsOf: ["-c:v", "libvpx-vp9"])
-                if let crf = preset.crf {
-                    args.append(contentsOf: ["-crf", "\(crf)", "-b:v", "0"])
-                }
-
-            case .av1:
-                if availableEncoders.contains("libsvtav1") {
-                    args.append(contentsOf: ["-c:v", "libsvtav1"])
-                    if let bitrate = preset.videoBitrateKbps {
-                        args.append(contentsOf: ["-b:v", "\(bitrate)k"])
-                    }
-                    if let crf = preset.crf {
-                        args.append(contentsOf: ["-crf", "\(crf)"])
-                    }
-                } else {
-                    args.append(contentsOf: ["-c:v", "libaom-av1"])
-                    if let crf = preset.crf {
-                        args.append(contentsOf: ["-crf", "\(crf)"])
-                    }
-                }
-
-            case .proRes:
-                if availableEncoders.contains("prores_videotoolbox") {
-                    args.append(contentsOf: ["-c:v", "prores_videotoolbox"])
-                } else {
-                    args.append(contentsOf: ["-c:v", "prores_ks", "-profile:v", "2"])
-                }
-
-            default:
-                if targetExt == "webm" {
-                    args.append(contentsOf: ["-c:v", "libvpx-vp9"])
-                } else if hasH264HardwareEncoder && preset.hardwareAcceleration != .softwareOnly {
-                    args.append(contentsOf: ["-c:v", "h264_videotoolbox"])
-                } else {
-                    args.append(contentsOf: ["-c:v", "libx264"])
-                }
-            }
-
-            // Ensure Apple-compatible pixel format for H.264/H.265
-            if let codecIdx = args.lastIndex(of: "-c:v"),
-               codecIdx + 1 < args.count {
-                let selectedCodec = args[codecIdx + 1]
-                let h26xCodecs: Set<String> = ["libx264", "h264_videotoolbox", "libx265", "hevc_videotoolbox"]
-                if h26xCodecs.contains(selectedCodec) {
-                    args.append(contentsOf: ["-pix_fmt", "yuv420p"])
-                }
-            }
-
-            if let framerate = preset.framerate, framerate > 0 {
-                args.append(contentsOf: ["-r", String(format: "%.3g", framerate)])
-            }
-
-            // Audio track
-            switch preset.audioCodec {
-            case .opus:
-                args.append(contentsOf: ["-c:a", "libopus"])
-            case .mp3:
-                args.append(contentsOf: ["-c:a", "libmp3lame"])
-            case .flac:
-                args.append(contentsOf: ["-c:a", "flac"])
-            case .alac:
-                args.append(contentsOf: ["-c:a", "alac"])
-            case .wav:
-                let pcmCodec = preset.audioBitDepth?.ffmpegWavCodec ?? "pcm_s16le"
-                args.append(contentsOf: ["-c:a", pcmCodec])
-            case .aiff:
-                let pcmCodec = preset.audioBitDepth?.ffmpegAiffCodec ?? "pcm_s16be"
-                args.append(contentsOf: ["-c:a", pcmCodec])
-            case .copy:
-                args.append(contentsOf: ["-c:a", "copy"])
-            case .none:
-                args.append(contentsOf: ["-an"])
-            default:
-                if targetExt == "webm" {
-                    args.append(contentsOf: ["-c:a", "libopus", "-b:a", "128k"])
-                } else {
-                    args.append(contentsOf: ["-c:a", "aac", "-b:a", "192k"])
-                }
-            }
-            if let bitrate = effectiveAudioBitrate,
-               preset.audioCodec != .none,
-               preset.audioCodec != .copy,
-               preset.audioCodec != .wav,
-               preset.audioCodec != .aiff,
-               preset.audioCodec != .flac,
-               preset.audioCodec != .alac {
-                args.append(contentsOf: ["-b:a", "\(bitrate)k"])
-            }
-            if preset.audioCodec != .copy && preset.audioCodec != .none {
-                if let sampleRate = preset.audioSampleRate {
-                    args.append(contentsOf: ["-ar", "\(sampleRate)"])
-                }
-                if let channels = preset.audioChannels {
-                    args.append(contentsOf: ["-ac", "\(channels)"])
-                }
-            }
-
-            // Resolution
-            switch preset.resolution {
-            case .uhd4k:
-                args.append(contentsOf: ["-vf", "scale=3840:2160:force_original_aspect_ratio=decrease:force_divisible_by=2"])
-            case .hd1080p:
-                args.append(contentsOf: ["-vf", "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2"])
-            case .hd720p:
-                args.append(contentsOf: ["-vf", "scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2"])
-            case .sd480p:
-                args.append(contentsOf: ["-vf", "scale=854:480:force_original_aspect_ratio=decrease:force_divisible_by=2"])
-            case .custom(let w, let h):
-                args.append(contentsOf: ["-vf", "scale=\(w):\(h):force_original_aspect_ratio=decrease:force_divisible_by=2"])
-            case .original:
-                break
+            args.append(contentsOf: videoArguments(
+                preset: preset,
+                targetExt: targetExt,
+                sourceInfo: sourceInfo,
+                availableEncoders: availableEncoders,
+                warn: warn
+            ))
+            if targetExt != "gif" {
+                args.append(contentsOf: audioArgumentsForVideo(
+                    preset: preset,
+                    targetExt: targetExt,
+                    effectiveAudioBitrate: effectiveAudioBitrate,
+                    copyStreams: canStreamCopy(preset: preset, targetExt: targetExt, sourceInfo: sourceInfo)
+                ))
             }
         }
 
         if preset.preserveMetadata {
             args.append(contentsOf: ["-map_metadata", "0"])
+            if preset.removeLocationData ?? true {
+                // Clear the tags FFmpeg copies GPS coordinates into.
+                args.append(contentsOf: [
+                    "-metadata", "location=",
+                    "-metadata", "location-eng=",
+                    "-metadata", "com.apple.quicktime.location.ISO6709="
+                ])
+            }
         } else {
             args.append(contentsOf: ["-map_metadata", "-1"])
+        }
+        if ["mp4", "m4v", "mov"].contains(targetExt) && segmentDuration == nil {
+            // Index first, so players and browsers can start before the end
+            // of the download.
+            args.append(contentsOf: ["-movflags", "+faststart"])
         }
 
         if let segmentDuration {
@@ -1004,6 +948,300 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
             "-progress", "pipe:1",
             destURL.path
         ])
+
+        return args
+    }
+
+
+    // MARK: - Video
+
+    static let textSubtitleCodecs: Set<String> = ["subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text"]
+
+    /// MKV → MP4 style presets copy the streams when the target container can
+    /// hold them unchanged (no quality loss, seconds instead of minutes).
+    func canStreamCopy(preset: ConversionPreset, targetExt: String, sourceInfo: SourceMediaInfo?) -> Bool {
+        guard preset.allowsStreamCopy == true,
+              preset.resolution == .original,
+              preset.framerate == nil,
+              let info = sourceInfo,
+              let videoCodec = info.videoCodec?.lowercased(),
+              ["mp4", "m4v", "mov"].contains(targetExt) else { return false }
+        let copyableVideo: Set<String> = ["h264", "hevc"]
+        let copyableAudio: Set<String> = ["aac", "alac", "mp3", "ac3", "eac3"]
+        return copyableVideo.contains(videoCodec)
+            && info.audioCodecs.allSatisfy { copyableAudio.contains($0.lowercased()) }
+    }
+
+    static func defaultCRF(for codec: VideoCodecType, quality: QualitySetting) -> Int {
+        let table: (low: Int, medium: Int, high: Int, veryHigh: Int)
+        switch codec {
+        case .hevc: table = (32, 28, 25, 22)
+        case .vp9: table = (38, 34, 31, 28)
+        case .av1: table = (40, 35, 30, 26)
+        default: table = (28, 24, 21, 18)
+        }
+        switch quality {
+        case .low: return table.low
+        case .medium, .custom: return table.medium
+        case .high: return table.high
+        case .veryHigh, .lossless: return table.veryHigh
+        }
+    }
+
+    /// VideoToolbox constant-quality scale used when the source size is unknown.
+    static func hardwareQuality(for quality: QualitySetting) -> Int {
+        switch quality {
+        case .low: return 45
+        case .medium, .custom: return 55
+        case .high: return 65
+        case .veryHigh, .lossless: return 75
+        }
+    }
+
+    /// Filters that convert HDR (PQ/HLG) to SDR BT.709, when this FFmpeg has them.
+    static let toneMapFilters = [
+        "zscale=t=linear:npl=100",
+        "format=gbrpf32le",
+        "zscale=p=bt709",
+        "tonemap=tonemap=hable:desat=0",
+        "zscale=t=bt709:m=bt709:r=tv",
+        "format=yuv420p"
+    ]
+
+    func videoArguments(
+        preset: ConversionPreset,
+        targetExt: String,
+        sourceInfo: SourceMediaInfo?,
+        availableEncoders: Set<String>,
+        warn: (String) -> Void
+    ) -> [String] {
+        var args: [String] = []
+        let isHDR = sourceInfo?.isHDR ?? false
+        let canToneMap = ExternalToolDiscovery.shared.hasFFmpegFilter("zscale")
+
+        if targetExt == "gif" {
+            var filters = ["fps=\(preset.framerate.map { String(format: "%.3g", $0) } ?? "15")"]
+            if isHDR {
+                if canToneMap {
+                    filters += Self.toneMapFilters
+                } else {
+                    warn("This HDR video was turned into a GIF without converting it to standard range; colors may look washed out.")
+                }
+            }
+            if let scale = VideoGeometry.ffmpegScaleFilter(for: preset.resolution) {
+                filters.append(scale + ":flags=lanczos")
+            }
+            filters.append("split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse")
+            args += ["-map", "0:v:0", "-an", "-sn", "-dn", "-vf", filters.joined(separator: ","), "-loop", "0"]
+            return args
+        }
+
+        // Streams: first video, every audio track, chapters; subtitles the
+        // target container can hold.
+        args += ["-map", "0:v:0", "-map", "0:a?", "-map_chapters", "0", "-dn"]
+        let isMP4Family = ["mp4", "m4v", "mov"].contains(targetExt)
+        if targetExt == "mkv" {
+            args += ["-map", "0:s?", "-c:s", "copy"]
+        } else if let info = sourceInfo, isMP4Family || targetExt == "webm" {
+            let text = info.subtitleStreams.filter { Self.textSubtitleCodecs.contains($0.codec.lowercased()) }
+            let pictures = info.subtitleStreams.count - text.count
+            for stream in text {
+                args += ["-map", "0:\(stream.index)"]
+            }
+            if !text.isEmpty {
+                args += ["-c:s", targetExt == "webm" ? "webvtt" : "mov_text"]
+            }
+            if pictures > 0 {
+                let container = targetExt.uppercased()
+                warn(pictures == 1
+                    ? "1 picture-based subtitle track was not kept (\(container) cannot store it)."
+                    : "\(pictures) picture-based subtitle tracks were not kept (\(container) cannot store them).")
+            }
+        }
+
+        if canStreamCopy(preset: preset, targetExt: targetExt, sourceInfo: sourceInfo) {
+            args += ["-c:v", "copy"]
+            if sourceInfo?.videoCodec?.lowercased() == "hevc" {
+                args += ["-tag:v", "hvc1"]
+            }
+            return args
+        }
+
+        var codec = preset.videoCodec
+        if codec == .auto || codec == .copy || codec == .none {
+            codec = targetExt == "webm" ? .vp9 : .h264
+        }
+        let wantsHardware = preset.hardwareAcceleration != .softwareOnly
+        var filters: [String] = []
+        var encoder: String
+
+        let outputSize: (width: Int, height: Int)? = sourceInfo?.displaySize.map {
+            VideoGeometry.targetSize(displayWidth: $0.width, displayHeight: $0.height, resolution: preset.resolution)
+        }
+        let outputFPS = preset.framerate ?? sourceInfo?.frameRate
+        func modelKbps() -> Int? {
+            if let explicit = preset.videoBitrateKbps { return explicit }
+            guard let outputSize else { return nil }
+            return VideoBitrateModel.targetKbps(
+                width: outputSize.width,
+                height: outputSize.height,
+                fps: outputFPS,
+                codec: codec,
+                quality: preset.quality,
+                sourceKbps: sourceInfo?.bitRateKbps
+            )
+        }
+        func hardwareRateControl() -> [String] {
+            if let kbps = modelKbps() {
+                return ["-b:v", "\(kbps)k", "-maxrate", "\(kbps * 3 / 2)k", "-bufsize", "\(kbps * 2)k"]
+            }
+            return ["-q:v", "\(Self.hardwareQuality(for: preset.quality))"]
+        }
+        let crf = preset.crf ?? Self.defaultCRF(for: codec, quality: preset.quality)
+
+        switch codec {
+        case .hevc:
+            if wantsHardware && availableEncoders.contains("hevc_videotoolbox") {
+                encoder = "hevc_videotoolbox"
+                args += ["-c:v", encoder] + hardwareRateControl()
+            } else {
+                encoder = "libx265"
+                args += ["-c:v", encoder, "-preset", "medium", "-crf", "\(crf)", "-x265-params", "log-level=error"]
+            }
+            if isMP4Family { args += ["-tag:v", "hvc1"] }
+        case .vp9:
+            encoder = "libvpx-vp9"
+            args += ["-c:v", encoder, "-crf", "\(crf)", "-b:v", "0", "-row-mt", "1"]
+        case .av1:
+            if availableEncoders.contains("libsvtav1") {
+                encoder = "libsvtav1"
+                args += ["-c:v", encoder, "-crf", "\(crf)", "-preset", "8"]
+            } else {
+                encoder = "libaom-av1"
+                args += ["-c:v", encoder, "-crf", "\(crf)", "-b:v", "0", "-cpu-used", "6", "-row-mt", "1"]
+            }
+        case .proRes:
+            if availableEncoders.contains("prores_videotoolbox") {
+                encoder = "prores_videotoolbox"
+                args += ["-c:v", encoder, "-profile:v", "2"]
+            } else {
+                encoder = "prores_ks"
+                args += ["-c:v", encoder, "-profile:v", "2"]
+            }
+        default:
+            if wantsHardware && availableEncoders.contains("h264_videotoolbox") {
+                encoder = "h264_videotoolbox"
+                args += ["-c:v", encoder] + hardwareRateControl()
+            } else {
+                encoder = "libx264"
+                args += ["-c:v", encoder, "-preset", "medium"]
+                if let explicit = preset.videoBitrateKbps, preset.crf == nil {
+                    args += ["-b:v", "\(explicit)k"]
+                } else {
+                    args += ["-crf", "\(crf)"]
+                }
+            }
+        }
+
+        // Pixel format and HDR. 10-bit capable codecs keep HDR; 8-bit H.264
+        // is tone-mapped to SDR when FFmpeg can, otherwise warned about.
+        let keepsHDR = isHDR && [VideoCodecType.hevc, .av1, .vp9, .proRes].contains(codec)
+        if keepsHDR, let info = sourceInfo {
+            switch encoder {
+            case "hevc_videotoolbox": args += ["-pix_fmt", "p010le", "-profile:v", "main10"]
+            case "prores_videotoolbox", "prores_ks": args += ["-pix_fmt", "yuv422p10le"]
+            case "libvpx-vp9": args += ["-pix_fmt", "yuv420p10le", "-profile:v", "2"]
+            default: args += ["-pix_fmt", "yuv420p10le"]
+            }
+            if let primaries = info.colorPrimaries { args += ["-color_primaries", primaries] }
+            if let transfer = info.colorTransfer { args += ["-color_trc", transfer] }
+            if let space = info.colorSpace { args += ["-colorspace", space] }
+        } else {
+            if isHDR {
+                if canToneMap {
+                    filters += Self.toneMapFilters
+                    args += ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"]
+                } else if let info = sourceInfo {
+                    // No tone mapper in this FFmpeg build: keep the true HDR
+                    // labels (mislabelling as SDR would distort colors).
+                    if let primaries = info.colorPrimaries { args += ["-color_primaries", primaries] }
+                    if let transfer = info.colorTransfer { args += ["-color_trc", transfer] }
+                    if let space = info.colorSpace { args += ["-colorspace", space] }
+                    warn("This HDR video was saved as 8-bit \(codec == .h264 ? "H.264" : "video") without converting it to standard range. Choose an HEVC preset to keep full HDR quality.")
+                }
+            }
+            switch encoder {
+            case "prores_videotoolbox", "prores_ks": args += ["-pix_fmt", "yuv422p10le"]
+            default: args += ["-pix_fmt", "yuv420p"]
+            }
+        }
+
+        if let framerate = preset.framerate, framerate > 0 {
+            args += ["-r", String(format: "%.3g", framerate)]
+        }
+        if let scale = VideoGeometry.ffmpegScaleFilter(for: preset.resolution) {
+            filters.append(scale)
+        }
+        if !filters.isEmpty {
+            args += ["-vf", filters.joined(separator: ",")]
+        }
+        return args
+    }
+
+    func audioArgumentsForVideo(
+        preset: ConversionPreset,
+        targetExt: String,
+        effectiveAudioBitrate: Int?,
+        copyStreams: Bool
+    ) -> [String] {
+        var args: [String] = []
+        if copyStreams {
+            return ["-c:a", "copy"]
+        }
+        // Audio tracks (every mapped track uses these settings)
+        switch preset.audioCodec {
+        case .opus:
+            args.append(contentsOf: ["-c:a", "libopus"])
+        case .mp3:
+            args.append(contentsOf: ["-c:a", "libmp3lame"])
+        case .flac:
+            args.append(contentsOf: ["-c:a", "flac"])
+        case .alac:
+            args.append(contentsOf: ["-c:a", "alac"])
+        case .wav:
+            let pcmCodec = preset.audioBitDepth?.ffmpegWavCodec ?? "pcm_s16le"
+            args.append(contentsOf: ["-c:a", pcmCodec])
+        case .aiff:
+            let pcmCodec = preset.audioBitDepth?.ffmpegAiffCodec ?? "pcm_s16be"
+            args.append(contentsOf: ["-c:a", pcmCodec])
+        case .copy:
+            args.append(contentsOf: ["-c:a", "copy"])
+        case .none:
+            args.append(contentsOf: ["-an"])
+        default:
+            if targetExt == "webm" {
+                args.append(contentsOf: ["-c:a", "libopus", "-b:a", "128k"])
+            } else {
+                args.append(contentsOf: ["-c:a", "aac", "-b:a", "192k"])
+            }
+        }
+        if let bitrate = effectiveAudioBitrate,
+           preset.audioCodec != .none,
+           preset.audioCodec != .copy,
+           preset.audioCodec != .wav,
+           preset.audioCodec != .aiff,
+           preset.audioCodec != .flac,
+           preset.audioCodec != .alac {
+            args.append(contentsOf: ["-b:a", "\(bitrate)k"])
+        }
+        if preset.audioCodec != .copy && preset.audioCodec != .none {
+            if let sampleRate = preset.audioSampleRate {
+                args.append(contentsOf: ["-ar", "\(sampleRate)"])
+            }
+            if let channels = preset.audioChannels {
+                args.append(contentsOf: ["-ac", "\(channels)"])
+            }
+        }
 
         return args
     }

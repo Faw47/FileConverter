@@ -33,7 +33,7 @@ final class FFmpegBuilderTests: XCTestCase {
         let srcURL = URL(fileURLWithPath: "/tmp/audio.wav")
         let dstURL = URL(fileURLWithPath: "/tmp/audio.mp3")
 
-        var preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP3" }!
+        var preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP3 – 320 kbps" }!
         preset.category = .audio
         preset.audioCodec = .mp3
         preset.audioBitrateKbps = 320
@@ -168,8 +168,11 @@ final class FFmpegBuilderTests: XCTestCase {
 
         let args = backend.buildFFmpegArguments(sourceURL: srcURL, destURL: dstURL, preset: preset)
 
-        // Verifies scale filter includes force_divisible_by=2
-        XCTAssertTrue(args.contains("scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2"))
+        // Orientation-aware box, never upscaled, even dimensions.
+        let scale = try? XCTUnwrap(args.first { $0.hasPrefix("scale=") })
+        XCTAssertEqual(scale, VideoGeometry.ffmpegScaleFilter(for: .hd1080p))
+        XCTAssertTrue(scale?.contains("force_divisible_by=2") == true)
+        XCTAssertTrue(scale?.contains("min(iw,1920)") == true, "never upscale")
 
         // Verifies Apple-compatible yuv420p pixel format is set for H.264
         guard let pixFmtIdx = args.firstIndex(of: "-pix_fmt") else {

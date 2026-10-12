@@ -700,8 +700,23 @@ public final class PresetStore: @unchecked Sendable {
         let defaultPresets = BuiltInPresets.makeDefaultPresets()
         let knownBuiltInKeys = Set(defaultPresets.compactMap(\.builtInKey))
 
+        // Retired built-ins: drop untouched copies, keep edited ones as custom
+        // presets so user work is never deleted by an update.
+        let retiringPresets: [ConversionPreset] = storedPresets.compactMap { stored in
+            guard stored.isBuiltIn,
+                  let key = stored.builtInKey,
+                  !knownBuiltInKeys.contains(key),
+                  let factory = BuiltInPresetUpgrades.retiredFactoryPresets[key],
+                  BuiltInPresetUpgrades.isUserModified(stored, comparedTo: factory) else { return nil }
+            var kept = stored
+            kept.isBuiltIn = false
+            kept.builtInKey = nil
+            kept.factoryRevision = nil
+            kept.id = UUID()
+            return kept
+        }
+
         // Retain only valid current built-in presets and all user-created presets.
-        // Retired built-ins (such as redundant source-to-destination recipes) are pruned.
         var merged = storedPresets.filter { stored in
             guard stored.isBuiltIn else { return true }
             if let key = stored.builtInKey {
@@ -747,7 +762,7 @@ public final class PresetStore: @unchecked Sendable {
             merged[matchIndex] = updated
         }
 
-        return merged
+        return merged + retiringPresets
     }
 
     private var isExtensionProcess: Bool {

@@ -41,11 +41,11 @@ final class QTAFormatTests: XCTestCase {
         XCTAssertFalse(presets.isEmpty, "QTA files must have compatible audio conversion presets")
 
         let menuNames = Set(presets.map { $0.menuName })
-        XCTAssertTrue(menuNames.contains("MP3"), "QTA should be convertible to MP3")
-        XCTAssertTrue(menuNames.contains("AAC"), "QTA should be convertible to AAC")
+        XCTAssertTrue(menuNames.contains("MP3 – 320 kbps"), "QTA should be convertible to MP3")
+        XCTAssertTrue(menuNames.contains("M4A – AAC"), "QTA should be convertible to AAC")
         XCTAssertTrue(menuNames.contains("FLAC"), "QTA should be convertible to FLAC")
         XCTAssertTrue(menuNames.contains("WAV"), "QTA should be convertible to WAV")
-        XCTAssertTrue(menuNames.contains("ALAC"), "QTA should be convertible to ALAC")
+        XCTAssertTrue(menuNames.contains("M4A – Apple Lossless"), "QTA should be convertible to ALAC")
         if #available(macOS 26.0, *) {
             XCTAssertTrue(menuNames.contains("QTA"), "QTA output preset should be present")
         } else {
@@ -63,7 +63,7 @@ final class QTAFormatTests: XCTestCase {
         let m4aFormat = FormatRegistry.shared.format(forID: "m4a")!
         let wavFormat = FormatRegistry.shared.format(forID: "wav")!
 
-        let m4aPreset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "M4A" }!
+        let m4aPreset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "M4A – AAC" }!
         let wavPreset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "WAV" }!
         let qtaPreset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "QTA" }!
 
@@ -85,7 +85,7 @@ final class QTAFormatTests: XCTestCase {
         let qtaURL = tempDirectory.appendingPathComponent("recording.qta")
         try "dummy audio content".data(using: .utf8)?.write(to: qtaURL)
 
-        let mp3Preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP3" }!
+        let mp3Preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP3 – 320 kbps" }!
         let job = ConversionJob(sourceURL: qtaURL, preset: mp3Preset)
 
         let resolver = BackendResolver(
@@ -99,7 +99,7 @@ final class QTAFormatTests: XCTestCase {
         let ffmpeg = FFmpegBackend()
         let qtaURL = URL(fileURLWithPath: "/path/to/voice.qta")
         let destURL = URL(fileURLWithPath: "/path/to/voice.mp3")
-        let mp3Preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP3" }!
+        let mp3Preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP3 – 320 kbps" }!
 
         let args = ffmpeg.buildFFmpegArguments(sourceURL: qtaURL, destURL: destURL, preset: mp3Preset)
         XCTAssertTrue(args.contains("-f"), "Must include -f flag for QTA container input")
