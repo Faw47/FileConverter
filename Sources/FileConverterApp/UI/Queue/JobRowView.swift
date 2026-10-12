@@ -356,21 +356,30 @@ public struct JobRowView: View {
 
     private var statusDescription: String {
         switch job.state {
-        case .queued: return "Queued in line"
-        case .preparing: return "Preparing..."
+        case .queued: return queueWaitingText
+        case .preparing:
+            return BackendReadinessGate.shared.ready || ConversionCoordinator.isGuaranteedNative(job.preset)
+                ? "Preparing…"
+                : "Waiting for tool check…"
         case .awaitingCollision: return "Waiting for overwrite decision"
         case .converting:
             if let fps = job.progress.currentFPS, fps > 0 {
-                return String(format: "Encoding (%.1f fps)", fps)
+                return String(format: "Converting (%.0f fps)", fps)
             }
-            return "Converting..."
-        case .finalizing: return "Writing to destination..."
+            return "Converting…"
+        case .finalizing: return "Saving…"
         case .completed: return "Converted successfully"
         case .completedWithWarnings(let warnings): return "Converted with \(warnings.count) warning\(warnings.count == 1 ? "" : "s")"
         case .failed(let error): return error.localizedDescription
         case .skipped(let reason): return "Skipped: \(reason)"
         case .cancelled: return "Cancelled"
         }
+    }
+
+    private var queueWaitingText: String {
+        job.waitingForDestinationKey != nil
+            ? "Waiting for another file with the same name"
+            : "Waiting"
     }
 
     private var statusColor: Color {

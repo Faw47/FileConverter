@@ -110,7 +110,7 @@ public actor ConversionCoordinator {
     }
 
     /// Presets that never need optional command-line tools.
-    static func isGuaranteedNative(_ preset: ConversionPreset) -> Bool {
+    public static func isGuaranteedNative(_ preset: ConversionPreset) -> Bool {
         [.imageIO, .pdfKit, .avFoundation].contains(preset.backend)
     }
 

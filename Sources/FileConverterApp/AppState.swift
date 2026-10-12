@@ -168,22 +168,17 @@ public final class AppState: ObservableObject {
     public func drainFinderRequestsWhenReady() async {
         await backendDiscoveryTask?.value
         await ConversionCoordinator.shared.checkAndDrainPendingRequests()
+        // Finder conversions run without a window; the first one is the
+        // moment to ask for permission to report when they finish.
+        let settings = AppSettings.shared
+        if settings.enableNotifications, settings.notificationAuthorizationState == .notDetermined {
+            settings.requestNotificationAuthorization()
+        }
     }
 
+    /// Adds the jobs right away; the queue itself waits for tool discovery
+    /// when a job needs an optional tool, so the rows are visible meanwhile.
     public func convertFilesWhenReady(urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]? = nil) async throws {
-        let isNative = preset.backend == .imageIO || preset.backend == .pdfKit || preset.backend == .avFoundation
-        if !isNative && preset.backend != .auto {
-            await backendDiscoveryTask?.value
-        } else if preset.backend == .auto {
-            let firstURL = urls.first
-            let sourceFmt = firstURL.flatMap { FormatDetector.detect(url: $0).format }
-            let destFmt = FormatRegistry.shared.format(forID: preset.destinationFormat)
-            let nativeHandled = (sourceFmt?.category == .image && destFmt?.category == .image && destFmt?.nativeEncoderAvailable == true)
-                || (sourceFmt?.id == "pdf" && destFmt?.id == "pdf" && !preset.isPDFCompressWorkflow)
-            if !nativeHandled {
-                await backendDiscoveryTask?.value
-            }
-        }
         try await ConversionCoordinator.shared.convertFiles(urls: urls, preset: preset, leases: leases)
     }
 

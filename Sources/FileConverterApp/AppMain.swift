@@ -67,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // Conservative startup cleanup of prior session staging artifacts (TASK-028 / SEC-004)
         StagingArtifactManifest.shared.sweepOrphanedArtifacts()
+        DockProgressController.shared.start()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -272,6 +273,7 @@ struct FileConverterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
     @StateObject private var conversionQueue = ConversionQueue.shared
+    @AppStorage(AppSettings.Keys.showMenuBarExtra) private var showMenuBarExtra = true
 
     init() {
         if let idx = CommandLine.arguments.firstIndex(of: "--snapshot"), idx + 1 < CommandLine.arguments.count {
@@ -297,6 +299,14 @@ struct FileConverterApp: App {
         }
         .handlesExternalEvents(matching: Set(["*"]))
         .defaultSize(width: 600, height: 480)
+        MenuBarExtra(isInserted: $showMenuBarExtra) {
+            MenuBarStatusView(queue: conversionQueue)
+        } label: {
+            Image(systemName: conversionQueue.activeCount + conversionQueue.queuedCount > 0
+                ? "arrow.triangle.2.circlepath.circle.fill"
+                : "arrow.triangle.2.circlepath")
+                .accessibilityLabel("File Converter")
+        }
         Settings {
             SettingsView()
                 .environmentObject(appState)

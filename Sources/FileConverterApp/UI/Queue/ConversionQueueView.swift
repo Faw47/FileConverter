@@ -4,6 +4,7 @@ import AppKit
 
 public struct ConversionQueueView: View {
     @ObservedObject var queue = ConversionQueue.shared
+    @ObservedObject private var settings = AppSettings.shared
     @EnvironmentObject var appState: AppState
 
     @State private var selectedJobID: UUID? = nil
@@ -157,7 +158,7 @@ public struct ConversionQueueView: View {
                         .accessibilityLabel("Overall batch progress")
                         .accessibilityValue(batchSummaryText)
 
-                    if AppSettings.shared.enableNotifications && AppSettings.shared.notificationAuthorizationState == .denied {
+                    if settings.enableNotifications && settings.notificationAuthorizationState == .denied {
                         HStack(spacing: 4) {
                             Image(systemName: "bell.slash.fill")
                                 .font(.system(size: 10))

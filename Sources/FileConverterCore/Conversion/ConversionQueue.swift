@@ -415,6 +415,20 @@ public final class ConversionQueue: ObservableObject {
 
     // MARK: - Queue Execution Loop
 
+    /// Progress of the batches that still have work: files left and overall
+    /// fraction (0…1). Nil when nothing is waiting or converting.
+    public nonisolated static func activeBatchProgress(_ jobs: [ConversionJob]) -> (remaining: Int, fraction: Double)? {
+        let activeBatches = Set(jobs.filter { !$0.state.isTerminal }.map(\.batchID))
+        guard !activeBatches.isEmpty else { return nil }
+        let batchJobs = jobs.filter { activeBatches.contains($0.batchID) }
+        let remaining = batchJobs.filter { !$0.state.isTerminal }.count
+        let done = batchJobs.reduce(0.0) { sum, job in
+            if job.state.isTerminal { return sum + 1 }
+            return sum + max(0, min(1, job.progress.fractionCompleted))
+        }
+        return (remaining, done / Double(batchJobs.count))
+    }
+
     public func pause() {
         isPaused = true
     }
@@ -503,6 +517,13 @@ public final class ConversionQueue: ObservableObject {
             }
             guard !sourceAccess.isZeroByte else {
                 throw ConversionError.malformedSource(path: job.sourceURL.path, reason: "File is zero bytes.")
+            }
+
+            // Optional tools may still be under discovery right after launch;
+            // wait for it so the right engine is chosen.
+            if !ConversionCoordinator.isGuaranteedNative(job.preset), !BackendReadinessGate.shared.ready {
+                _ = await BackendReadinessGate.shared.waitUntilReady(timeout: .seconds(30))
+                try Task.checkCancellation()
             }
 
             // 2. Resolve the backend before creating destination directories or temporary files.

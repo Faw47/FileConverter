@@ -394,16 +394,6 @@ public struct FileConverterMainView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
             } else {
-                if isEnqueuingSelection {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Preparing conversion…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
                 let grouped = PresetValidator.groupPresetsByCategory(compatible)
                 let query = presetSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 let filteredGrouped = grouped.compactMapValues { presets in
@@ -655,7 +645,6 @@ public struct FileConverterMainView: View {
             do {
                 try await appState.convertFilesWhenReady(urls: urls, preset: preset, leases: leases)
             } catch {
-                try? await Task.sleep(for: .milliseconds(150))
                 await MainActor.run {
                     self.conversionErrorDescription = error.localizedDescription
                 }
