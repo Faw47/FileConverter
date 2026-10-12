@@ -9,6 +9,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
     public var isAvailable: Bool { true }
 
     private var activeSessions: [UUID: AVAssetExportSession] = [:]
+    private var activeTranscoders: [UUID: AVFoundationVideoTranscoder] = [:]
     private var activePCMSessions: [UUID: (reader: AVAssetReader, writer: AVAssetWriter)] = [:]
     private var cancelledJobs = Set<UUID>()
     private let lock = NSLock()
@@ -29,6 +30,12 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
             return targetExt == "mp4" || targetExt == "mov" || targetExt == "m4a" || targetExt == "qta"
         }
         return false
+    }
+
+    /// The Apple encoder works from a target bitrate and always uses the
+    /// Mac's media engine; it has no CRF scale and takes no FFmpeg options.
+    public func ignoredSettings(for preset: ConversionPreset, source: FormatDefinition) -> Set<PresetSettingKey> {
+        [.crf, .hardwareAcceleration, .extraBackendOptions]
     }
 
     private func checkCancelled(jobID: UUID) -> Bool {
@@ -81,9 +88,29 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         session?.cancelExport()
         pcm?.reader.cancelReading()
         pcm?.writer.cancelWriting()
+        let transcoder = lock.withLock { activeTranscoders.removeValue(forKey: jobID) }
+        transcoder?.cancel()
+    }
+
+    public func convert(
+        job: ConversionJob,
+        outputs: [PlannedConversionOutput],
+        progressHandler: @escaping @Sendable (ConversionProgress) -> Void
+    ) async throws -> BackendConversionResult {
+        guard let first = outputs.first else {
+            throw ConversionError.destinationUnavailable(path: "")
+        }
+        var single = job
+        single.destinationURL = first.finalURL
+        single.temporaryOutputURL = first.temporaryURL
+        return BackendConversionResult(warnings: try await convertSingle(job: single, progressHandler: progressHandler))
     }
 
     public func convert(job: ConversionJob, progressHandler: @escaping @Sendable (ConversionProgress) -> Void) async throws {
+        _ = try await convertSingle(job: job, progressHandler: progressHandler)
+    }
+
+    private func convertSingle(job: ConversionJob, progressHandler: @escaping @Sendable (ConversionProgress) -> Void) async throws -> [String] {
         let jobID = job.id
         if Task.isCancelled || checkCancelled(jobID: jobID) {
             throw ConversionError.cancelled
@@ -106,14 +133,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
 
         if Self.isAudioOnlyOutput(job.preset) {
             try await convertAudio(asset: asset, sourcePath: sourceURL.path, destinationURL: destURL, targetExtension: job.preset.destinationFormat, preset: job.preset, jobID: jobID, progressHandler: progressHandler)
-            return
-        }
-
-        // Determine appropriate AVAssetExportPreset
-        let exportPresetName = determineExportPreset(for: job.preset, targetFormat: job.preset.destinationFormat)
-
-        guard let exportSession = AVAssetExportSession(asset: asset, presetName: exportPresetName) else {
-            throw ConversionError.encoderUnavailable(codec: job.preset.videoCodec.rawValue, reason: "No compatible AVAssetExportSession preset found for this media asset.")
+            return []
         }
 
         guard let outputFileType = Self.outputFileType(forTarget: job.preset.destinationFormat) else {
@@ -122,6 +142,54 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
                 targetFormat: job.preset.destinationFormat
             )
         }
+
+        // Container change only (MOV → MP4): copy the streams when they fit.
+        if job.preset.allowsStreamCopy == true,
+           job.preset.resolution == .original,
+           job.preset.framerate == nil,
+           let passthrough = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough),
+           passthrough.supportedFileTypes.contains(outputFileType) {
+            try await runExport(passthrough, jobID: jobID, sourceURL: sourceURL, destURL: destURL, fileType: outputFileType, progressHandler: progressHandler)
+            return []
+        }
+
+        let transcoder = AVFoundationVideoTranscoder()
+        let registered = lock.withLock { () -> Bool in
+            if cancelledJobs.contains(jobID) { return false }
+            activeTranscoders[jobID] = transcoder
+            return true
+        }
+        guard registered else { throw ConversionError.cancelled }
+        defer { _ = lock.withLock { activeTranscoders.removeValue(forKey: jobID) } }
+
+        let start = Date()
+        let result = try await transcoder.transcode(
+            asset: asset,
+            to: destURL,
+            fileType: outputFileType,
+            preset: job.preset
+        ) { fraction in
+            let elapsed = Date().timeIntervalSince(start)
+            progressHandler(ConversionProgress(
+                fractionCompleted: fraction,
+                elapsedTime: elapsed,
+                estimatedTimeRemaining: fraction > 0.05 ? elapsed / fraction - elapsed : nil
+            ))
+        }
+        if Task.isCancelled || checkCancelled(jobID: jobID) {
+            throw ConversionError.cancelled
+        }
+        return result.warnings
+    }
+
+    private func runExport(
+        _ exportSession: AVAssetExportSession,
+        jobID: UUID,
+        sourceURL: URL,
+        destURL: URL,
+        fileType outputFileType: AVFileType,
+        progressHandler: @escaping @Sendable (ConversionProgress) -> Void
+    ) async throws {
         exportSession.outputURL = destURL
         exportSession.outputFileType = outputFileType
         exportSession.shouldOptimizeForNetworkUse = true
@@ -175,51 +243,6 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
             throw ConversionError.malformedSource(path: sourceURL.path, reason: errorMsg)
         default:
             break
-        }
-    }
-
-    private func determineExportPreset(for preset: ConversionPreset, targetFormat: String) -> String {
-        let isAudioOnly = preset.category == .audio || preset.videoCodec == .none
-
-        if isAudioOnly {
-            return AVAssetExportPresetAppleM4A
-        }
-
-        switch preset.videoCodec {
-        case .hevc:
-            switch preset.resolution {
-            case .uhd4k:
-                return AVAssetExportPresetHEVC3840x2160
-            case .hd1080p:
-                return AVAssetExportPresetHEVC1920x1080
-            default:
-                return AVAssetExportPresetHEVCHighestQuality
-            }
-
-        case .proRes:
-            return AVAssetExportPresetAppleProRes422LPCM
-
-        case .h264, .auto:
-            switch preset.resolution {
-            case .uhd4k:
-                return AVAssetExportPreset3840x2160
-            case .hd1080p:
-                return AVAssetExportPreset1920x1080
-            case .hd720p:
-                return AVAssetExportPreset1280x720
-            case .sd480p:
-                return AVAssetExportPreset640x480
-            default:
-                switch preset.quality {
-                case .low:
-                    return AVAssetExportPresetMediumQuality
-                case .medium, .high, .veryHigh, .lossless, .custom:
-                    return AVAssetExportPresetHighestQuality
-                }
-            }
-
-        default:
-            return AVAssetExportPresetHighestQuality
         }
     }
 

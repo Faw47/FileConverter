@@ -107,4 +107,42 @@ final class PresetMigrationV3Tests: XCTestCase {
         store.loadPresets()
         XCTAssertTrue(store.state.isRecoveryRequired)
     }
+
+    func testRetiredBuiltInIsDroppedUnlessTheUserEditedIt() throws {
+        var untouched = try XCTUnwrap(BuiltInPresetUpgrades.retiredFactoryPresets["audio.m4a"])
+        untouched.builtInKey = "audio.m4a"
+        var edited = untouched
+        edited.id = UUID()
+        edited.audioBitrateKbps = 128
+
+        for (stored, survives) in [(untouched, false), (edited, true)] {
+            let url = try writeV2Document(BuiltInPresets.makeDefaultPresets() + [stored])
+            let store = PresetStore(storageURL: url, postsDarwinNotifications: false)
+            store.loadPresets()
+            let kept = store.presets.filter { $0.name == "M4A Audio" }
+            XCTAssertEqual(kept.count, survives ? 1 : 0)
+            if let preset = kept.first {
+                XCTAssertFalse(preset.isBuiltIn, "an edited retired preset becomes custom")
+                XCTAssertEqual(preset.audioBitrateKbps, 128)
+            }
+        }
+    }
+
+    func testRenamedBuiltInKeepsACustomName() throws {
+        var renamedByUser = try BackendHarness.builtIn("audio.mp3-192")
+        renamedByUser.menuName = "My MP3"
+        var untouched = try BackendHarness.builtIn("audio.mp3-128")
+        untouched.menuName = "MP3 (128k)"
+        let url = try writeV2Document(BuiltInPresets.makeDefaultPresets().map {
+            switch $0.builtInKey {
+            case "audio.mp3-192": return renamedByUser
+            case "audio.mp3-128": return untouched
+            default: return $0
+            }
+        })
+        let store = PresetStore(storageURL: url, postsDarwinNotifications: false)
+        store.loadPresets()
+        XCTAssertEqual(store.presets.first { $0.builtInKey == "audio.mp3-192" }?.menuName, "My MP3")
+        XCTAssertEqual(store.presets.first { $0.builtInKey == "audio.mp3-128" }?.menuName, "MP3 – 128 kbps")
+    }
 }

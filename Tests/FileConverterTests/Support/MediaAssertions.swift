@@ -19,6 +19,7 @@ enum MediaAssertions {
         let sampleRate: Int?
         let channels: Int?
         let bitsPerRawSample: Int?
+        let averageFrameRate: Double?
         let tags: [String: String]
     }
 
@@ -89,6 +90,10 @@ enum MediaAssertions {
                 sampleRate: (raw["sample_rate"] as? String).flatMap(Int.init),
                 channels: raw["channels"] as? Int,
                 bitsPerRawSample: (raw["bits_per_raw_sample"] as? String).flatMap(Int.init),
+                averageFrameRate: (raw["avg_frame_rate"] as? String).flatMap { rate in
+                    let parts = rate.split(separator: "/").compactMap { Double($0) }
+                    return parts.count == 2 && parts[1] > 0 ? parts[0] / parts[1] : nil
+                },
                 tags: tags
             )
         }

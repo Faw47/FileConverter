@@ -42,6 +42,28 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
         ) == nil
     }
 
+    /// Hardware (VideoToolbox) encoders use a bitrate instead of CRF; software
+    /// encoders use CRF and ignore a bitrate when CRF is set.
+    public func ignoredSettings(for preset: ConversionPreset, source: FormatDefinition) -> Set<PresetSettingKey> {
+        let encoders = ExternalToolDiscovery.shared.cachedAvailableFFmpegEncoders() ?? []
+        let wantsHardware = preset.hardwareAcceleration != .softwareOnly
+        var codec = preset.videoCodec
+        if codec == .auto { codec = preset.destinationFormat == "webm" ? .vp9 : .h264 }
+        switch codec {
+        case .h264 where wantsHardware && encoders.contains("h264_videotoolbox"),
+             .hevc where wantsHardware && encoders.contains("hevc_videotoolbox"):
+            return [.crf]
+        case .h264, .hevc:
+            return preset.crf != nil ? [.videoBitrate] : []
+        case .vp9, .av1:
+            return [.videoBitrate, .hardwareAcceleration]
+        case .proRes:
+            return [.crf, .videoBitrate]
+        default:
+            return []
+        }
+    }
+
     public func cancel(jobID: UUID) async {
         processRegistry.cancel(jobID: jobID)
     }

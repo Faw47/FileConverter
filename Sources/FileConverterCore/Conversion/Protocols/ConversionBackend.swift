@@ -46,6 +46,14 @@ public struct BackendConversionResult: Sendable {
     }
 }
 
+/// Preset settings a backend may not use, so the editor can say so.
+public enum PresetSettingKey: String, CaseIterable, Sendable {
+    case crf
+    case videoBitrate
+    case hardwareAcceleration
+    case extraBackendOptions
+}
+
 public protocol ConversionBackend: Sendable {
     var backendType: BackendType { get }
     var isAvailable: Bool { get }
@@ -57,6 +65,9 @@ public protocol ConversionBackend: Sendable {
     /// Returns the outputs that will be produced. The default is one output using the preset extension.
     func outputRequirements(for job: ConversionJob) async throws -> [ConversionOutputRequirement]
 
+    /// Settings in `preset` this backend will not use for `source`.
+    func ignoredSettings(for preset: ConversionPreset, source: FormatDefinition) -> Set<PresetSettingKey>
+
     /// Multi-output entry point. Existing backends can keep implementing `convert(job:progressHandler:)`.
     func convert(
         job: ConversionJob,
@@ -66,6 +77,10 @@ public protocol ConversionBackend: Sendable {
 }
 
 public extension ConversionBackend {
+    func ignoredSettings(for preset: ConversionPreset, source: FormatDefinition) -> Set<PresetSettingKey> {
+        []
+    }
+
     func outputRequirements(for job: ConversionJob) async throws -> [ConversionOutputRequirement] {
         [ConversionOutputRequirement(extensionName: job.preset.destinationFormat)]
     }

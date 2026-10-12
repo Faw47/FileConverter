@@ -243,6 +243,10 @@ public struct PresetEditorView: View {
                                 videoSection(preset: preset)
                             }
 
+                            if preset.wrappedValue.category == .image {
+                                imageSection(preset: preset)
+                            }
+
                             if preset.wrappedValue.category == .audio || preset.wrappedValue.category == .video {
                                 audioSection(preset: preset)
                             }
@@ -654,9 +658,13 @@ public struct PresetEditorView: View {
 
                     SettingsRow(
                         title: "Video bitrate",
-                        subtitle: preset.wrappedValue.videoBitrateKbps != nil
-                            ? "\(preset.wrappedValue.videoBitrateKbps ?? 4500) kbps"
-                            : "Default rate"
+                        subtitle: withIgnoredNote(
+                            preset.wrappedValue.videoBitrateKbps != nil
+                                ? "\(preset.wrappedValue.videoBitrateKbps ?? 4500) kbps"
+                                : "Automatic, based on picture size and quality",
+                            key: .videoBitrate,
+                            preset: preset.wrappedValue
+                        )
                     ) {
                         if preset.wrappedValue.videoBitrateKbps != nil {
                             HStack(spacing: 8) {
@@ -688,9 +696,13 @@ public struct PresetEditorView: View {
 
                     SettingsRow(
                         title: "CRF target",
-                        subtitle: preset.wrappedValue.crf != nil
-                            ? "Value: \(preset.wrappedValue.crf ?? 23)"
-                            : "Default constant rate factor"
+                        subtitle: withIgnoredNote(
+                            preset.wrappedValue.crf != nil
+                                ? "Value: \(preset.wrappedValue.crf ?? 23) (lower is higher quality)"
+                                : "Automatic, based on quality",
+                            key: .crf,
+                            preset: preset.wrappedValue
+                        )
                     ) {
                         if preset.wrappedValue.crf != nil {
                             HStack(spacing: 8) {
@@ -717,9 +729,143 @@ public struct PresetEditorView: View {
                         }
                     }
 
+                    Divider().padding(.leading, 14)
+
+                    SettingsRow(title: "Picture size", subtitle: "Never larger than the original") {
+                        resolutionPicker(preset: preset, originalLabel: "Original size")
+                    }
+
+                    Divider().padding(.leading, 14)
+
+                    SettingsRow(title: "Frame rate") {
+                        Picker("Frame rate", selection: Binding<Double?>(
+                            get: { preset.wrappedValue.framerate },
+                            set: { preset.wrappedValue.framerate = $0 }
+                        )) {
+                            Text("Same as original").tag(Double?.none)
+                            Divider()
+                            ForEach([15.0, 24, 25, 30, 50, 60], id: \.self) { rate in
+                                Text("\(Int(rate)) fps").tag(Double?.some(rate))
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 180)
+                    }
                 }
             }
         }
+    }
+
+    private func imageSection(preset: Binding<ConversionPreset>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SettingsSectionHeader("Image")
+
+            SettingsCard {
+                VStack(spacing: 0) {
+                    SettingsRow(title: "Maximum size", subtitle: "Longest side; images are never enlarged") {
+                        resolutionPicker(preset: preset, originalLabel: "Original size")
+                    }
+                    if preset.wrappedValue.sourceFormats.contains("pdf") {
+                        Divider().padding(.leading, 14)
+                        SettingsRow(title: "Page resolution", subtitle: "Dots per inch when rendering PDF pages") {
+                            Picker("Page resolution", selection: Binding<Int?>(
+                                get: { preset.wrappedValue.processingOptions?.pdfDPI },
+                                set: { newValue in
+                                    var options = preset.wrappedValue.processingOptions ?? ConversionProcessingOptions()
+                                    options.pdfDPI = newValue
+                                    preset.wrappedValue.processingOptions = options.isEmpty ? nil : options
+                                }
+                            )) {
+                                Text("Automatic").tag(Int?.none)
+                                Divider()
+                                ForEach([72, 150, 200, 300, 600], id: \.self) { dpi in
+                                    Text("\(dpi) dpi").tag(Int?.some(dpi))
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .frame(width: 180)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private enum ResolutionChoice: Hashable {
+        case original, uhd4k, hd1080p, hd720p, sd480p, custom
+    }
+
+    @ViewBuilder
+    private func resolutionPicker(preset: Binding<ConversionPreset>, originalLabel: String) -> some View {
+        let isImage = preset.wrappedValue.category == .image
+        HStack(spacing: 6) {
+            Picker("Size", selection: Binding<ResolutionChoice>(
+                get: {
+                    switch preset.wrappedValue.resolution {
+                    case .original: return .original
+                    case .uhd4k: return .uhd4k
+                    case .hd1080p: return .hd1080p
+                    case .hd720p: return .hd720p
+                    case .sd480p: return .sd480p
+                    case .custom: return .custom
+                    }
+                },
+                set: { choice in
+                    switch choice {
+                    case .original: preset.wrappedValue.resolution = .original
+                    case .uhd4k: preset.wrappedValue.resolution = .uhd4k
+                    case .hd1080p: preset.wrappedValue.resolution = .hd1080p
+                    case .hd720p: preset.wrappedValue.resolution = .hd720p
+                    case .sd480p: preset.wrappedValue.resolution = .sd480p
+                    case .custom:
+                        if case .custom = preset.wrappedValue.resolution { return }
+                        preset.wrappedValue.resolution = isImage
+                            ? .custom(width: 2048, height: 2048)
+                            : .custom(width: 1280, height: 720)
+                    }
+                }
+            )) {
+                Text(originalLabel).tag(ResolutionChoice.original)
+                Divider()
+                Text(isImage ? "3840 px" : "4K (3840 × 2160)").tag(ResolutionChoice.uhd4k)
+                Text(isImage ? "1920 px" : "1080p (1920 × 1080)").tag(ResolutionChoice.hd1080p)
+                Text(isImage ? "1280 px" : "720p (1280 × 720)").tag(ResolutionChoice.hd720p)
+                Text(isImage ? "854 px" : "480p (854 × 480)").tag(ResolutionChoice.sd480p)
+                Text("Custom…").tag(ResolutionChoice.custom)
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 180)
+
+            if case .custom(let width, let height) = preset.wrappedValue.resolution {
+                TextField("Width", value: Binding(
+                    get: { width },
+                    set: { preset.wrappedValue.resolution = .custom(width: max(16, $0), height: height) }
+                ), format: .number)
+                .frame(width: 60)
+                .accessibilityLabel("Custom width")
+                Text("×")
+                TextField("Height", value: Binding(
+                    get: { height },
+                    set: { preset.wrappedValue.resolution = .custom(width: width, height: max(16, $0)) }
+                ), format: .number)
+                .frame(width: 60)
+                .accessibilityLabel("Custom height")
+            }
+        }
+    }
+
+    /// Adds "Not used for MP4, MOV (Apple encoder)" when some sources would
+    /// run on a backend that ignores this setting.
+    private func withIgnoredNote(_ text: String, key: PresetSettingKey, preset: ConversionPreset) -> String {
+        let affected = BackendResolver.shared.ignoredSettings(for: preset).filter { $0.keys.contains(key) }
+        guard !affected.isEmpty else { return text }
+        let formats = affected.map { $0.format.primaryExtension.uppercased() }.sorted()
+        let shown = formats.prefix(4).joined(separator: ", ") + (formats.count > 4 ? ", …" : "")
+        let engines = Set(affected.map { $0.backend == .avFoundation ? "Apple encoder" : $0.backend.displayName })
+        return "\(text) · Not used for \(shown) (\(engines.sorted().joined(separator: ", ")))"
     }
 
     private func audioSection(preset: Binding<ConversionPreset>) -> some View {

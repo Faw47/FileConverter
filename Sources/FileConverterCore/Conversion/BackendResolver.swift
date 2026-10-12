@@ -139,6 +139,18 @@ public final class BackendResolver: @unchecked Sendable {
         return .unsupported
     }
 
+    /// Settings that will not be used, per source format the preset accepts,
+    /// with the name of the backend that would run it.
+    public func ignoredSettings(for preset: ConversionPreset) -> [(format: FormatDefinition, backend: BackendType, keys: Set<PresetSettingKey>)] {
+        FormatRegistry.shared.allFormats().compactMap { format in
+            guard presetAccepts(format: format, preset: preset),
+                  case .usable(let type) = evaluate(preset: preset, sourceFormat: format),
+                  let backend = backend(for: type) else { return nil }
+            let keys = backend.ignoredSettings(for: preset, source: format)
+            return keys.isEmpty ? nil : (format, type, keys)
+        }
+    }
+
     public func canResolve(preset: ConversionPreset, sourceFormat: FormatDefinition) -> Bool {
         return evaluate(preset: preset, sourceFormat: sourceFormat).isUsable
     }
