@@ -1,0 +1,71 @@
+import FileConverterContracts
+import Foundation
+
+public enum FinderRequestClient {
+    public static func isReady() -> Bool {
+        do {
+            let configuration = try IPCConfiguration.current()
+            guard try loadKey(configuration: configuration) != nil,
+                  configuration.sharedContainerURL() != nil else {
+                return false
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    public static func statusDescription() -> String {
+        do {
+            let configuration = try IPCConfiguration.current()
+            guard let container = configuration.sharedContainerURL() else {
+                return "sharedContainerURL is nil (appGroupID: \(configuration.appGroupID), localPath: \(configuration.localSharedContainerPath ?? "nil"))"
+            }
+            guard let key = try loadKey(configuration: configuration) else {
+                return "authentication key is nil (container: \(container.path))"
+            }
+            return "ready (key length: \(key.count))"
+        } catch {
+            return "error: \(error.localizedDescription)"
+        }
+    }
+
+    public static func send(_ request: ConversionRequest) throws {
+        let configuration = try IPCConfiguration.current()
+        try request.validate(expectedEdition: configuration.edition)
+        guard let key = try loadKey(configuration: configuration) else {
+            throw FinderSupportError.hostSetupRequired
+        }
+
+        let envelope = try ConversionRequestAuthenticator.authenticate(request, keyData: key)
+        let data = try ConversionRequestAuthenticator.encoder().encode(envelope)
+        guard data.count <= ConversionRequestLimits.production.maximumEnvelopeSize else {
+            throw FinderSupportError.requestTooLarge
+        }
+
+        guard let container = configuration.sharedContainerURL() else {
+            throw FinderSupportError.appGroupUnavailable(configuration.appGroupID)
+        }
+        let pending = container
+            .appendingPathComponent("Requests", isDirectory: true)
+            .appendingPathComponent("Pending", isDirectory: true)
+        try FileManager.default.createDirectory(at: pending, withIntermediateDirectories: true)
+
+        let timestamp = Int(request.requestedAt.timeIntervalSince1970 * 1_000)
+        let requestFile = pending.appendingPathComponent("\(timestamp)-\(request.id.uuidString).json")
+        try data.write(to: requestFile, options: [.atomic, .completeFileProtection])
+
+        let name = CFNotificationName(configuration.conversionRequestNotificationName as CFString)
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            name,
+            nil,
+            nil,
+            true
+        )
+    }
+
+    private static func loadKey(configuration: IPCConfiguration) throws -> Data? {
+        try IPCAuthenticationKeyStore.loadKey(configuration: configuration)
+    }
+}

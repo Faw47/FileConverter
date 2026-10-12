@@ -1,0 +1,93 @@
+name: Bug report
+description: Report a reproducible problem with File Converter
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Please remove private filenames and other sensitive information from logs before posting them.
+
+  - type: input
+    id: macos_version
+    attributes:
+      label: macOS version
+      description: For example, macOS 14.7.5 or macOS 26.0.
+      placeholder: macOS 14.7.5
+    validations:
+      required: true
+
+  - type: input
+    id: app_version
+    attributes:
+      label: App version or commit
+      description: Use the app version from the bundle, or the commit SHA if built from source.
+      placeholder: 1.0.0 or eea55f9
+    validations:
+      required: true
+
+  - type: dropdown
+    id: entry_point
+    attributes:
+      label: Where did it happen?
+      options:
+        - Finder menu
+        - Main app window
+        - Settings
+        - Packaging or build script
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: input_output
+    attributes:
+      label: Input and output
+      description: Include the source and destination formats, optional backend used, and whether this was a single file or a batch.
+      placeholder: HEIC to JPEG, single file, native ImageIO path
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest sequence of actions that consistently shows the problem.
+      placeholder: |
+        1. Select ...
+        2. Choose ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Paste only relevant output. Remove private paths, filenames, and other sensitive data.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues for duplicates.
+          required: true
+        - label: I removed private or sensitive information from this report.
+          required: true

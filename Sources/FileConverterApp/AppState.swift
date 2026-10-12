@@ -1,0 +1,224 @@
+import SwiftUI
+import AppKit
+import FileConverterCore
+import FileConverterNativeBackends
+import FileConverterExternalBackends
+import Combine
+
+@MainActor
+public final class AppState: ObservableObject {
+    public static let shared = AppState()
+
+    @Published public var selectedTab: SettingsTab
+    @Published public var dropZoneActive: Bool = false
+    @Published public private(set) var backendDiscoveryComplete = false
+    @Published public private(set) var discoveryStatus: String?
+    @Published public private(set) var isDiscoveringBackends: Bool = false
+    @Published public var activeWorkflowDialog: ActiveWorkflowDialog?
+    @Published public var uncompletedJournalEntries: [JournalEntry] = []
+
+    private var cancellables = Set<AnyCancellable>()
+    private var backendDiscoveryTask: Task<Void, Never>?
+
+    public enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
+        case general = "General"
+        case presets = "Presets"
+        case externalTools = "External Tools"
+        case performance = "Performance"
+        case finder = "Finder Integration"
+
+        public var id: String { rawValue }
+
+        public var systemImage: String {
+            switch self {
+            case .general: return "gearshape"
+            case .presets: return "slider.horizontal.3"
+            case .externalTools: return "terminal"
+            case .performance: return "bolt"
+            case .finder: return "macwindow"
+            }
+        }
+
+        public var subtitle: String {
+            switch self {
+            case .general: return "Outputs, conflicts, notifications"
+            case .presets: return "Formats, backends, quality"
+            case .externalTools: return "FFmpeg, documents, diagnostics"
+            case .performance: return "Concurrency, thermals"
+            case .finder: return "Context menu, status"
+            }
+        }
+    }
+
+    public init() {
+        let stored = UserDefaults.standard.string(forKey: AppSettings.Keys.selectedSettingsTab)
+        self.selectedTab = SettingsTab(rawValue: stored ?? "") ?? .general
+
+        _ = AppSettings.shared
+
+        BackendResolver.shared.configure(
+            backends: NativeBackendCatalog.makeBackends() + ExternalBackendCatalog.makeBackends()
+        )
+        // Publish native capabilities immediately, then discover optional
+        // command-line tools away from the main actor and republish once the
+        // scan (including FFmpeg encoder probing) completes.
+        PresetStore.shared.publishFinderMenuSnapshot()
+        // Install the IPC observer before optional tool discovery starts. A
+        // Finder command can arrive while discovery is still probing tools,
+        // and native PDF/image conversions must not wait for that scan.
+        _ = ConversionCoordinator.shared
+        startBackendDiscovery()
+
+        $selectedTab
+            .sink { tab in
+                UserDefaults.standard.set(tab.rawValue, forKey: AppSettings.Keys.selectedSettingsTab)
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .fileConverterBatchCompleted)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] note in
+                self?.handleBatchCompleted(note)
+            }
+            .store(in: &cancellables)
+
+        checkForUncompletedJournalEntries()
+    }
+
+    public func checkForUncompletedJournalEntries() {
+        let entries = ConversionJournal.shared.uncompletedEntries()
+        self.uncompletedJournalEntries = entries.filter {
+            $0.state == .running || $0.state == .committing
+        }
+    }
+
+    public func dismissJournalRecovery(entryID: UUID) {
+        ConversionJournal.shared.transitionState(jobID: entryID, to: .cancelled)
+        uncompletedJournalEntries.removeAll { $0.id == entryID }
+    }
+
+    public func dismissAllJournalRecovery() {
+        for entry in uncompletedJournalEntries {
+            ConversionJournal.shared.transitionState(jobID: entry.id, to: .cancelled)
+        }
+        uncompletedJournalEntries.removeAll()
+    }
+
+    public func startBackendDiscovery() {
+        backendDiscoveryTask?.cancel()
+        backendDiscoveryComplete = false
+        isDiscoveringBackends = true
+        discoveryStatus = "Checking optional conversion tools…"
+        backendDiscoveryTask = Task.detached(priority: .utility) { [weak self] in
+            let tools = ["ffmpeg", "ffprobe", "magick", "gs", "soffice", "ebook-convert"]
+            for tool in tools {
+                if Task.isCancelled { break }
+                await MainActor.run {
+                    self?.discoveryStatus = "Checking \(tool)…"
+                }
+                try? await Task.sleep(nanoseconds: 15_000_000)
+            }
+            if !Task.isCancelled {
+                ExternalToolDiscovery.shared.refreshAllTools()
+                PresetStore.shared.publishFinderMenuSnapshot()
+            }
+            await MainActor.run {
+                self?.isDiscoveringBackends = false
+                self?.discoveryStatus = nil
+                self?.backendDiscoveryComplete = true
+            }
+        }
+    }
+
+    public func cancelBackendDiscovery() {
+        backendDiscoveryTask?.cancel()
+        isDiscoveringBackends = false
+        discoveryStatus = nil
+        backendDiscoveryComplete = true
+    }
+
+    public var openSettingsAction: (@MainActor () -> Void)?
+
+    public func openSettings(tab: SettingsTab? = nil) {
+        if let tab { selectedTab = tab }
+
+        let settingsWindows = NSApplication.shared.windows.filter { window in
+            let id = window.identifier?.rawValue ?? ""
+            return id.contains("Settings") || id.contains("settings") || window.title.contains("Settings") || window.title.contains("Preferences")
+        }
+
+        if let settingsWindow = settingsWindows.first {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            if settingsWindow.isMiniaturized {
+                settingsWindow.deminiaturize(nil)
+            }
+            settingsWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        if let openSettingsAction {
+            openSettingsAction()
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            return
+        }
+
+        NSApp?.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+
+    public func drainFinderRequestsWhenReady() async {
+        await backendDiscoveryTask?.value
+        await ConversionCoordinator.shared.checkAndDrainPendingRequests()
+    }
+
+    public func convertFilesWhenReady(urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]? = nil) async throws {
+        let isNative = preset.backend == .imageIO || preset.backend == .pdfKit || preset.backend == .avFoundation
+        if !isNative && preset.backend != .auto {
+            await backendDiscoveryTask?.value
+        } else if preset.backend == .auto {
+            let firstURL = urls.first
+            let sourceFmt = firstURL.flatMap { FormatDetector.detect(url: $0).format }
+            let destFmt = FormatRegistry.shared.format(forID: preset.destinationFormat)
+            let nativeHandled = (sourceFmt?.category == .image && destFmt?.category == .image && destFmt?.nativeEncoderAvailable == true)
+                || (sourceFmt?.id == "pdf" && destFmt?.id == "pdf" && !preset.isPDFCompressWorkflow)
+            if !nativeHandled {
+                await backendDiscoveryTask?.value
+            }
+        }
+        try await ConversionCoordinator.shared.convertFiles(urls: urls, preset: preset, leases: leases)
+    }
+
+    public func presentWorkflowDialog(preset: ConversionPreset, urls: [URL], leases: [SecurityScopedLease]? = nil) {
+        if preset.isPDFSplitWorkflow {
+            WorkflowPresentationCoordinator.shared.enqueue(.pdfSplit(urls: urls, preset: preset, leases: leases))
+        } else if preset.isPDFCompressWorkflow {
+            WorkflowPresentationCoordinator.shared.enqueue(.pdfCompress(urls: urls, preset: preset, leases: leases))
+        }
+    }
+
+    private func handleBatchCompleted(_ note: Notification) {
+        guard AppSettings.shared.revealInFinder else { return }
+        guard let batchID = note.userInfo.flatMap(NotificationURLResolver.batchID(from:)) else { return }
+        ConversionQueue.shared.withNotificationRevealURLs(for: batchID) { urls in
+            guard !urls.isEmpty else { return }
+            NSWorkspace.shared.activateFileViewerSelecting(urls)
+        }
+    }
+}
+
+public enum ActiveWorkflowDialog: Identifiable, Equatable {
+    case compressPDF(id: UUID = UUID(), urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
+    case splitPDF(id: UUID = UUID(), urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
+
+    public var id: UUID {
+        switch self {
+        case .compressPDF(let id, _, _, _):
+            return id
+        case .splitPDF(let id, _, _, _):
+            return id
+        }
+    }
+
+    public static func == (lhs: ActiveWorkflowDialog, rhs: ActiveWorkflowDialog) -> Bool {
+        lhs.id == rhs.id
+    }
+}
