@@ -18,6 +18,8 @@ public final class ConversionQueue: ObservableObject {
     /// Lifecycle completion: terminal jobs / total. Reaches 1.0 even when
     /// jobs fail, skip, or cancel.
     @Published public private(set) var completionProgress: Double = 0.0
+    /// While paused, running jobs finish but no waiting job starts.
+    @Published public private(set) var isPaused = false
     /// Success fraction: completed jobs / total.
     @Published public private(set) var successFraction: Double = 0.0
     @Published public private(set) var pendingCollisions: [CollisionConflict] = []
@@ -396,7 +398,20 @@ public final class ConversionQueue: ObservableObject {
 
     // MARK: - Queue Execution Loop
 
+    public func pause() {
+        isPaused = true
+    }
+
+    public func resume() {
+        isPaused = false
+        processNextJobs()
+    }
+
     private func processNextJobs() {
+        guard !isPaused else {
+            updateCountsAndProgress()
+            return
+        }
         guard !isProcessing else { return }
         isProcessing = true
         defer { isProcessing = false }

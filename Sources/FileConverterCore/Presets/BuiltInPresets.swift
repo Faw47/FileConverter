@@ -46,7 +46,8 @@ public enum BuiltInPresets {
             videoBitrateKbps: 2000,
             crf: 28,
             hardwareAcceleration: .auto,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "small"
         ))
 
         add("video.mp4-high-quality", ConversionPreset(
@@ -62,7 +63,8 @@ public enum BuiltInPresets {
             videoBitrateKbps: 9000,
             crf: 18,
             hardwareAcceleration: .auto,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "hq"
         ))
 
         add("video.mp4-1080p", ConversionPreset(
@@ -79,7 +81,8 @@ public enum BuiltInPresets {
             crf: 20,
             resolution: .hd1080p,
             hardwareAcceleration: .auto,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "1080p"
         ))
 
         add("video.mp4-720p", ConversionPreset(
@@ -96,7 +99,8 @@ public enum BuiltInPresets {
             crf: 24,
             resolution: .hd720p,
             hardwareAcceleration: .auto,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "720p"
         ))
 
         add("video.hevc-hardware", ConversionPreset(
@@ -111,7 +115,8 @@ public enum BuiltInPresets {
             quality: .high,
             crf: 24,
             hardwareAcceleration: .forceAppleHardware,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "hevc"
         ))
 
         add("video.hevc-smaller", ConversionPreset(
@@ -127,7 +132,8 @@ public enum BuiltInPresets {
             videoBitrateKbps: 1500,
             crf: 28,
             hardwareAcceleration: .auto,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "hevc-small"
         ))
 
         add("video.av1", ConversionPreset(
@@ -142,7 +148,8 @@ public enum BuiltInPresets {
             quality: .high,
             crf: 26,
             hardwareAcceleration: .auto,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "av1"
         ))
 
         add("video.quicktime-mov", ConversionPreset(
@@ -169,7 +176,8 @@ public enum BuiltInPresets {
             audioCodec: .alac,
             quality: .lossless,
             hardwareAcceleration: .forceAppleHardware,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "prores"
         ))
 
         add("video.webm-vp9-opus", ConversionPreset(
@@ -262,7 +270,8 @@ public enum BuiltInPresets {
             audioCodec: .mp3,
             quality: .medium,
             audioBitrateKbps: 192,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "192k"
         ))
 
         add("audio.mp3-128", ConversionPreset(
@@ -275,7 +284,8 @@ public enum BuiltInPresets {
             audioCodec: .mp3,
             quality: .low,
             audioBitrateKbps: 128,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "128k"
         ))
 
         add("audio.aac-256", ConversionPreset(
@@ -351,7 +361,8 @@ public enum BuiltInPresets {
             quality: .lossless,
             audioSampleRate: 44100,
             audioChannels: 2,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "44k"
         ))
 
         add("audio.aiff", ConversionPreset(
@@ -429,7 +440,8 @@ public enum BuiltInPresets {
             audioCodec: .aac,
             quality: .medium,
             processingOptions: ConversionProcessingOptions(audioTargetFileSizeBytes: 5_000_000),
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "5mb"
         ))
 
         add("audio.wav-to-mp3", ConversionPreset(
@@ -504,7 +516,8 @@ public enum BuiltInPresets {
             destinationFormat: "jpg",
             backend: .imageIO,
             quality: .medium,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "web"
         ))
 
         add("image.png", ConversionPreset(
@@ -693,7 +706,8 @@ public enum BuiltInPresets {
             destinationFormat: "pdf",
             backend: .auto,
             quality: .low,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "compressed"
         ))
 
         add("document.pdf-split-pages", ConversionPreset(
