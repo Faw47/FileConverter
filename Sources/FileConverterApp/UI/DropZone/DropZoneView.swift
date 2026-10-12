@@ -1,11 +1,11 @@
-import SwiftUI
 import FileConverterCore
-import UniformTypeIdentifiers
+import SwiftUI
 
+/// What the main window shows when nothing is in the queue: one place to
+/// drop files or choose them.
 public struct DropZoneView: View {
     public var onSelectFiles: (() -> Void)?
     @Binding private var isDropTargeted: Bool
-    @State private var isHovering = false
 
     public init(onSelectFiles: (() -> Void)? = nil, isDropTargeted: Binding<Bool> = .constant(false)) {
         self.onSelectFiles = onSelectFiles
@@ -13,39 +13,36 @@ public struct DropZoneView: View {
     }
 
     public var body: some View {
-        let isActive = isHovering || isDropTargeted
-        Button(action: {
-            onSelectFiles?()
-        }) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(
-                        isActive ? Color.accentColor : Color.secondary.opacity(0.3),
-                        style: StrokeStyle(lineWidth: 2, dash: [6])
-                    )
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
-                    )
-
-                VStack(spacing: 8) {
-                    Image(systemName: isActive ? "arrow.down.doc.fill" : "plus.viewfinder")
-                        .font(.system(size: 28))
-                        .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
-
-                    Text(isActive ? "Drop files to convert" : "Drag and drop files here, or click to choose")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
-                }
+        VStack(spacing: 14) {
+            Image(systemName: isDropTargeted ? "arrow.down.doc.fill" : "arrow.down.doc")
+                .font(.system(size: 44, weight: .light))
+                .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
+                .accessibilityHidden(true)
+            VStack(spacing: 4) {
+                Text(isDropTargeted ? "Drop to Convert" : "Drop Files Here")
+                    .font(.title3.weight(.semibold))
+                Text("Or right-click files in Finder and choose File Converter.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-            .frame(height: 90)
-            .contentShape(Rectangle())
+            Button("Choose Files…") { onSelectFiles?() }
+                .controlSize(.large)
         }
-        .buttonStyle(.plain)
+        .padding(30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(
+                    isDropTargeted ? Color.accentColor : Color.secondary.opacity(0.35),
+                    style: StrokeStyle(lineWidth: 2, dash: [7, 5])
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(isDropTargeted ? Color.accentColor.opacity(0.07) : Color.clear)
+                )
+        )
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Drop files to convert, or choose files")
-        .accessibilityHint("Accepts readable files. Folders and empty files are ignored.")
-        .onHover { hovering in
-            isHovering = hovering
-        }
     }
 }

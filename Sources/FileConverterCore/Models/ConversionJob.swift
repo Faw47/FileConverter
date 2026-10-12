@@ -94,6 +94,8 @@ public struct ConversionJob: Identifiable, Sendable {
     /// Set while the job waits for another job that is creating the same
     /// output file (reservation key of that file).
     public var waitingForDestinationKey: URL?
+    /// Restored from a previous launch; shown for reference, not retried.
+    public var isFromHistory = false
 
     public init(
         id: UUID = UUID(),

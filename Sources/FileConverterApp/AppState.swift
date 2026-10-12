@@ -68,6 +68,7 @@ public final class AppState: ObservableObject {
         // and native PDF/image conversions must not wait for that scan.
         _ = ConversionCoordinator.shared
         startBackendDiscovery()
+        ConversionQueue.shared.restoreHistory()
 
         $selectedTab
             .sink { tab in

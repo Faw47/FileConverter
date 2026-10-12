@@ -160,6 +160,7 @@ public final class ConversionQueue: ObservableObject {
         }
         jobs.append(contentsOf: rows)
         updateCountsAndProgress()
+        saveHistory()
         postUserNotification(
             title: rows.count == 1 ? "Could Not Convert \(sources[0].displayName)" : "Could Not Convert \(rows.count) Files",
             body: reason
@@ -228,6 +229,7 @@ public final class ConversionQueue: ObservableObject {
         }
 
         leasesToRelease.forEach { $0.release() }
+        saveHistory()
         for task in tasks {
             task.cancel()
         }
@@ -268,6 +270,7 @@ public final class ConversionQueue: ObservableObject {
         }
 
         leasesToRelease.forEach { $0.release() }
+        saveHistory()
         updateCountsAndProgress()
     }
 
@@ -290,6 +293,7 @@ public final class ConversionQueue: ObservableObject {
         pendingCollisions.removeAll { $0.jobID == id }
         leaseToRelease?.release()
         updateCountsAndProgress()
+        saveHistory()
     }
 
     public func setJobsForTesting(_ newJobs: [ConversionJob]) {
@@ -319,6 +323,7 @@ public final class ConversionQueue: ObservableObject {
     public func retryJob(id: UUID) {
         if let index = jobs.firstIndex(where: { $0.id == id }),
            jobs[index].state.isTerminal,
+           !jobs[index].isFromHistory,
            !activeJobIDs.contains(id) {
             notifiedBatchIDs.remove(jobs[index].batchID)
             jobs[index].state = .queued
@@ -427,6 +432,40 @@ public final class ConversionQueue: ObservableObject {
             return sum + max(0, min(1, job.progress.fractionCompleted))
         }
         return (remaining, done / Double(batchJobs.count))
+    }
+
+    // MARK: - History
+
+    /// Where finished jobs are kept between launches; nil disables saving
+    /// (tests, previews).
+    public var historyURL: URL?
+
+    /// Shows finished jobs from earlier launches, older than anything new.
+    public func restoreHistory(from url: URL? = QueueHistoryStore.defaultURL) {
+        historyURL = url
+        let restored = QueueHistoryStore.load(from: url).filter { old in !jobs.contains { $0.id == old.id } }
+        jobs.insert(contentsOf: restored, at: 0)
+        updateCountsAndProgress()
+    }
+
+    private func saveHistory() {
+        guard let historyURL else { return }
+        QueueHistoryStore.save(jobs.filter(\.state.isTerminal), to: historyURL)
+    }
+
+    // MARK: - Order
+
+    /// Moves a waiting job so it starts before `beforeID` (or last when nil).
+    public func moveQueuedJob(id: UUID, before beforeID: UUID?) {
+        guard id != beforeID,
+              let from = jobs.firstIndex(where: { $0.id == id }),
+              jobs[from].state == .queued else { return }
+        let job = jobs.remove(at: from)
+        if let beforeID, let to = jobs.firstIndex(where: { $0.id == beforeID }) {
+            jobs.insert(job, at: to)
+        } else {
+            jobs.append(job)
+        }
     }
 
     public func pause() {
@@ -1039,6 +1078,7 @@ public final class ConversionQueue: ObservableObject {
 
         leaseToRelease?.release()
         updateCountsAndProgress()
+        saveHistory()
         if shouldNotify, totalCount > 0, let capturedBatchID {
             let completedURLs = batchJobs.flatMap { job -> [URL] in
                 guard job.state == .completed || ifCaseCompletedWithWarnings(job.state) else { return [] }

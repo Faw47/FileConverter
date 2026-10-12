@@ -298,7 +298,7 @@ struct FileConverterApp: App {
                 }
         }
         .handlesExternalEvents(matching: Set(["*"]))
-        .defaultSize(width: 600, height: 480)
+        .defaultSize(width: 640, height: 500)
         MenuBarExtra(isInserted: $showMenuBarExtra) {
             MenuBarStatusView(queue: conversionQueue)
         } label: {
@@ -332,6 +332,7 @@ struct FileConverterApp: App {
                 Button("Clear Finished") {
                     ConversionQueue.shared.clearCompleted()
                 }
+                .help("Remove finished conversions from the list")
                 .keyboardShortcut("k", modifiers: .command)
                 .disabled(!conversionQueue.hasClearableJobs)
 
@@ -343,16 +344,27 @@ struct FileConverterApp: App {
             }
 
             CommandMenu("Conversion") {
-                Button("Retry All Failed Conversions") {
-                    let failedJobs = ConversionQueue.shared.jobs.filter {
-                        if case .failed = $0.state { return true }; return false
+                Button(conversionQueue.isPaused ? "Resume Queue" : "Pause Queue") {
+                    if ConversionQueue.shared.isPaused {
+                        ConversionQueue.shared.resume()
+                    } else {
+                        ConversionQueue.shared.pause()
                     }
-                    for job in failedJobs {
-                        ConversionQueue.shared.retryJob(id: job.id)
+                }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+
+                Button("Retry All Failed Conversions") {
+                    for job in ConversionQueue.shared.jobs where !job.isFromHistory {
+                        if case .failed = job.state { ConversionQueue.shared.retryJob(id: job.id) }
                     }
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
-                .disabled(!conversionQueue.jobs.contains { if case .failed = $0.state { return true }; return false })
+                .disabled(!conversionQueue.jobs.contains { job in
+                    if case .failed = job.state { return !job.isFromHistory }
+                    return false
+                })
+
+                Divider()
 
                 Divider()
 

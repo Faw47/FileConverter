@@ -1,374 +1,260 @@
-import SwiftUI
-import FileConverterCore
 import AppKit
+import FileConverterCore
+import SwiftUI
 
+/// One conversion in the queue. Selection, keyboard handling, and the
+/// context menu belong to the enclosing list.
 public struct JobRowView: View {
     public let job: ConversionJob
-    public var isSelected: Bool = false
-    public var onSelect: (() -> Void)? = nil
     @State private var isHovered = false
     @State private var showingErrorDetails = false
     @State private var showingWarningDetails = false
-    @State private var verifiedDestinations: [URL] = []
+    @State private var existingOutputs: [URL] = []
+    @State private var sizeSummary: String?
 
-    public init(job: ConversionJob, isSelected: Bool = false, onSelect: (() -> Void)? = nil) {
+    public init(job: ConversionJob) {
         self.job = job
-        self.isSelected = isSelected
-        self.onSelect = onSelect
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
-            // Category Icon
+        HStack(spacing: 10) {
             Image(systemName: job.preset.category.systemImage)
-                .font(.system(size: 20))
-                .foregroundStyle(iconColor)
-                .frame(width: 28, height: 28)
-                .background(iconColor.opacity(0.12))
-                .clipShape(.rect(cornerRadius: 6))
+                .font(.system(size: 16))
+                .foregroundStyle(job.preset.category.color)
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
 
-            // File & Conversion Info
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(job.filename)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.body.weight(.medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
-
-                    HStack(spacing: 2) {
-                        Text(job.sourceFormat)
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.15))
-                            .clipShape(.rect(cornerRadius: 3))
-
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(.secondary)
-
-                        Text(job.targetFormat)
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.accentColor.opacity(0.15))
-                            .foregroundStyle(Color.accentColor)
-                            .clipShape(.rect(cornerRadius: 3))
-                    }
+                    Text("→ \(job.targetFormat)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
-
-                // Progress / State message
-                HStack(spacing: 8) {
-                    Text(statusDescription)
-                        .font(.system(size: 11))
-                        .foregroundStyle(statusColor)
-
-                    if job.state.isActive, let eta = job.progress.formattedTimeRemaining {
-                        Text("• ETA: \(eta)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let backend = job.resolvedBackend {
-                        Text("• \(backend.displayName)")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                statusLine
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            // Progress Bar / Status Indicator
             if job.state.isActive {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(job.progress.percentageString)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-
-                    ProgressView(value: job.progress.fractionCompleted)
-                        .progressViewStyle(.linear)
-                        .frame(width: 100)
-                }
+                ProgressView(value: job.progress.fractionCompleted)
+                    .progressViewStyle(.linear)
+                    .frame(width: 90)
+                    .accessibilityLabel("Progress")
+                    .accessibilityValue(job.progress.percentageString)
             }
 
-            // Action Buttons
-            HStack(spacing: 4) {
-                switch job.state {
-                case .queued, .preparing, .awaitingCollision, .converting:
-                    Button(action: {
-                        ConversionQueue.shared.cancelJob(id: job.id)
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Cancel conversion")
-                    .accessibilityLabel("Cancel conversion for \(job.filename)")
-
-                case .finalizing:
-                    ProgressView()
-                        .controlSize(.small)
-                        .help("Finalizing conversion")
-                        .accessibilityLabel("Finalizing conversion for \(job.filename)")
-
-                case .completed:
-                    if !verifiedDestinations.isEmpty {
-                        Button(action: {
-                            NSWorkspace.shared.activateFileViewerSelecting(verifiedDestinations)
-                        }) {
-                            Image(systemName: "magnifyingglass.circle.fill")
-                                .foregroundStyle(Color.accentColor)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Reveal in Finder")
-                        .accessibilityLabel("Reveal converted file in Finder")
-                    } else if hasExpectedDestinations {
-                        Label("Output unavailable", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                            .help("The conversion completed, but the expected output file is no longer available.")
-                            .accessibilityLabel("Converted output unavailable for \(job.filename)")
-                    }
-
-                case .completedWithWarnings:
-                    if !job.warnings.isEmpty {
-                        Button(action: {
-                            showingWarningDetails = true
-                        }) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Show warnings")
-                        .accessibilityLabel("Show conversion warnings")
-                        .popover(isPresented: $showingWarningDetails) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Conversion Warnings")
-                                    .font(.headline)
-                                ScrollView {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        ForEach(Array(job.warnings.enumerated()), id: \.offset) { _, warning in
-                                            HStack(alignment: .top, spacing: 6) {
-                                                Text("•")
-                                                Text(warning)
-                                                    .font(.subheadline)
-                                            }
-                                        }
-                                    }
-                                }
-                                .frame(maxHeight: 220)
-                            }
-                            .padding()
-                            .frame(minWidth: 280, idealWidth: 360)
-                        }
-                    }
-
-                    if !verifiedDestinations.isEmpty {
-                        Button(action: {
-                            NSWorkspace.shared.activateFileViewerSelecting(verifiedDestinations)
-                        }) {
-                            Image(systemName: "magnifyingglass.circle.fill")
-                                .foregroundStyle(Color.accentColor)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Reveal in Finder")
-                        .accessibilityLabel("Reveal converted file in Finder")
-                    } else if hasExpectedDestinations {
-                        Label("Output unavailable", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                            .help("The conversion completed, but the expected output file is no longer available.")
-                            .accessibilityLabel("Converted output unavailable for \(job.filename)")
-                    }
-
-                case .failed(let err):
-                    Button(action: {
-                        showingErrorDetails = true
-                    }) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundStyle(.red)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Show error details")
-                    .popover(isPresented: $showingErrorDetails) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Conversion Failed")
-                                .font(.headline)
-                            Text(err.localizedDescription)
-                                .font(.subheadline)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if let rec = err.recoverySuggestion {
-                                Text("Suggestion: \(rec)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Divider()
-                            ScrollView {
-                                Text(err.technicalDetails)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .frame(maxHeight: 180)
-                            Button("Copy Technical Details") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(err.technicalDetails, forType: .string)
-                            }
-                            .controlSize(.small)
-                        }
-                        .padding()
-                        .frame(minWidth: 360, idealWidth: 480, maxWidth: 560)
-                    }
-
-                    Button(action: {
-                        ConversionQueue.shared.retryJob(id: job.id)
-                    }) {
-                        Image(systemName: "arrow.clockwise.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Retry conversion")
-                    .accessibilityLabel("Retry conversion for \(job.filename)")
-
-                case .cancelled, .skipped:
-                    Button(action: {
-                        ConversionQueue.shared.retryJob(id: job.id)
-                    }) {
-                        Image(systemName: "arrow.clockwise.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Restart conversion")
-                    .accessibilityLabel("Restart conversion for \(job.filename)")
-                }
-
-                if job.state.isTerminal {
-                    Button(action: {
-                        ConversionQueue.shared.removeJob(id: job.id)
-                    }) {
-                        Image(systemName: "xmark.circle")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Remove from queue")
-                    .accessibilityLabel("Remove \(job.filename) from queue")
-                }
-            }
+            actions
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Color.accentColor : (isHovered ? Color.accentColor.opacity(0.3) : Color.secondary.opacity(0.12)), lineWidth: isSelected ? 1.5 : 1)
-        )
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
-        .onTapGesture {
-            onSelect?()
-        }
         .onHover { isHovered = $0 }
-        .onAppear {
-            updateVerifiedDestinations()
-        }
-        .onChange(of: job.state) { _, _ in
-            updateVerifiedDestinations()
-        }
-        .contextMenu {
-            if !verifiedDestinations.isEmpty {
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting(verifiedDestinations)
-                }
-                if let firstDestination = verifiedDestinations.first {
-                    Button("Open Converted File") {
-                        NSWorkspace.shared.open(firstDestination)
-                    }
-                }
-                Divider()
-                Button("Copy Output Path") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(verifiedDestinations.map(\.path).joined(separator: "\n"), forType: .string)
-                }
-            }
-
-            Button("Copy Source Path") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(job.sourceURL.path, forType: .string)
-            }
-
-            Divider()
-
-            if job.state.isCancellable {
-                Button("Cancel Conversion") {
-                    ConversionQueue.shared.cancelJob(id: job.id)
-                }
-            }
-
-            if case .failed = job.state {
-                Button("Retry Conversion") {
-                    ConversionQueue.shared.retryJob(id: job.id)
-                }
-            } else if job.state == .cancelled || { if case .skipped = job.state { return true }; return false }() {
-                Button("Restart Conversion") {
-                    ConversionQueue.shared.retryJob(id: job.id)
-                }
-            }
-
-            if job.state.isTerminal {
-                Divider()
-                Button("Remove from Queue") {
-                    ConversionQueue.shared.removeJob(id: job.id)
-                }
-            }
-        }
+        .task(id: job.state) { await refreshOutputs() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(job.filename), \(job.sourceFormat) to \(job.targetFormat)")
         .accessibilityValue(statusDescription)
     }
 
-    private func updateVerifiedDestinations() {
-        guard job.state == .completed || isCompletedWithWarnings else {
-            verifiedDestinations = []
-            return
+    // MARK: - Status
+
+    @ViewBuilder
+    private var statusLine: some View {
+        HStack(spacing: 6) {
+            Text(statusDescription)
+                .foregroundStyle(statusColor)
+                .lineLimit(2)
+            if job.state.isActive, let eta = job.progress.formattedTimeRemaining {
+                Text("· \(eta) left")
+                    .foregroundStyle(.secondary)
+            }
+            if isFinishedSuccessfully, let sizeSummary {
+                Text("· \(sizeSummary)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
-        let candidates = job.outputURLs.isEmpty
-            ? (job.destinationURL.map { [$0] } ?? [])
-            : job.outputURLs
-        if verifiedDestinations.isEmpty && !candidates.isEmpty {
-            verifiedDestinations = candidates
+        .font(.caption)
+    }
+
+    private var isFinishedSuccessfully: Bool {
+        switch job.state {
+        case .completed, .completedWithWarnings: return true
+        default: return false
         }
-        Task.detached(priority: .utility) {
-            let existing = candidates.filter { FileManager.default.fileExists(atPath: $0.path) }
-            await MainActor.run {
-                self.verifiedDestinations = existing
+    }
+
+    // MARK: - Actions
+
+    @ViewBuilder
+    private var actions: some View {
+        HStack(spacing: 6) {
+            switch job.state {
+            case .queued, .preparing, .awaitingCollision, .converting:
+                iconButton("xmark.circle.fill", help: "Cancel", label: "Cancel converting \(job.filename)") {
+                    ConversionQueue.shared.cancelJob(id: job.id)
+                }
+            case .finalizing:
+                ProgressView().controlSize(.small)
+            case .completed, .completedWithWarnings:
+                if case .completedWithWarnings(let warnings) = job.state {
+                    iconButton("exclamationmark.triangle.fill", tint: .orange, help: "Show warnings", label: "Show warnings for \(job.filename)") {
+                        showingWarningDetails = true
+                    }
+                    .popover(isPresented: $showingWarningDetails) {
+                        detailsPopover(title: "Converted with Warnings", body: warnings.map { "• \($0)" }.joined(separator: "\n"), technical: nil)
+                    }
+                }
+                if !existingOutputs.isEmpty {
+                    iconButton("magnifyingglass.circle.fill", tint: .accentColor, help: "Show in Finder", label: "Show \(job.filename) in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting(existingOutputs)
+                    }
+                } else if !job.outputURLs.isEmpty {
+                    Text("File moved or deleted")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .failed(let error):
+                Button("Details") { showingErrorDetails = true }
+                    .controlSize(.small)
+                    .accessibilityLabel("Show why \(job.filename) failed")
+                    .popover(isPresented: $showingErrorDetails) {
+                        detailsPopover(title: "Conversion Failed", body: error.localizedDescription + (error.recoverySuggestion.map { "\n\n\($0)" } ?? ""), technical: error.technicalDetails)
+                    }
+                if !job.isFromHistory {
+                    iconButton("arrow.clockwise.circle.fill", help: "Try again", label: "Try converting \(job.filename) again") {
+                        ConversionQueue.shared.retryJob(id: job.id)
+                    }
+                }
+            case .cancelled, .skipped:
+                if !job.isFromHistory {
+                    iconButton("arrow.clockwise.circle.fill", help: "Convert again", label: "Convert \(job.filename) again") {
+                        ConversionQueue.shared.retryJob(id: job.id)
+                    }
+                }
+            }
+
+            if job.state.isTerminal {
+                // Shown on hover only, so it is not confused with Cancel.
+                iconButton("xmark", help: "Remove from list", label: "Remove \(job.filename) from the list") {
+                    ConversionQueue.shared.removeJob(id: job.id)
+                }
+                .opacity(isHovered ? 1 : 0)
             }
         }
     }
 
-    private var hasExpectedDestinations: Bool {
-        !job.outputURLs.isEmpty || job.destinationURL != nil
+    private func iconButton(
+        _ systemImage: String,
+        tint: Color = .secondary,
+        help: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .accessibilityLabel(label)
     }
 
-    private var iconColor: Color {
-        job.preset.category.color
+    private func detailsPopover(title: String, body: String, technical: String?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            Text(body)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            if let technical, technical != body {
+                Divider()
+                ScrollView {
+                    Text(technical)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 180)
+                Button("Copy Details") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(technical, forType: .string)
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding()
+        .frame(minWidth: 320, idealWidth: 420, maxWidth: 520)
     }
+
+    // MARK: - Outputs
+
+    private func refreshOutputs() async {
+        guard isFinishedSuccessfully else {
+            existingOutputs = []
+            sizeSummary = nil
+            return
+        }
+        let candidates = job.outputURLs.isEmpty ? (job.destinationURL.map { [$0] } ?? []) : job.outputURLs
+        let source = job.sourceURL
+        let started = job.startedAt
+        let finished = job.finishedAt
+        let result = await Task.detached(priority: .utility) { () -> ([URL], String?) in
+            let existing = candidates.filter { FileManager.default.fileExists(atPath: $0.path) }
+            return (existing, Self.sizeSummary(source: source, outputs: existing, started: started, finished: finished))
+        }.value
+        existingOutputs = result.0
+        sizeSummary = result.1
+    }
+
+    /// "2.1 MB → 640 KB (−70%) · 4 s"
+    nonisolated static func sizeSummary(source: URL, outputs: [URL], started: Date?, finished: Date?) -> String? {
+        func size(_ url: URL) -> Int64 {
+            ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
+        }
+        let sourceSize = size(source)
+        let outputSize = outputs.reduce(Int64(0)) { $0 + size($1) }
+        var parts: [String] = []
+        if outputSize > 0 {
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            var text = outputs.count > 1 ? "\(outputs.count) files, \(formatter.string(fromByteCount: outputSize))" : formatter.string(fromByteCount: outputSize)
+            if sourceSize > 0 {
+                text = "\(formatter.string(fromByteCount: sourceSize)) → \(text)"
+                let change = Int((Double(outputSize) / Double(sourceSize) - 1) * 100)
+                if change != 0 { text += " (\(change > 0 ? "+" : "−")\(abs(change))%)" }
+            }
+            parts.append(text)
+        }
+        if let started, let finished {
+            let seconds = max(0, finished.timeIntervalSince(started))
+            let formatter = DateComponentsFormatter()
+            formatter.unitsStyle = .abbreviated
+            formatter.allowedUnits = seconds >= 60 ? [.minute, .second] : [.second]
+            if let elapsed = formatter.string(from: max(1, seconds)) { parts.append(elapsed) }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    // MARK: - Text
 
     private var statusDescription: String {
         switch job.state {
-        case .queued: return queueWaitingText
+        case .queued:
+            return job.waitingForDestinationKey != nil ? "Waiting for another file with the same name" : "Waiting"
         case .preparing:
             return BackendReadinessGate.shared.ready || ConversionCoordinator.isGuaranteedNative(job.preset)
                 ? "Preparing…"
                 : "Waiting for tool check…"
-        case .awaitingCollision: return "Waiting for overwrite decision"
+        case .awaitingCollision: return "A file with this name already exists — choose what to do"
         case .converting:
             if let fps = job.progress.currentFPS, fps > 0 {
                 return String(format: "Converting (%.0f fps)", fps)
             }
             return "Converting…"
         case .finalizing: return "Saving…"
-        case .completed: return "Converted successfully"
+        case .completed: return "Converted"
         case .completedWithWarnings(let warnings): return "Converted with \(warnings.count) warning\(warnings.count == 1 ? "" : "s")"
         case .failed(let error): return error.localizedDescription
         case .skipped(let reason): return "Skipped: \(reason)"
@@ -376,26 +262,13 @@ public struct JobRowView: View {
         }
     }
 
-    private var queueWaitingText: String {
-        job.waitingForDestinationKey != nil
-            ? "Waiting for another file with the same name"
-            : "Waiting"
-    }
-
     private var statusColor: Color {
         switch job.state {
-        case .queued: return .secondary
+        case .queued, .cancelled, .skipped: return .secondary
         case .preparing, .converting, .finalizing: return .primary
-        case .awaitingCollision: return .orange
+        case .awaitingCollision, .completedWithWarnings: return .orange
         case .completed: return .green
-        case .completedWithWarnings: return .orange
         case .failed: return .red
-        case .cancelled, .skipped: return .secondary
         }
-    }
-
-    private var isCompletedWithWarnings: Bool {
-        if case .completedWithWarnings = job.state { return true }
-        return false
     }
 }

@@ -1,322 +1,310 @@
-import SwiftUI
-import FileConverterCore
 import AppKit
+import FileConverterCore
+import QuickLook
+import SwiftUI
+
+/// Batches of conversions in submission order.
+struct QueueBatch: Identifiable {
+    let id: UUID
+    let jobs: [ConversionJob]
+
+    var isActive: Bool { jobs.contains { !$0.state.isTerminal } }
+    var completed: Int { jobs.filter { $0.state == .completed || { if case .completedWithWarnings = $0.state { return true }; return false }($0) }.count }
+    var failed: Int { jobs.filter { if case .failed = $0.state { return true }; return false }.count }
+    var date: Date { jobs.first?.batchCreatedAt ?? .distantPast }
+
+    var summary: String {
+        let formats = Set(jobs.map(\.targetFormat))
+        let target = formats.count == 1 ? " to \(formats.first ?? "")" : ""
+        var parts = ["\(completed) of \(jobs.count) converted\(target)"]
+        if failed > 0 { parts.append("\(failed) failed") }
+        return parts.joined(separator: ", ")
+    }
+
+    static func group(_ jobs: [ConversionJob]) -> [QueueBatch] {
+        var order: [UUID] = []
+        var members: [UUID: [ConversionJob]] = [:]
+        for job in jobs {
+            if members[job.batchID] == nil { order.append(job.batchID) }
+            members[job.batchID, default: []].append(job)
+        }
+        return order.map { QueueBatch(id: $0, jobs: members[$0] ?? []) }
+    }
+}
 
 public struct ConversionQueueView: View {
     @ObservedObject var queue = ConversionQueue.shared
     @ObservedObject private var settings = AppSettings.shared
     @EnvironmentObject var appState: AppState
 
-    @State private var selectedJobID: UUID? = nil
+    @State private var selection = Set<UUID>()
+    @State private var expandedBatches = Set<UUID>()
+    @State private var quickLookURL: URL?
     @State private var showingCancelConfirmation = false
-    @State private var showingRevealError = false
-    @State private var revealErrorMessage = ""
+    @State private var revealErrorMessage: String?
 
     public init() {}
 
+    // MARK: - Grouping
+
+    private var batches: [QueueBatch] { QueueBatch.group(queue.jobs) }
+
+    /// Batches with work left; when everything is done, the newest batch.
+    private var currentBatches: [QueueBatch] {
+        let all = batches
+        let active = all.filter(\.isActive)
+        if !active.isEmpty { return active }
+        return all.last.map { [$0] } ?? []
+    }
+
+    private var earlierBatches: [QueueBatch] {
+        let current = Set(currentBatches.map(\.id))
+        return batches.filter { !current.contains($0.id) }.reversed()
+    }
+
+    private var currentJobs: [ConversionJob] { currentBatches.flatMap(\.jobs) }
+
+    private func job(_ id: UUID) -> ConversionJob? { queue.jobs.first { $0.id == id } }
+
+    // MARK: - Body
+
     public var body: some View {
         VStack(spacing: 0) {
-            // Overall Header Bar
             if !queue.jobs.isEmpty {
                 headerBar
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(.ultraThinMaterial)
                 Divider()
-            }
-
-            if queue.jobs.isEmpty {
-                emptyQueueView
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(queue.jobs) { job in
-                            JobRowView(
-                                job: job,
-                                isSelected: job.id == selectedJobID,
-                                onSelect: { selectedJobID = job.id }
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                }
-            }
-        }
-        .focusable(!queue.jobs.isEmpty)
-        .focusEffectDisabled()
-        .onKeyPress(.upArrow) {
-            selectPrevious()
-            return .handled
-        }
-        .onKeyPress(.downArrow) {
-            selectNext()
-            return .handled
-        }
-        .onKeyPress(.return) {
-            revealSelected()
-            return .handled
-        }
-        .onKeyPress(.delete) {
-            deleteSelectedTerminal()
-            return .handled
-        }
-        .onKeyPress(.escape) {
-            cancelSelectedActive()
-            return .handled
-        }
-        .onChange(of: queue.jobs.map(\.id)) { _, ids in
-            if let current = selectedJobID, !ids.contains(current) {
-                selectedJobID = ids.first
-            } else if selectedJobID == nil {
-                selectedJobID = ids.first
+                list
             }
         }
         .confirmationDialog(
-            "Cancel All Active Conversions?",
+            "Cancel \(queue.cancelableCount) conversions?",
             isPresented: $showingCancelConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Cancel \(queue.cancelableCount) Conversions", role: .destructive) {
-                queue.cancelAll()
-            }
+            Button("Cancel Conversions", role: .destructive) { queue.cancelAll() }
             Button("Keep Converting", role: .cancel) {}
         } message: {
-            Text("This will interrupt \(queue.cancelableCount) active conversions. Partial progress will be discarded.")
+            Text("Files already converted are kept.")
         }
-        .alert("Reveal in Finder Failed", isPresented: $showingRevealError) {
+        .alert("Cannot Show File", isPresented: Binding(
+            get: { revealErrorMessage != nil },
+            set: { if !$0 { revealErrorMessage = nil } }
+        )) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(revealErrorMessage)
+            Text(revealErrorMessage ?? "")
         }
     }
 
-    private var batchSummaryText: String {
-        let total = queue.jobs.count
-        guard total > 0 else { return "" }
-        let terminal = queue.completedCount + queue.failedCount + queue.cancelledCount + queue.skippedCount
-        let allTerminal = (terminal == total)
-
-        if allTerminal {
-            if queue.completedCount == total {
-                return "100% Completed (\(total) of \(total))"
-            } else {
-                return "Batch Finished: \(queue.completedCount) of \(total) succeeded"
+    private var list: some View {
+        List(selection: $selection) {
+            if !currentJobs.isEmpty {
+                Section {
+                    ForEach(currentJobs) { job in
+                        JobRowView(job: job).tag(job.id)
+                    }
+                    .onMove(perform: moveCurrent)
+                }
             }
-        } else {
-            return "\(queue.completedCount) of \(total) complete"
+            if !earlierBatches.isEmpty {
+                Section("Earlier") {
+                    ForEach(earlierBatches) { batch in
+                        DisclosureGroup(isExpanded: Binding(
+                            get: { expandedBatches.contains(batch.id) },
+                            set: { if $0 { expandedBatches.insert(batch.id) } else { expandedBatches.remove(batch.id) } }
+                        )) {
+                            ForEach(batch.jobs) { job in
+                                JobRowView(job: job).tag(job.id)
+                            }
+                        } label: {
+                            HStack {
+                                Text(batch.summary)
+                                Spacer()
+                                Text(batch.date, style: .relative)
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+            }
         }
+        .listStyle(.inset)
+        .contextMenu(forSelectionType: UUID.self) { ids in
+            contextMenu(for: ids)
+        } primaryAction: { ids in
+            open(ids)
+        }
+        .onDeleteCommand { removeFinished(selection) }
+        .onKeyPress(.space) {
+            toggleQuickLook()
+            return .handled
+        }
+        .onKeyPress(.return) {
+            reveal(selection)
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            for id in selection where job(id)?.state.isCancellable == true {
+                queue.cancelJob(id: id)
+            }
+            return .handled
+        }
+        .quickLookPreview($quickLookURL, in: quickLookItems)
     }
 
-    private var activeJobInfo: (index: Int, total: Int, job: ConversionJob)? {
-        guard let activeIndex = queue.jobs.firstIndex(where: { $0.state.isActive }) else { return nil }
-        return (index: activeIndex + 1, total: queue.jobs.count, job: queue.jobs[activeIndex])
-    }
+    // MARK: - Header
 
     private var headerBar: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(batchSummaryText)
-                        .font(.system(size: 13, weight: .semibold))
+        let current = currentBatches
+        let jobs = current.flatMap(\.jobs)
+        let converting = jobs.filter { $0.state.isActive }.count
+        let waiting = jobs.filter { $0.state == .queued || $0.state == .awaitingCollision }.count
+        let completed = current.reduce(0) { $0 + $1.completed }
+        let failed = current.reduce(0) { $0 + $1.failed }
+        let progress = ConversionQueue.activeBatchProgress(queue.jobs)
 
-                    if queue.failedCount > 0 {
-                        Text("(\(queue.failedCount) failed)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.red)
-                    }
-                    if queue.cancelledCount > 0 {
-                        Text("(\(queue.cancelledCount) cancelled)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    if queue.skippedCount > 0 {
-                        Text("(\(queue.skippedCount) skipped)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(headerTitle(converting: converting, waiting: waiting, completed: completed, failed: failed, total: jobs.count))
+                    .font(.headline)
+                if let progress {
+                    ProgressView(value: progress.fraction)
+                        .frame(maxWidth: 220)
+                        .accessibilityLabel("Batch progress")
+                        .accessibilityValue("\(Int(progress.fraction * 100)) percent")
                 }
-
-                if let current = activeJobInfo {
-                    HStack(spacing: 6) {
-                        Text("Item \(current.index) of \(current.total): \(current.job.filename)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-
-                        Text("(\(current.job.progress.percentageString))")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    ProgressView(value: queue.completionProgress)
-                        .progressViewStyle(.linear)
-                        .frame(width: 180)
-                        .accessibilityLabel("Overall batch progress")
-                        .accessibilityValue(batchSummaryText)
-
-                    if settings.enableNotifications && settings.notificationAuthorizationState == .denied {
-                        HStack(spacing: 4) {
-                            Image(systemName: "bell.slash.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.orange)
-                            Text("Notifications blocked")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                        }
-                        .help("System notifications are disabled in macOS Settings. Open Settings to enable.")
-                    }
+                if settings.enableNotifications && settings.notificationAuthorizationState == .denied {
+                    Label("Notifications are off in System Settings", systemImage: "bell.slash")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-
             Spacer()
-
-            if queue.completedCount > 0 {
-                Button("Reveal Batch") {
-                    revealBatch()
+            if waiting > 0 || queue.isPaused {
+                Button(queue.isPaused ? "Resume" : "Pause") {
+                    if queue.isPaused { queue.resume() } else { queue.pause() }
                 }
-                .controlSize(.small)
-                .help("Reveal all completed output files in Finder")
-                .accessibilityLabel("Reveal all completed output files in Finder")
+                .help(queue.isPaused ? "Start the waiting conversions (⌥⌘P)" : "Finish the current files, then wait (⌥⌘P)")
             }
-
             if queue.cancelableCount > 0 {
-                Button("Cancel All Active") {
-                    if queue.cancelableCount > 1 {
-                        showingCancelConfirmation = true
-                    } else {
-                        queue.cancelAll()
-                    }
+                Button("Cancel All") {
+                    if queue.cancelableCount > 1 { showingCancelConfirmation = true } else { queue.cancelAll() }
                 }
-                .controlSize(.small)
-                .help("Cancel all active conversions")
-                .accessibilityLabel("Cancel all active conversions")
             }
-
-            if queue.failedCount > 0 {
-                Button("Retry Failed (\(queue.failedCount))") {
-                    retrySelectedOrFailed()
-                }
-                .controlSize(.small)
-                .help("Retry failed conversions (⌘R)")
-                .accessibilityLabel("Retry failed conversions")
+            if queue.failedCount > 0 && queue.jobs.contains(where: { if case .failed = $0.state { return !$0.isFromHistory }; return false }) {
+                Button("Retry All Failed") { retryAllFailed() }
+                    .help("Try every failed conversion again (⇧⌘R)")
             }
-
+            if completed > 0 {
+                Button("Show in Finder") { reveal(Set(jobs.map(\.id))) }
+                    .help("Show this batch's converted files in Finder")
+            }
             if queue.hasClearableJobs {
-                Button("Clear Finished") {
+                Button("Clear") {
                     queue.clearCompleted()
-                    selectedJobID = queue.jobs.first?.id
+                    selection.removeAll()
                 }
-                .controlSize(.small)
-                .help("Clear finished jobs (⌘K)")
-                .accessibilityLabel("Clear finished jobs")
+                .help("Remove finished conversions from the list (⌘K)")
             }
         }
+        .controlSize(.small)
     }
 
-    private var emptyQueueView: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "arrow.triangle.2.circlepath.doc.on.clipboard")
-                .font(.system(size: 44))
-                .foregroundStyle(.secondary.opacity(0.6))
-                .accessibilityHidden(true)
+    private func headerTitle(converting: Int, waiting: Int, completed: Int, failed: Int, total: Int) -> String {
+        if queue.isPaused && waiting > 0 { return "Paused · \(waiting) waiting" }
+        if converting > 0 || waiting > 0 {
+            var parts: [String] = []
+            if converting > 0 { parts.append("Converting \(converting)") }
+            if waiting > 0 { parts.append("\(waiting) waiting") }
+            parts.append("\(completed) of \(total) done")
+            return parts.joined(separator: " · ")
+        }
+        if failed > 0 { return "\(completed) converted, \(failed) failed" }
+        return total == 1 ? (completed == 1 ? "Converted" : "Finished") : "\(completed) of \(total) converted"
+    }
 
-            VStack(spacing: 4) {
-                Text("No Conversions in Progress")
-                    .font(.system(size: 15, weight: .semibold))
+    // MARK: - Actions
 
-                Text("Right-click any file in Finder and select **File Converter**, or drop files here.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 300)
+    @ViewBuilder
+    private func contextMenu(for ids: Set<UUID>) -> some View {
+        let jobs = ids.compactMap(job)
+        let outputs = outputs(of: ids)
+        if !outputs.isEmpty {
+            Button("Show in Finder") { reveal(ids) }
+            Button(outputs.count == 1 ? "Open" : "Open \(outputs.count) Files") { open(ids) }
+            Button("Quick Look") { quickLookURL = outputs.first }
+            Button("Copy Output Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(outputs.map(\.path).joined(separator: "\n"), forType: .string)
             }
+            Divider()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("No Conversions in Progress. Drag and drop files here to begin.")
-    }
-
-    // MARK: - Keyboard Actions
-
-    private func selectPrevious() {
-        guard let current = selectedJobID, let index = queue.jobs.firstIndex(where: { $0.id == current }) else {
-            selectedJobID = queue.jobs.last?.id
-            return
+        Button("Show Original in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting(jobs.map(\.sourceURL).filter { FileManager.default.fileExists(atPath: $0.path) })
         }
-        if index > 0 {
-            selectedJobID = queue.jobs[index - 1].id
+        if jobs.contains(where: \.state.isCancellable) {
+            Button("Cancel") { jobs.filter(\.state.isCancellable).forEach { queue.cancelJob(id: $0.id) } }
         }
-    }
-
-    private func selectNext() {
-        guard let current = selectedJobID, let index = queue.jobs.firstIndex(where: { $0.id == current }) else {
-            selectedJobID = queue.jobs.first?.id
-            return
+        let retryable = jobs.filter { $0.state.isTerminal && !$0.isFromHistory && $0.state != .completed }
+        if !retryable.isEmpty {
+            Button("Convert Again") { retryable.forEach { queue.retryJob(id: $0.id) } }
         }
-        if index < queue.jobs.count - 1 {
-            selectedJobID = queue.jobs[index + 1].id
+        if jobs.contains(where: \.state.isTerminal) {
+            Divider()
+            Button("Remove from List") { removeFinished(ids) }
         }
     }
 
-    private func revealSelected() {
-        guard let current = selectedJobID,
-              let job = queue.jobs.first(where: { $0.id == current }) else { return }
-        let outputs = job.outputURLs.filter { FileManager.default.fileExists(atPath: $0.path) }
-        guard !outputs.isEmpty else {
-            revealErrorMessage = "Output file for \(job.filename) could not be found."
-            showingRevealError = true
-            return
-        }
-        NSWorkspace.shared.activateFileViewerSelecting(outputs)
-    }
-
-    private func revealBatch() {
-        let allOutputs = queue.jobs
-            .filter { $0.state.isTerminal }
-            .flatMap(\.outputURLs)
+    private func outputs(of ids: Set<UUID>) -> [URL] {
+        ids.compactMap(job)
+            .filter { $0.state == .completed || { if case .completedWithWarnings = $0.state { return true }; return false }($0) }
+            .flatMap { $0.outputURLs.isEmpty ? ($0.destinationURL.map { [$0] } ?? []) : $0.outputURLs }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
-        guard !allOutputs.isEmpty else {
-            revealErrorMessage = "No completed output files could be located in Finder."
-            showingRevealError = true
+    }
+
+    private var quickLookItems: [URL] { outputs(of: selection) }
+
+    private func toggleQuickLook() {
+        quickLookURL = quickLookURL == nil ? quickLookItems.first : nil
+    }
+
+    private func reveal(_ ids: Set<UUID>) {
+        let urls = outputs(of: ids)
+        guard !urls.isEmpty else {
+            if !ids.isEmpty { revealErrorMessage = "The converted file was moved or deleted." }
             return
         }
-        NSWorkspace.shared.activateFileViewerSelecting(allOutputs)
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
-    private func retrySelectedOrFailed() {
-        if let current = selectedJobID,
-           let job = queue.jobs.first(where: { $0.id == current }),
-           case .failed = job.state {
-            queue.retryJob(id: job.id)
-            return
-        }
-        let failedJobs = queue.jobs.filter {
-            if case .failed = $0.state { return true }; return false
-        }
-        for job in failedJobs {
-            queue.retryJob(id: job.id)
+    private func open(_ ids: Set<UUID>) {
+        for url in outputs(of: ids) {
+            NSWorkspace.shared.open(url)
         }
     }
 
-    private func deleteSelectedTerminal() {
-        guard let current = selectedJobID,
-              let job = queue.jobs.first(where: { $0.id == current }),
-              job.state.isTerminal else { return }
-        queue.removeJob(id: current)
-        selectedJobID = queue.jobs.first?.id
+    private func removeFinished(_ ids: Set<UUID>) {
+        for id in ids where job(id)?.state.isTerminal == true {
+            queue.removeJob(id: id)
+        }
+        selection.subtract(ids)
     }
 
-    /// Esc cancels only the selected conversion. "Cancel All" keeps its
-    /// own confirmation.
-    private func cancelSelectedActive() {
-        guard let current = selectedJobID,
-              let job = queue.jobs.first(where: { $0.id == current }),
-              job.state.isCancellable else { return }
-        queue.cancelJob(id: current)
+    private func retryAllFailed() {
+        for job in queue.jobs where !job.isFromHistory {
+            if case .failed = job.state { queue.retryJob(id: job.id) }
+        }
+    }
+
+    private func moveCurrent(from source: IndexSet, to destination: Int) {
+        let rows = currentJobs
+        let moving = source.map { rows[$0] }.filter { $0.state == .queued }
+        let before = destination < rows.count ? rows[destination].id : nil
+        for job in moving {
+            queue.moveQueuedJob(id: job.id, before: before)
+        }
     }
 }
