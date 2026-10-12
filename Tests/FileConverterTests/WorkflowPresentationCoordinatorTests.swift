@@ -136,12 +136,28 @@ final class WorkflowPresentationCoordinatorTests: XCTestCase {
 
     func testWorkflowPresentationItemEqualityAndIDs() {
         let id = UUID()
-        let itemA = WorkflowPresentationItem.conflictResolution(id: id, conflicts: [])
-        let itemB = WorkflowPresentationItem.conflictResolution(id: id, conflicts: [])
-        let itemC = WorkflowPresentationItem.conflictResolution(id: UUID(), conflicts: [])
+        let itemA = WorkflowPresentationItem.conflictResolution(id: id)
+        let itemB = WorkflowPresentationItem.conflictResolution(id: id)
+        let itemC = WorkflowPresentationItem.conflictResolution(id: UUID())
 
         XCTAssertEqual(itemA, itemB)
         XCTAssertNotEqual(itemA, itemC)
         XCTAssertEqual(itemA.id, id)
+    }
+
+    func testOnlyOneConflictSheetIsEverQueued() {
+        let coordinator = WorkflowPresentationCoordinator()
+        coordinator.enqueue(.batch(urls: [URL(fileURLWithPath: "/tmp/a.png")], excludedCount: 0))
+        coordinator.enqueue(.conflictResolution())
+        coordinator.enqueue(.conflictResolution())
+        coordinator.enqueue(.conflictResolution())
+        XCTAssertEqual(coordinator.pendingQueue.count, 1)
+
+        coordinator.dismissCurrent()
+        guard case .conflictResolution = coordinator.currentPresentation else {
+            return XCTFail("expected the conflict sheet")
+        }
+        coordinator.enqueue(.conflictResolution())
+        XCTAssertTrue(coordinator.pendingQueue.isEmpty, "a showing conflict sheet already lists new conflicts")
     }
 }

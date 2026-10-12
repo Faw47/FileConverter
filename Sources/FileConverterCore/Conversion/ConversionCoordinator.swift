@@ -38,6 +38,16 @@ public actor ConversionCoordinator {
             throw ConversionCoordinatorError.missingBuildConfiguration
         }
         try request.validate(expectedEdition: configuration.edition)
+
+        // After a cold launch, optional tools may still be under discovery.
+        // Wait for it rather than rejecting a preset that will be usable in
+        // a moment.
+        if !Self.isGuaranteedNative(preset) {
+            let ready = await BackendReadinessGate.shared.waitUntilReady(timeout: .seconds(30))
+            if !ready {
+                AppLogger.conversion.notice("Tool discovery still running after 30 s; admitting with current results.")
+            }
+        }
         AppLogger.conversion.notice(
             "Admitting Finder request: id=\(request.id.uuidString, privacy: .public), preset=\(request.presetID.uuidString, privacy: .public), sourceCount=\(request.sources.count, privacy: .public)"
         )
@@ -101,6 +111,11 @@ public actor ConversionCoordinator {
                 ? "Queued \(jobs.first?.sourceURL.lastPathComponent ?? "file") for \(preset.name)."
                 : "Queued \(jobs.count) files for \(preset.name)."
         )
+    }
+
+    /// Presets that never need optional command-line tools.
+    static func isGuaranteedNative(_ preset: ConversionPreset) -> Bool {
+        [.imageIO, .pdfKit, .avFoundation].contains(preset.backend)
     }
 
     public func convertFiles(
@@ -207,9 +222,13 @@ public actor ConversionCoordinator {
                     AppLogger.conversion.error(
                         "Finder request rejected: id=\(claim.request.id.uuidString, privacy: .public), error=\(error.localizedDescription, privacy: .public)"
                     )
-                    postUserNotification(
-                        title: "Conversion Request Failed",
-                        body: error.localizedDescription
+                    let rejectedSources = claim.request.sources.map { (displayName: $0.displayName, path: $0.lastKnownPath) }
+                    let rejectedPreset = PresetStore.shared.preset(forID: claim.request.presetID)
+                    let reason = error.localizedDescription
+                    await ConversionQueue.shared.recordRejectedRequest(
+                        sources: rejectedSources,
+                        preset: rejectedPreset,
+                        reason: reason
                     )
                     continue
                 }

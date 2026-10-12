@@ -123,20 +123,10 @@ public struct FileConverterMainView: View {
             switch item {
             case .batch(_, let urls, let excludedCount):
                 presetSelectionSheet(for: urls, excludedCount: excludedCount)
-            case .conflictResolution(_, let conflicts):
-                CollisionResolutionView(
-                    conflicts: conflicts,
-                    onCancel: {
-                        for conflict in conflicts {
-                            queue.cancelJob(id: conflict.jobID)
-                        }
-                        coordinator.dismissCurrent()
-                    }
-                ) { decision, applyToAll in
-                    queue.resolveCollisions(decision, applyToAll: applyToAll)
+            case .conflictResolution:
+                CollisionResolutionView(queue: queue) {
                     coordinator.dismissCurrent()
                 }
-                .frame(minWidth: 520, idealWidth: 620, minHeight: 360)
             case .pdfCompress(_, let urls, let preset, let leases):
                 PDFCompressDialogView(
                     urls: urls,
@@ -165,9 +155,11 @@ public struct FileConverterMainView: View {
                 )
             }
         }
-        .onChange(of: queue.pendingCollisions) { _, conflicts in
-            if !conflicts.isEmpty {
-                coordinator.enqueue(.conflictResolution(conflicts: conflicts))
+        .onChange(of: queue.pendingCollisions.isEmpty) { _, isEmpty in
+            // The sheet reads conflicts live; it only needs opening when the
+            // list goes from empty to non-empty.
+            if !isEmpty {
+                coordinator.enqueue(.conflictResolution())
             }
         }
         .alert(
@@ -701,84 +693,5 @@ public struct FileConverterMainView: View {
         )
         .padding(.horizontal, 14)
         .padding(.top, 8)
-    }
-}
-
-private struct CollisionResolutionView: View {
-    let conflicts: [ConversionQueue.CollisionConflict]
-    var onCancel: (() -> Void)? = nil
-    let onDecision: (ConversionQueue.CollisionDecision, Bool) -> Void
-    @State private var applyToAll = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label("Files already exist", systemImage: "exclamationmark.triangle.fill")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.orange)
-
-            Text("Choose what to do for each existing output. No file is changed until you choose.")
-                .foregroundStyle(.secondary)
-
-            List(conflicts) { conflict in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(conflict.sourceFilename)
-                        .font(.body.weight(.medium))
-                    
-                    ForEach(conflict.conflictingURLs, id: \.self) { url in
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: FileManager.default.fileExists(atPath: url.path) ? "doc.badge.ellipsis" : "clock")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(url.path)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .lineLimit(2)
-                                Text(FileManager.default.fileExists(atPath: url.path) ? "File exists on disk" : "Reserved by queued job")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                }
-                .padding(.vertical, 3)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Conflict for \(conflict.sourceFilename)")
-            }
-            .listStyle(.inset)
-
-            if conflicts.count > 1 {
-                Toggle("Apply this choice to all \(conflicts.count) conflicts", isOn: $applyToAll)
-                    .toggleStyle(.checkbox)
-                    .accessibilityLabel("Apply this choice to all \(conflicts.count) conflicts")
-            }
-
-            HStack {
-                Button("Cancel") {
-                    onCancel?()
-                }
-                .keyboardShortcut(.cancelAction)
-                .accessibilityLabel("Cancel collision resolution")
-
-                Button(applyToAll ? "Skip All" : "Skip") {
-                    onDecision(.skip, applyToAll)
-                }
-                .accessibilityLabel(applyToAll ? "Skip all conflicting files" : "Skip this conflicting file")
-
-                Spacer()
-
-                Button(applyToAll ? "Keep Both for All" : "Keep Both") {
-                    onDecision(.keepBoth, applyToAll)
-                }
-                .accessibilityLabel(applyToAll ? "Keep both files for all conflicts" : "Keep both files")
-
-                Button(applyToAll ? "Replace All" : "Replace", role: .destructive) {
-                    onDecision(.replace, applyToAll)
-                }
-                .accessibilityLabel(applyToAll ? "Replace all existing files" : "Replace existing file")
-            }
-        }
-        .padding(22)
     }
 }

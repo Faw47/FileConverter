@@ -104,24 +104,21 @@ public final class AppState: ObservableObject {
         uncompletedJournalEntries.removeAll()
     }
 
-    public func startBackendDiscovery() {
+    public func startBackendDiscovery(force: Bool = false) {
         backendDiscoveryTask?.cancel()
         backendDiscoveryComplete = false
         isDiscoveringBackends = true
         discoveryStatus = "Checking optional conversion tools…"
+        // Close the gate before any Finder request can be admitted.
+        BackendReadinessGate.shared.markNotReady()
         backendDiscoveryTask = Task.detached(priority: .utility) { [weak self] in
-            let tools = ["ffmpeg", "ffprobe", "magick", "gs", "soffice", "ebook-convert"]
-            for tool in tools {
-                if Task.isCancelled { break }
-                await MainActor.run {
-                    self?.discoveryStatus = "Checking \(tool)…"
+            ExternalToolDiscovery.shared.refreshAllTools(force: force) { status in
+                Task { @MainActor in
+                    self?.discoveryStatus = status
                 }
-                try? await Task.sleep(nanoseconds: 15_000_000)
             }
-            if !Task.isCancelled {
-                ExternalToolDiscovery.shared.refreshAllTools()
-                PresetStore.shared.publishFinderMenuSnapshot()
-            }
+            PresetStore.shared.publishFinderMenuSnapshot()
+            BackendReadinessGate.shared.markReady()
             await MainActor.run {
                 self?.isDiscoveringBackends = false
                 self?.discoveryStatus = nil
@@ -130,11 +127,14 @@ public final class AppState: ObservableObject {
         }
     }
 
+    /// Stops waiting on discovery in the UI. Discovery itself keeps running
+    /// in the background (process probes cannot be interrupted safely), and
+    /// conversions proceed with the tools known so far.
     public func cancelBackendDiscovery() {
-        backendDiscoveryTask?.cancel()
         isDiscoveringBackends = false
         discoveryStatus = nil
         backendDiscoveryComplete = true
+        BackendReadinessGate.shared.markReady()
     }
 
     public var openSettingsAction: (@MainActor () -> Void)?

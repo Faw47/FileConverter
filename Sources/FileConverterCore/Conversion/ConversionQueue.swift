@@ -110,6 +110,43 @@ public final class ConversionQueue: ObservableObject {
         processNextJobs()
     }
 
+    /// Records a Finder request that was refused before any job started, as
+    /// failed rows in their own batch, so the refusal is visible in the queue
+    /// even when notifications are off.
+    public func recordRejectedRequest(
+        sources: [(displayName: String, path: String)],
+        preset: ConversionPreset?,
+        reason: String
+    ) {
+        guard !sources.isEmpty else { return }
+        let placeholder = preset ?? ConversionPreset(
+            name: "Unavailable preset",
+            category: .custom,
+            sourceFormats: [],
+            destinationFormat: "",
+            isEnabled: false
+        )
+        let batchID = UUID()
+        let now = Date()
+        let rows = sources.map { source -> ConversionJob in
+            var job = ConversionJob(
+                batchID: batchID,
+                sourceURL: URL(fileURLWithPath: source.path),
+                preset: placeholder,
+                state: .failed(.admissionRejected(reason: reason))
+            )
+            job.finishedAt = now
+            job.batchCreatedAt = now
+            return job
+        }
+        jobs.append(contentsOf: rows)
+        updateCountsAndProgress()
+        postUserNotification(
+            title: rows.count == 1 ? "Could Not Convert \(sources[0].displayName)" : "Could Not Convert \(rows.count) Files",
+            body: reason
+        )
+    }
+
     public func cancelJob(id: UUID) {
         var job: ConversionJob?
         var task: Task<Void, Never>?
@@ -298,7 +335,13 @@ public final class ConversionQueue: ObservableObject {
         let matchingTargets = pendingCollisions.filter { conflict in
             (jobIDs?.contains(conflict.jobID) ?? true)
         }
-        let targets = applyToAll ? matchingTargets : Array(matchingTargets.prefix(1))
+        // A decision applies only to the conflicts the user acted on: one
+        // row (explicit job IDs) or every listed conflict (apply to all).
+        guard applyToAll || jobIDs != nil else {
+            AppLogger.queue.error("Ignored a collision decision with no target: pass job IDs or applyToAll.")
+            return
+        }
+        let targets = matchingTargets
         var skippedJobIDs: [UUID] = []
         for conflict in targets {
             guard let index = jobs.firstIndex(where: { $0.id == conflict.jobID }),
@@ -482,12 +525,27 @@ public final class ConversionQueue: ObservableObject {
             // Check destination disk space with explicit unknown handling.
             let targetDir = finalDestURL.deletingLastPathComponent()
             let diskState = FileAccessManager.shared.diskSpaceState(at: targetDir)
-            let requiredSpace = estimateRequiredDiskSpace(for: job, outputCount: plannedOutputs.count)
+            let sourceFormat = FormatDetector.detect(url: job.sourceURL).format
+            let measurements = await OutputSizeEstimator.measure(
+                job.sourceURL,
+                category: sourceFormat?.category,
+                formatID: sourceFormat?.id
+            )
+            let requiredSpace = OutputSizeEstimator.estimate(
+                preset: job.preset,
+                destination: FormatRegistry.shared.format(forID: job.preset.destinationFormat),
+                source: measurements,
+                outputCount: plannedOutputs.count
+            )
             var diskWarning: String?
             switch diskState {
             case .available(let bytes):
                 if requiredSpace > 0 && bytes < requiredSpace {
                     throw ConversionError.insufficientDiskSpace(requiredBytes: requiredSpace, availableBytes: bytes)
+                }
+                if requiredSpace > 0 && bytes < requiredSpace * 2 {
+                    let free = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+                    diskWarning = "Only \(free) is free on the destination disk; this conversion needed most of it."
                 }
             case .unavailable:
                 diskWarning = "Available disk space could not be confirmed for \(targetDir.lastPathComponent); conversion will proceed but may fail if the volume is full."
@@ -1039,30 +1097,25 @@ public final class ConversionQueue: ObservableObject {
         updateCountsAndProgress()
         processNextJobs()
 
+        // One alert per batch: the conflict sheet lists every file, so
+        // further conflicts in the same batch need no extra attention.
+        let batchID = jobs[index].batchID
+        guard collisionAlertedBatchIDs.insert(batchID).inserted else { return }
         NotificationCenter.default.post(
             name: NSNotification.Name("FileConverterActivateApp"),
             object: nil
         )
+        let batchConflictCount = jobs.filter { $0.batchID == batchID && $0.state == .awaitingCollision }.count
         postUserNotification(
-            title: "File Conflict",
-            body: "A file named \(jobs[index].filename) already exists. Please choose whether to replace it."
+            title: "Files Already Exist",
+            body: batchConflictCount > 1
+                ? "Some files in this batch already exist. Choose what to do with each."
+                : "\(jobs[index].filename) would replace an existing file. Choose what to do."
         )
     }
 
-    nonisolated private func estimateRequiredDiskSpace(for job: ConversionJob, outputCount: Int) -> Int64 {
-        let sourceSize = FileAccessManager.shared.fileSize(at: job.sourceURL)
-        // Backend-aware estimate from source/output characteristics. No
-        // universal 512 MB floor: small sources require small reservations.
-        let multiplier = Double(max(1, outputCount)) * 1.2
-        if sourceSize > 0, job.preset.quality == .lossless {
-            return Int64(Double(sourceSize) * 2 * multiplier)
-        }
-        if sourceSize > 0 {
-            return Int64(Double(sourceSize) * 4 * Double(max(1, outputCount)))
-        }
-        // Zero-byte or unknown source size: minimal per-output reservation.
-        return Int64(1 * 1024 * 1024 * max(1, outputCount))
-    }
+    /// Batches that already raised the conflict alert.
+    private var collisionAlertedBatchIDs = Set<UUID>()
 
     private func ifCaseCompletedWithWarnings(_ state: JobState) -> Bool {
         if case .completedWithWarnings = state { return true }

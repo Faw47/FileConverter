@@ -92,6 +92,7 @@ public struct GeneralSettingsView: View {
                             .foregroundStyle(.secondary)
                             .help(settings.customOutputFolderPath)
                         Button("Choose…") { chooseCustomFolder() }
+                            .accessibilityLabel("Choose output folder")
                     }
                 }
             }

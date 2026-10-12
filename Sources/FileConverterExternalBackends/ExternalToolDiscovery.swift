@@ -30,12 +30,126 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
 
     private var cachedTools: [String: ToolInfo] = [:]
     private var probedFFmpegEncoders: Set<String>?
+    private var probedFFmpegFilters: Set<String>?
     private var lastRefresh: Date?
     private var isRefreshing = false
     private let lock = NSLock()
+    private let capabilitiesCacheURL: URL?
+    private let defaults: UserDefaults
 
-    public init() {
+    /// UserDefaults key holding user-chosen tool locations, keyed by tool name.
+    public static let toolPathOverridesKey = "fc.toolPathOverrides"
+
+    /// Tool names this app looks for, in display order.
+    public static let toolNames = ["ffmpeg", "ffprobe", "magick", "gs", "soffice", "ebook-convert"]
+
+    public init(
+        capabilitiesCacheURL: URL? = ExternalToolDiscovery.defaultCapabilitiesCacheURL,
+        defaults: UserDefaults = .standard
+    ) {
+        self.capabilitiesCacheURL = capabilitiesCacheURL
+        self.defaults = defaults
         prepopulateFastToolPaths()
+        loadCachedCapabilities()
+    }
+
+    public static var defaultCapabilitiesCacheURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("FileConverter", isDirectory: true)
+            .appendingPathComponent("ffmpeg-capabilities.json")
+    }
+
+    // MARK: - Custom tool locations
+
+    public func pathOverride(for tool: String) -> String? {
+        (defaults.dictionary(forKey: Self.toolPathOverridesKey) as? [String: String])?[tool]
+    }
+
+    /// Stores a user-chosen location after checking it is an executable
+    /// regular file. Returns false when the file is not usable.
+    @discardableResult
+    public func setPathOverride(_ path: String?, for tool: String) -> Bool {
+        var overrides = (defaults.dictionary(forKey: Self.toolPathOverridesKey) as? [String: String]) ?? [:]
+        if let path {
+            guard let validated = Self.validatedExecutable(path) else { return false }
+            overrides[tool] = validated
+        } else {
+            overrides.removeValue(forKey: tool)
+        }
+        defaults.set(overrides, forKey: Self.toolPathOverridesKey)
+        return true
+    }
+
+    static func validatedExecutable(_ path: String) -> String? {
+        let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: resolved, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              FileManager.default.isExecutableFile(atPath: resolved) else { return nil }
+        return resolved
+    }
+
+    private func validOverride(for tool: String) -> String? {
+        pathOverride(for: tool).flatMap(Self.validatedExecutable)
+    }
+
+    // MARK: - Persisted FFmpeg capabilities
+
+    private struct CapabilitiesCache: Codable {
+        let ffmpegPath: String
+        let fileSize: Int64
+        let modificationDate: Date
+        let encoders: [String]
+        let filters: [String]
+    }
+
+    private static func fingerprint(of path: String) -> (size: Int64, date: Date)? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = (attributes[.size] as? NSNumber)?.int64Value,
+              let date = attributes[.modificationDate] as? Date else { return nil }
+        return (size, date)
+    }
+
+    /// Loads the encoder/filter lists probed on an earlier launch, so presets
+    /// that need FFmpeg are usable immediately instead of after a re-probe.
+    private func loadCachedCapabilities() {
+        guard let capabilitiesCacheURL,
+              let ffmpegPath = cachedTools["ffmpeg"]?.executablePath,
+              let data = try? Data(contentsOf: capabilitiesCacheURL),
+              let cache = try? JSONDecoder().decode(CapabilitiesCache.self, from: data),
+              cache.ffmpegPath == ffmpegPath,
+              let current = Self.fingerprint(of: ffmpegPath),
+              current.size == cache.fileSize,
+              abs(current.date.timeIntervalSince(cache.modificationDate)) < 1 else { return }
+        lock.withLock {
+            probedFFmpegEncoders = Set(cache.encoders)
+            probedFFmpegFilters = Set(cache.filters)
+        }
+    }
+
+    private func storeCapabilities(ffmpegPath: String, encoders: Set<String>, filters: Set<String>) {
+        guard let capabilitiesCacheURL,
+              !encoders.isEmpty,
+              let current = Self.fingerprint(of: ffmpegPath) else { return }
+        let cache = CapabilitiesCache(
+            ffmpegPath: ffmpegPath,
+            fileSize: current.size,
+            modificationDate: current.date,
+            encoders: encoders.sorted(),
+            filters: filters.sorted()
+        )
+        do {
+            try FileManager.default.createDirectory(
+                at: capabilitiesCacheURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            try encoder.encode(cache).write(to: capabilitiesCacheURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: capabilitiesCacheURL.path)
+        } catch {
+            AppLogger.backends.error("Could not save FFmpeg capabilities: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func prepopulateFastToolPaths() {
@@ -59,8 +173,8 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
 
         var fastCached: [String: ToolInfo] = [:]
         for tool in tools {
-            var foundPath: String?
-            for path in tool.paths {
+            var foundPath: String? = validOverride(for: tool.name)
+            for path in tool.paths where foundPath == nil {
                 if FileManager.default.isExecutableFile(atPath: path) {
                     foundPath = path
                     break
@@ -79,7 +193,12 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
         lock.unlock()
     }
 
-    public func refreshAllTools(force: Bool = false) {
+    /// When the last completed scan happened, or nil before the first one.
+    public var lastRefreshDate: Date? {
+        lock.withLock { lastRefresh }
+    }
+
+    public func refreshAllTools(force: Bool = false, progress: (@Sendable (String) -> Void)? = nil) {
         lock.lock()
         if !force, let lastRefresh, Date().timeIntervalSince(lastRefresh) < 300 {
             lock.unlock()
@@ -95,23 +214,32 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
         // Process launches can take seconds on a cold system. Perform them
         // without holding the cache lock so availability reads stay instant.
         var discoveredTools: [String: ToolInfo] = [:]
+        progress?("Checking FFmpeg…")
         discoveredTools["ffmpeg"] = discoverTool(name: "ffmpeg", installCommand: "brew install ffmpeg")
         discoveredTools["ffprobe"] = discoverTool(name: "ffprobe", installCommand: "brew install ffmpeg")
+        progress?("Checking ImageMagick…")
         discoveredTools["magick"] = discoverTool(name: "magick", installCommand: "brew install imagemagick")
+        progress?("Checking Ghostscript…")
         discoveredTools["gs"] = discoverTool(name: "gs", installCommand: "brew install ghostscript")
+        progress?("Checking LibreOffice…")
         discoveredTools["soffice"] = discoverLibreOffice()
+        progress?("Checking Calibre…")
         discoveredTools["ebook-convert"] = discoverCalibre()
 
-        let encoders: Set<String>
+        var encoders: Set<String> = []
+        var filters: Set<String> = []
         if let ffmpegPath = discoveredTools["ffmpeg"]?.executablePath {
-            encoders = probeFFmpegEncoders(executableURL: URL(fileURLWithPath: ffmpegPath))
-        } else {
-            encoders = []
+            progress?("Checking FFmpeg encoders…")
+            let executable = URL(fileURLWithPath: ffmpegPath)
+            encoders = probeFFmpegEncoders(executableURL: executable)
+            filters = probeFFmpegFilters(executableURL: executable)
+            storeCapabilities(ffmpegPath: ffmpegPath, encoders: encoders, filters: filters)
         }
 
         lock.lock()
         cachedTools = discoveredTools
         probedFFmpegEncoders = encoders
+        probedFFmpegFilters = filters
         lastRefresh = Date()
         isRefreshing = false
         lock.unlock()
@@ -197,8 +325,17 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
 
     // MARK: - Private Discovery Helpers
 
+    /// Last probed FFmpeg filter list, or nil before any probe.
+    public func cachedFFmpegFilters() -> Set<String>? {
+        lock.withLock { probedFFmpegFilters }
+    }
+
+    public func hasFFmpegFilter(_ name: String) -> Bool {
+        cachedFFmpegFilters()?.contains(name) ?? false
+    }
+
     private func discoverTool(name: String, installCommand: String) -> ToolInfo {
-        let candidatePaths = searchPaths(for: name)
+        let candidatePaths = [validOverride(for: name)].compactMap { $0 } + searchPaths(for: name)
         for path in candidatePaths {
             if FileManager.default.isExecutableFile(atPath: path) {
                 let version = queryVersion(for: path)
@@ -209,7 +346,7 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
     }
 
     private func discoverLibreOffice() -> ToolInfo {
-        let candidatePaths = [
+        let candidatePaths = [validOverride(for: "soffice")].compactMap { $0 } + [
             "/Applications/LibreOffice.app/Contents/MacOS/soffice",
             "/opt/homebrew/bin/soffice",
             "/usr/local/bin/soffice"
@@ -224,7 +361,7 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
     }
 
     private func discoverCalibre() -> ToolInfo {
-        let candidatePaths = [
+        let candidatePaths = [validOverride(for: "ebook-convert")].compactMap { $0 } + [
             "/Applications/calibre.app/Contents/MacOS/ebook-convert",
             "/Applications/Calibre.app/Contents/MacOS/ebook-convert",
             "/opt/homebrew/bin/ebook-convert",
@@ -306,6 +443,31 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
             return result.terminationStatus == 0 ? parseFFmpegEncoders(result.stdout) : []
         } catch {
             AppLogger.backends.error("Failed to probe FFmpeg encoders: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    private func probeFFmpegFilters(executableURL: URL) -> Set<String> {
+        let process = ExternalProcessAttempt(
+            executableURL: executableURL,
+            arguments: ["-filters", "-hide_banner"],
+            stdoutCaptureLimit: 4 * 1024 * 1024,
+            timeout: 30
+        )
+        do {
+            let result = try process.runSynchronously()
+            guard result.terminationStatus == 0 else { return [] }
+            // Lines look like " ... zscale            V->V       Apply resizing…"
+            var filters = Set<String>()
+            for line in String(decoding: result.stdout, as: UTF8.self).components(separatedBy: .newlines) {
+                let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", omittingEmptySubsequences: true)
+                if parts.count >= 3, parts[2].contains("->") {
+                    filters.insert(String(parts[1]))
+                }
+            }
+            return filters
+        } catch {
+            AppLogger.backends.error("Failed to probe FFmpeg filters: \(error.localizedDescription)")
             return []
         }
     }

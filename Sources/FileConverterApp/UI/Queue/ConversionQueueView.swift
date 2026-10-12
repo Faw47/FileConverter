@@ -310,14 +310,12 @@ public struct ConversionQueueView: View {
         selectedJobID = queue.jobs.first?.id
     }
 
+    /// Esc cancels only the selected conversion. "Cancel All" keeps its
+    /// own confirmation.
     private func cancelSelectedActive() {
         guard let current = selectedJobID,
               let job = queue.jobs.first(where: { $0.id == current }),
-              job.state.isActive else { return }
-        if queue.cancelableCount > 1 {
-            showingCancelConfirmation = true
-        } else {
-            queue.cancelJob(id: current)
-        }
+              job.state.isCancellable else { return }
+        queue.cancelJob(id: current)
     }
 }

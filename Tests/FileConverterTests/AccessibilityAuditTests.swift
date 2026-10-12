@@ -53,29 +53,31 @@ final class AccessibilityAuditTests: XCTestCase {
     }
 
     func testCollisionResolutionHasAccessibilityAndKeyShortcuts() {
-        let content = sourceFileContents(relativePath: "Sources/FileConverterApp/UI/FileConverterMainView.swift")
+        let content = sourceFileContents(relativePath: "Sources/FileConverterApp/UI/Dialogs/CollisionResolutionView.swift")
         XCTAssertFalse(content.isEmpty)
 
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Conflict for \\(conflict.sourceFilename)\")"))
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Cancel collision resolution\")"))
         XCTAssertTrue(content.contains(".keyboardShortcut(.cancelAction)"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(applyToAll ? \"Skip all conflicting files\" : \"Skip this conflicting file\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(applyToAll ? \"Keep both files for all conflicts\" : \"Keep both files\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(applyToAll ? \"Replace all existing files\" : \"Replace existing file\")"))
+        XCTAssertTrue(content.contains(".accessibilityLabel(\"Skip \\(conflict.sourceFilename)\")"))
+        XCTAssertTrue(content.contains(".accessibilityLabel(\"Keep both files for \\(conflict.sourceFilename)\")"))
+        XCTAssertTrue(content.contains(".accessibilityLabel(\"Replace the existing file for \\(conflict.sourceFilename)\")"))
+        XCTAssertTrue(content.contains(".accessibilityLabel(\"Replace all existing files\")"))
+        // A destructive bulk action must not be reachable with Return alone.
+        XCTAssertFalse(content.contains(".keyboardShortcut(.defaultAction)"))
     }
 
-    func testGeneralSettingsHasAccessibilityLabels() {
+    func testGeneralSettingsControlsAllHaveVisibleLabels() {
         let content = sourceFileContents(relativePath: "Sources/FileConverterApp/Settings/GeneralSettingsView.swift")
         XCTAssertFalse(content.isEmpty)
 
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Choose custom output folder\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Default collision policy when output already exists\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Filename pattern template\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Reset filename pattern to default\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Preserve creation and modification dates\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Show macOS notification banner\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Reveal completed files in Finder\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Reset general settings to defaults\")"))
+        // Native Form controls are announced by their titles, so no control
+        // may hide or omit its title.
+        XCTAssertFalse(content.contains("Toggle(\"\""), "every toggle needs a title")
+        XCTAssertFalse(content.contains("Picker(\"\""), "every picker needs a title")
+        XCTAssertFalse(content.contains(".labelsHidden()"), "titles must stay visible to VoiceOver")
+        XCTAssertTrue(content.contains(".accessibilityLabel(\"Choose output folder\")"))
+        XCTAssertTrue(content.contains(".formStyle(.grouped)"))
     }
 
     func testInterruptedRecoveryBannerAccessibility() {

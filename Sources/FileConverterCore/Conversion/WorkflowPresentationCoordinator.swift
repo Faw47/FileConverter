@@ -6,14 +6,15 @@ public enum WorkflowPresentationItem: Identifiable, Equatable, Sendable {
     case batch(id: UUID = UUID(), urls: [URL], excludedCount: Int)
     case pdfCompress(id: UUID = UUID(), urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
     case pdfSplit(id: UUID = UUID(), urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
-    case conflictResolution(id: UUID = UUID(), conflicts: [ConversionQueue.CollisionConflict])
+    /// Shows the queue's live list of pending conflicts; carries no snapshot.
+    case conflictResolution(id: UUID = UUID())
 
     public var id: UUID {
         switch self {
         case .batch(let id, _, _): return id
         case .pdfCompress(let id, _, _, _): return id
         case .pdfSplit(let id, _, _, _): return id
-        case .conflictResolution(let id, _): return id
+        case .conflictResolution(let id): return id
         }
     }
 
@@ -45,6 +46,14 @@ public final class WorkflowPresentationCoordinator: ObservableObject {
     }
 
     public func enqueue(_ item: WorkflowPresentationItem) {
+        // The conflict sheet reads the queue live, so one is always enough.
+        if case .conflictResolution = item,
+           ([currentPresentation].compactMap { $0 } + pendingQueue).contains(where: {
+               if case .conflictResolution = $0 { return true }
+               return false
+           }) {
+            return
+        }
         if currentPresentation == nil && !isOpenPanelPresented {
             currentPresentation = item
         } else {
