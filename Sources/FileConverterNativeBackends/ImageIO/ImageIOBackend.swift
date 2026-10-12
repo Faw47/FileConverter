@@ -65,7 +65,7 @@ public final class ImageIOBackend: ConversionBackend, @unchecked Sendable {
 
         if isCancelled() { throw ConversionError.cancelled }
 
-        progressHandler(ConversionProgress(fractionCompleted: 0.1, elapsedTime: 0.1))
+        progressHandler(ConversionProgress(fractionCompleted: 0.1, elapsedTime: 0))
 
         // Create Image Source
         guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else {
@@ -90,17 +90,21 @@ public final class ImageIOBackend: ConversionBackend, @unchecked Sendable {
             || destUTType.identifier == "public.heics"
         let framesToWrite = isMultiFrameDestination ? imageCount : 1
 
-        // TASK-031: Decode safety checks against decompression bombs.
-        if let firstProps = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
-           let width = firstProps[kCGImagePropertyPixelWidth] as? Int,
-           let height = firstProps[kCGImagePropertyPixelHeight] as? Int {
-            let megapixels = (Int64(width) * Int64(height)) / 1_000_000
-            if megapixels > 100 || (megapixels * Int64(framesToWrite)) > 300 {
-                throw ConversionError.malformedSource(
-                    path: sourceURL.path,
-                    reason: "Image dimensions exceed safety limit (\(width)x\(height), \(framesToWrite) frame(s))."
-                )
-            }
+        let firstProps = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] ?? [:]
+        let sourceWidth = firstProps[kCGImagePropertyPixelWidth] as? Int ?? 0
+        let sourceHeight = firstProps[kCGImagePropertyPixelHeight] as? Int ?? 0
+        let maxPixelSize = ImageGeometry.maxPixelSize(
+            resolution: job.preset.resolution,
+            sourceWidth: sourceWidth,
+            sourceHeight: sourceHeight
+        )
+
+        // Memory limits: a resize decodes at reduced size, so it can handle
+        // much larger sources than a full-size conversion.
+        let megapixels = (sourceWidth * sourceHeight) / 1_000_000
+        let limit = maxPixelSize == nil ? ImageGeometry.fullSizeLimitMegapixels : ImageGeometry.resizeLimitMegapixels
+        if megapixels > limit || megapixels * framesToWrite > limit * 3 {
+            throw ConversionError.imageTooLarge(width: sourceWidth, height: sourceHeight, limitMegapixels: limit)
         }
 
         // Create Destination
@@ -121,23 +125,67 @@ public final class ImageIOBackend: ConversionBackend, @unchecked Sendable {
         case .custom: qualityFactor = 0.85
         }
 
+        let preserveMetadata = job.preset.preserveMetadata
+        let removeLocation = job.preset.removeLocationData ?? true
+        let start = Date()
+
         for index in 0..<framesToWrite {
             if isCancelled() { throw ConversionError.cancelled }
 
-            autoreleasepool {
+            try autoreleasepool {
+                let sourceProps = CGImageSourceCopyPropertiesAtIndex(imageSource, index, nil) as? [CFString: Any] ?? [:]
+                if maxPixelSize == nil && preserveMetadata {
+                    // Fast path: re-encode the frame with its metadata;
+                    // properties set to kCFNull are removed.
+                    var properties: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: qualityFactor]
+                    if removeLocation {
+                        properties[kCGImagePropertyGPSDictionary] = kCFNull
+                    }
+                    CGImageDestinationAddImageFromSource(imageDestination, imageSource, index, properties as CFDictionary)
+                    return
+                }
+
+                // Decode (downsampled when resizing) and write only the
+                // metadata the preset keeps. AddImageFromSource would copy
+                // all source metadata regardless.
+                let image: CGImage?
                 var properties: [CFString: Any] = [:]
-                if let sourceProps = CGImageSourceCopyPropertiesAtIndex(imageSource, index, nil) as? [CFString: Any] {
-                    if job.preset.preserveMetadata {
-                        properties = sourceProps
-                    } else if let orientation = sourceProps[kCGImagePropertyOrientation] {
+                if let maxPixelSize {
+                    image = CGImageSourceCreateThumbnailAtIndex(imageSource, index, [
+                        kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceShouldCacheImmediately: true
+                    ] as CFDictionary)
+                    // The transform is applied, so the pixels are upright.
+                    properties[kCGImagePropertyOrientation] = 1
+                } else {
+                    image = CGImageSourceCreateImageAtIndex(imageSource, index, nil)
+                    if let orientation = sourceProps[kCGImagePropertyOrientation] {
                         properties[kCGImagePropertyOrientation] = orientation
                     }
                 }
-
-                // Apply compression quality to properties
-                properties[kCGImageDestinationLossyCompressionQuality] = qualityFactor as CFNumber
-
-                CGImageDestinationAddImageFromSource(imageDestination, imageSource, index, properties as CFDictionary)
+                guard let image else {
+                    throw ConversionError.malformedSource(path: sourceURL.path, reason: "Frame \(index + 1) could not be decoded")
+                }
+                if preserveMetadata {
+                    for key in [kCGImagePropertyExifDictionary, kCGImagePropertyIPTCDictionary, kCGImagePropertyTIFFDictionary,
+                                kCGImagePropertyGPSDictionary, kCGImagePropertyDPIWidth, kCGImagePropertyDPIHeight,
+                                kCGImagePropertyGIFDictionary, kCGImagePropertyPNGDictionary] {
+                        if let value = sourceProps[key] { properties[key] = value }
+                    }
+                    if removeLocation { properties.removeValue(forKey: kCGImagePropertyGPSDictionary) }
+                    if maxPixelSize != nil, var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+                        tiff.removeValue(forKey: kCGImagePropertyTIFFOrientation)
+                        properties[kCGImagePropertyTIFFDictionary] = tiff
+                    }
+                } else if let delay = (sourceProps[kCGImagePropertyGIFDictionary] as? [CFString: Any])?[kCGImagePropertyGIFDelayTime] {
+                    // Keep animation timing even without metadata.
+                    properties[kCGImagePropertyGIFDictionary] = [kCGImagePropertyGIFDelayTime: delay]
+                }
+                properties[kCGImageDestinationLossyCompressionQuality] = qualityFactor
+                let frame = targetFormatDef.supportsAlpha ? image : (ImageGeometry.flattenedOnWhite(image) ?? image)
+                CGImageDestinationAddImage(imageDestination, frame, properties as CFDictionary)
             }
 
             let progressFraction = 0.2 + (0.7 * Double(index + 1) / Double(framesToWrite))
@@ -145,7 +193,7 @@ public final class ImageIOBackend: ConversionBackend, @unchecked Sendable {
                 fractionCompleted: progressFraction,
                 processedFrames: Int64(index + 1),
                 totalFrames: Int64(framesToWrite),
-                elapsedTime: 0.5
+                elapsedTime: Date().timeIntervalSince(start)
             ))
         }
 
@@ -155,6 +203,6 @@ public final class ImageIOBackend: ConversionBackend, @unchecked Sendable {
             throw ConversionError.unknown(message: "Failed to finalize ImageIO destination file.")
         }
 
-        progressHandler(ConversionProgress(fractionCompleted: 1.0, processedFrames: Int64(framesToWrite), totalFrames: Int64(framesToWrite), elapsedTime: 1.0))
+        progressHandler(ConversionProgress(fractionCompleted: 1.0, processedFrames: Int64(framesToWrite), totalFrames: Int64(framesToWrite), elapsedTime: Date().timeIntervalSince(start)))
     }
 }

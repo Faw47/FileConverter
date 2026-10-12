@@ -3,6 +3,8 @@ import PDFKit
 import FileConverterCore
 import UniformTypeIdentifiers
 
+/// Options for "Compress PDF". Shows only what the engine that will run
+/// (Ghostscript when installed, otherwise macOS) actually honors.
 public struct PDFCompressDialogView: View {
     let initialPreset: ConversionPreset
     let onCancel: () -> Void
@@ -12,53 +14,55 @@ public struct PDFCompressDialogView: View {
     @State private var isDropTargeted = false
 
     public enum CompressionProfile: String, CaseIterable, Identifiable {
-        case web = "Web & Email"
-        case ebook = "eBook & Balanced"
-        case print = "High Quality Print"
-        case prepress = "Prepress / Lossless"
-        case custom = "Custom"
+        case smaller = "Smallest file"
+        case balanced = "Balanced"
+        case quality = "Higher quality"
 
         public var id: String { rawValue }
 
-        public var icon: String {
+        var ghostscriptName: String {
             switch self {
-            case .web: return "bolt.fill"
-            case .ebook: return "book.fill"
-            case .print: return "printer.fill"
-            case .prepress: return "sparkles"
-            case .custom: return "slider.horizontal.3"
+            case .smaller: return "screen"
+            case .balanced: return "ebook"
+            case .quality: return "printer"
             }
         }
 
-        public var subtitle: String {
+        var defaultDPI: Int {
             switch self {
-            case .web: return "72 DPI • Maximum compression"
-            case .ebook: return "150 DPI • Balanced size & clarity"
-            case .print: return "300 DPI • Crisp text & high resolution"
-            case .prepress: return "300 DPI • High-fidelity raster (not vector-lossless)"
-            case .custom: return "Fine-tune DPI, quality, and color"
+            case .smaller: return 96
+            case .balanced: return 150
+            case .quality: return 300
+            }
+        }
+
+        var defaultQuality: Double {
+            switch self {
+            case .smaller: return 0.5
+            case .balanced: return 0.7
+            case .quality: return 0.85
+            }
+        }
+
+        static func from(_ raw: String?) -> CompressionProfile {
+            switch raw?.lowercased() {
+            case "screen": return .smaller
+            case "printer", "prepress": return .quality
+            default: return .balanced
             }
         }
     }
 
-    public enum ColorMode: String, CaseIterable, Identifiable {
-        case color = "Keep Color"
-        case grayscale = "Grayscale"
-        case monochrome = "Black & White (1-bit)"
-
-        public var id: String { rawValue }
-    }
-
-    @State private var selectedProfile: CompressionProfile = .ebook
-    @State private var colorMode: ColorMode = .color
-    @State private var targetDPI: Int = 150
-    @State private var imageQuality: Double = 0.70
-    @State private var removeMetadata: Bool = true
-    @State private var removeAnnotations: Bool = false
-    @State private var removeThumbnails: Bool = true
-    @State private var linearize: Bool = true
-    @State private var filenameSuffix: String = "_compressed"
-    @State private var customOutputDirectory: URL? = nil
+    @State private var profile: CompressionProfile
+    @State private var flattenPages: Bool
+    @State private var grayscale: Bool
+    @State private var pageDPI: Int
+    @State private var imageQuality: Double
+    @State private var removeMetadata: Bool
+    @State private var removeAnnotations: Bool
+    @State private var linearize: Bool
+    @State private var nameEnding: String
+    @State private var customOutputDirectory: URL?
 
     public init(
         urls: [URL],
@@ -72,48 +76,28 @@ public struct PDFCompressDialogView: View {
         self.onStart = onStart
 
         let opts = initialPreset.processingOptions
-        let profile: CompressionProfile = {
-            guard let raw = opts?.pdfCompressionProfile?.lowercased() else { return .ebook }
-            switch raw {
-            case "screen": return .web
-            case "ebook": return .ebook
-            case "printer": return .print
-            case "prepress": return .prepress
-            case "custom": return .custom
-            default: return .ebook
-            }
-        }()
-        self._selectedProfile = State(initialValue: profile)
-
-        let mode: ColorMode = {
-            guard let raw = opts?.pdfColorMode?.lowercased() else { return .color }
-            switch raw {
-            case "grayscale": return .grayscale
-            case "monochrome": return .monochrome
-            default: return .color
-            }
-        }()
-        self._colorMode = State(initialValue: mode)
-        self._targetDPI = State(initialValue: opts?.pdfDPI ?? 150)
-        self._imageQuality = State(initialValue: opts?.pdfImageQuality ?? 0.70)
-        self._removeMetadata = State(initialValue: opts?.pdfRemoveMetadata ?? true)
+        let profile = CompressionProfile.from(opts?.pdfCompressionProfile)
+        self._profile = State(initialValue: profile)
+        self._flattenPages = State(initialValue: opts?.pdfFlattenToImages ?? false)
+        self._grayscale = State(initialValue: opts?.pdfColorMode == "grayscale" || opts?.pdfColorMode == "monochrome")
+        self._pageDPI = State(initialValue: opts?.pdfDPI ?? profile.defaultDPI)
+        self._imageQuality = State(initialValue: opts?.pdfImageQuality ?? profile.defaultQuality)
+        self._removeMetadata = State(initialValue: opts?.pdfRemoveMetadata ?? false)
         self._removeAnnotations = State(initialValue: opts?.pdfRemoveAnnotations ?? false)
-        self._removeThumbnails = State(initialValue: opts?.pdfRemoveThumbnails ?? true)
         self._linearize = State(initialValue: opts?.pdfLinearize ?? true)
 
         let pattern = initialPreset.filenamePattern
-        let suffix: String
-        if pattern.hasPrefix("{name}") {
-            suffix = String(pattern.dropFirst("{name}".count))
-        } else if pattern.isEmpty {
-            suffix = "_compressed"
+        let ending: String
+        if !initialPreset.resolvedInheritance.filenamePattern, pattern.hasPrefix("{name}"), pattern.count > "{name}".count {
+            ending = String(pattern.dropFirst("{name}".count))
         } else {
-            suffix = pattern
+            ending = "-" + (initialPreset.sameFormatSuffix ?? "compressed")
         }
-        self._filenameSuffix = State(initialValue: suffix.isEmpty ? "_compressed" : suffix)
+        self._nameEnding = State(initialValue: ending)
 
-        var customDir: URL? = nil
-        if case .customFolder(let bookmark, let displayPath) = initialPreset.outputDirectoryPolicy {
+        var customDir: URL?
+        if !initialPreset.resolvedInheritance.outputLocation,
+           case .customFolder(let bookmark, let displayPath) = initialPreset.outputDirectoryPolicy {
             var isStale = false
             if !bookmark.isEmpty, let resolved = try? URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &isStale) {
                 customDir = resolved
@@ -136,70 +120,123 @@ public struct PDFCompressDialogView: View {
     private var firstURL: URL? { currentURLs.first }
 
     @State private var cachedTotalSize: Int64 = 0
-    private var totalOriginalSize: Int64 { cachedTotalSize }
-
-    @State private var cachedPageCount: Int? = nil
-    @State private var isDocumentLocked: Bool = false
+    @State private var cachedPageCount: Int?
+    @State private var isDocumentLocked = false
     @State private var isLoadingStats = true
     @State private var dropErrorMessage: String?
 
-    private var pageCountText: String {
-        guard let count = cachedPageCount else { return "" }
-        if currentURLs.count == 1 {
-            return "\(count) pages"
-        } else {
-            return "\(count) pages in first file • \(currentURLs.count) files selected"
-        }
+    /// Ghostscript runs when it is installed and the preset allows it.
+    private var usesGhostscript: Bool {
+        guard let pdf = FormatRegistry.shared.format(forID: "pdf") else { return false }
+        return BackendResolver.shared.evaluate(preset: initialPreset, sourceFormat: pdf) == .usable(.ghostscript)
+    }
+
+    private var showsImageControls: Bool {
+        usesGhostscript || flattenPages
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Header
             headerView
-                .padding(.horizontal, 24)
-                .padding(.top, 20)
-                .padding(.bottom, 16)
-                .background(Color(NSColor.controlBackgroundColor))
-
-            Divider()
-
-            // Content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    profileSelectionSection
-
-                    // Native compression always rasterizes; never label as lossless.
-                    HStack(spacing: 8) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundColor(.orange)
-                        Text("Native compression rasterizes pages to images. Install Ghostscript for lossless vector output.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
-
-                    if selectedProfile == .custom {
-                        customSettingsSection
-                    }
-
-                    optimizationSection
-
-                    outputDestinationSection
-                }
-                .padding(24)
-            }
-
-            Divider()
-
-            // Footer
-            footerView
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 20)
                 .padding(.vertical, 14)
-                .background(Color(NSColor.windowBackgroundColor))
+
+            Divider()
+
+            Form {
+                Section {
+                    Picker("Compression", selection: $profile) {
+                        ForEach(CompressionProfile.allCases) { profile in
+                            Text(profile.rawValue).tag(profile)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Compression level")
+                    .onChange(of: profile) { _, newValue in
+                        pageDPI = newValue.defaultDPI
+                        imageQuality = newValue.defaultQuality
+                    }
+
+                    if !usesGhostscript {
+                        Toggle("Turn pages into images", isOn: $flattenPages)
+                            .accessibilityLabel("Turn pages into images")
+                    }
+
+                    if showsImageControls {
+                        Toggle("Convert to grayscale", isOn: $grayscale)
+                            .accessibilityLabel("Convert to grayscale")
+                        Picker("Image resolution", selection: $pageDPI) {
+                            ForEach([72, 96, 150, 200, 300], id: \.self) { dpi in
+                                Text("\(dpi) dpi").tag(dpi)
+                            }
+                        }
+                        .accessibilityLabel("Image resolution in dots per inch")
+                        if flattenPages && !usesGhostscript {
+                            LabeledContent("Image quality") {
+                                HStack {
+                                    Slider(value: $imageQuality, in: 0.3...1.0, step: 0.05)
+                                        .accessibilityLabel("JPEG image quality")
+                                        .accessibilityValue("\(Int(imageQuality * 100)) percent")
+                                    Text("\(Int(imageQuality * 100))%")
+                                        .monospacedDigit()
+                                        .frame(width: 40, alignment: .trailing)
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Compression")
+                } footer: {
+                    Text(compressionFooter)
+                }
+
+                Section("Clean Up") {
+                    Toggle("Remove document details (author, title, keywords)", isOn: $removeMetadata)
+                        .accessibilityLabel("Remove document details")
+                    Toggle("Remove comments and highlights", isOn: $removeAnnotations)
+                        .accessibilityLabel("Remove comments and highlights")
+                    if usesGhostscript {
+                        Toggle("Optimize for fast web viewing", isOn: $linearize)
+                            .accessibilityLabel("Optimize for fast web viewing")
+                    }
+                }
+
+                Section {
+                    LabeledContent("Name ending") {
+                        TextField("Name ending", text: $nameEnding, prompt: Text("-compressed"))
+                            .frame(maxWidth: 160)
+                            .accessibilityLabel("Filename ending")
+                    }
+                    LabeledContent("Save to") {
+                        HStack {
+                            Text(customOutputDirectory.map { ($0.path as NSString).abbreviatingWithTildeInPath }
+                                ?? DestinationDescription.folder(for: initialPreset))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundStyle(.secondary)
+                            Button("Change…") { chooseOutputDirectory() }
+                                .accessibilityLabel("Change output folder")
+                            if customOutputDirectory != nil {
+                                Button("Use Default") { customOutputDirectory = nil }
+                                    .accessibilityLabel("Use the default output folder")
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Saving")
+                } footer: {
+                    Text("Example: \(exampleName). If the result is not smaller, nothing is saved.")
+                }
+            }
+            .formStyle(.grouped)
+
+            Divider()
+
+            footerView
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
         }
-        .frame(minWidth: 540, idealWidth: 580, minHeight: 480, maxHeight: 680)
+        .frame(minWidth: 540, idealWidth: 580, minHeight: 480, idealHeight: 600)
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
         }
@@ -216,8 +253,34 @@ public struct PDFCompressDialogView: View {
         )) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(dropErrorMessage ?? "Only readable PDF files can be added to this workflow.")
+            Text(dropErrorMessage ?? "Only readable PDF files can be added.")
         }
+    }
+
+    private var compressionFooter: String {
+        if usesGhostscript {
+            return "Uses Ghostscript. Text and drawings stay sharp; images are resampled."
+        }
+        if flattenPages {
+            return "Each page becomes one image, which gives the smallest file. Text is recognized on this Mac so it stays searchable."
+        }
+        return "Shrinks the images inside the PDF. Text, links, and bookmarks are kept. Install Ghostscript for stronger compression that keeps text sharp."
+    }
+
+    private var exampleName: String {
+        let base = firstURL?.deletingPathExtension().lastPathComponent ?? "Document"
+        return OutputNamingEngine.previewFilename(
+            pattern: "{name}" + cleanedEnding,
+            sourceName: base,
+            sourceExtension: "pdf",
+            targetExtension: "pdf",
+            presetMenuName: initialPreset.menuName
+        )
+    }
+
+    private var cleanedEnding: String {
+        let trimmed = nameEnding.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.components(separatedBy: AppSettings.invalidPatternCharacters).joined()
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
@@ -303,245 +366,48 @@ public struct PDFCompressDialogView: View {
 
     // MARK: - Header
     private var headerView: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.red.opacity(0.12))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "doc.richtext.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.red)
-            }
+        HStack(spacing: 12) {
+            Image(systemName: "doc.richtext")
+                .font(.system(size: 26))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(currentURLs.count == 1 ? (firstURL?.lastPathComponent ?? "PDF Document") : "\(currentURLs.count) PDF Documents")
                     .font(.headline)
                     .lineLimit(1)
-
-                HStack(spacing: 8) {
-                    if isLoadingStats {
-                        Text("Reading PDF…")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text(ByteCountFormatter.string(fromByteCount: totalOriginalSize, countStyle: .file))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-
-                        if !pageCountText.isEmpty {
-                            Text("•")
-                                .foregroundColor(.secondary)
-                            Text(pageCountText)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
+                    .truncationMode(.middle)
+                Text(statsText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             if isDropTargeted {
                 Label("Drop to add PDFs", systemImage: "plus.circle.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.accentColor)
-                    .clipShape(Capsule())
+                    .foregroundStyle(Color.accentColor)
             }
         }
     }
 
-    // MARK: - Profile Selection
-    private var profileSelectionSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Compression Preset")
-                .font(.headline)
-
-            VStack(spacing: 8) {
-                ForEach(CompressionProfile.allCases) { profile in
-                    Button(action: {
-                        selectedProfile = profile
-                        applyProfileSettings(profile)
-                    }) {
-                        HStack(spacing: 12) {
-                            Image(systemName: profile.icon)
-                                .font(.system(size: 16, weight: .semibold))
-                                .frame(width: 24)
-                                .foregroundColor(selectedProfile == profile ? .accentColor : .secondary)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(profile.rawValue)
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.primary)
-
-                                Text(profile.subtitle)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            if selectedProfile == profile {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.accentColor)
-                                    .font(.system(size: 16))
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(selectedProfile == profile ? Color.accentColor.opacity(0.1) : Color(NSColor.controlBackgroundColor))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(selectedProfile == profile ? Color.accentColor.opacity(0.5) : Color.gray.opacity(0.2), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(profile.rawValue) profile")
-                    .accessibilityHint(profile.subtitle)
-                }
-            }
+    private var statsText: String {
+        if isLoadingStats { return "Reading PDF…" }
+        let size = ByteCountFormatter.string(fromByteCount: cachedTotalSize, countStyle: .file)
+        guard let pages = cachedPageCount else { return size }
+        if currentURLs.count == 1 {
+            return "\(size) · \(pages) page\(pages == 1 ? "" : "s")"
         }
-    }
-
-    // MARK: - Custom Settings
-    private var customSettingsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Custom Quality Controls")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Color Mode:")
-                        .frame(width: 140, alignment: .leading)
-                    Picker("Color Mode", selection: $colorMode) {
-                        ForEach(ColorMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .accessibilityLabel("Color Mode")
-                }
-
-                HStack {
-                    Text("Target Resolution:")
-                        .frame(width: 140, alignment: .leading)
-                    Picker("Target Resolution", selection: $targetDPI) {
-                        Text("72 DPI (Web)").tag(72)
-                        Text("96 DPI (Email)").tag(96)
-                        Text("150 DPI (eBook)").tag(150)
-                        Text("200 DPI (Medium)").tag(200)
-                        Text("300 DPI (Print)").tag(300)
-                    }
-                    .labelsHidden()
-                    .accessibilityLabel("Target Resolution in DPI")
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("JPEG Quality:")
-                            .frame(width: 140, alignment: .leading)
-                        Slider(value: $imageQuality, in: 0.1...1.0, step: 0.05)
-                            .accessibilityLabel("JPEG Image Quality")
-                            .accessibilityValue("\(Int(imageQuality * 100)) percent")
-                        Text("\(Int(imageQuality * 100))%")
-                            .frame(width: 45, alignment: .trailing)
-                            .font(.system(.body, design: .monospaced))
-                    }
-                }
-
-                    Text("Native compression does not enforce PDF compatibility levels.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
-        }
-    }
-
-    // MARK: - Optimization Toggles
-    private var optimizationSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Document Cleanup & Optimization")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("Remove metadata (author, title, creation timestamps)", isOn: $removeMetadata)
-                    .accessibilityLabel("Remove metadata")
-                Toggle("Remove annotations, comments, and highlights", isOn: $removeAnnotations)
-                    .accessibilityLabel("Remove annotations")
-                Toggle("Remove embedded page thumbnails", isOn: $removeThumbnails)
-                    .accessibilityLabel("Remove embedded page thumbnails")
-                Toggle("Linearize for fast web view (streamable page delivery)", isOn: $linearize)
-                    .accessibilityLabel("Linearize for fast web view")
-            }
-            .font(.subheadline)
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
-        }
-    }
-
-    // MARK: - Output Destination
-    private var outputDestinationSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Output Options")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Filename Suffix:")
-                        .frame(width: 120, alignment: .leading)
-                    TextField("Filename suffix", text: $filenameSuffix)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 160)
-                        .accessibilityLabel("Filename suffix")
-                    Text("e.g. document\(filenameSuffix).pdf")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                }
-
-                HStack {
-                    Text("Save to:")
-                        .frame(width: 120, alignment: .leading)
-                    if let dir = customOutputDirectory {
-                        Text(dir.path)
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(dir.path)
-                        Button("Change...") { chooseOutputDirectory() }
-                            .accessibilityLabel("Change output folder")
-                        Button("Reset") { customOutputDirectory = nil }
-                            .accessibilityLabel("Reset output folder to preset default")
-                    } else {
-                        Text("Same folder as original")
-                            .foregroundColor(.secondary)
-                            .font(.subheadline)
-                        Button("Choose Folder...") { chooseOutputDirectory() }
-                            .accessibilityLabel("Choose custom output folder")
-                    }
-                }
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
-        }
+        return "\(size) total"
     }
 
     // MARK: - Footer
     private var footerView: some View {
         VStack(spacing: 8) {
             if isDocumentLocked {
-                HStack(spacing: 8) {
-                    Image(systemName: "lock.fill")
-                        .foregroundColor(.red)
-                    Text("This PDF is password-protected or locked. Encrypted documents cannot be compressed.")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                    Spacer()
-                }
-                .padding(.horizontal, 4)
+                Label("This PDF is password-protected. Locked documents cannot be compressed.", systemImage: "lock.fill")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             HStack {
@@ -551,7 +417,7 @@ public struct PDFCompressDialogView: View {
 
                 Spacer()
 
-                Button("Compress PDF") {
+                Button(currentURLs.count == 1 ? "Compress" : "Compress \(currentURLs.count) PDFs") {
                     startCompression()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -562,47 +428,13 @@ public struct PDFCompressDialogView: View {
         }
     }
 
-    private func applyProfileSettings(_ profile: CompressionProfile) {
-        switch profile {
-        case .web:
-            targetDPI = 72
-            imageQuality = 0.45
-            colorMode = .color
-            removeMetadata = true
-            removeThumbnails = true
-            linearize = true
-        case .ebook:
-            targetDPI = 150
-            imageQuality = 0.70
-            colorMode = .color
-            removeMetadata = true
-            removeThumbnails = true
-            linearize = true
-        case .print:
-            targetDPI = 300
-            imageQuality = 0.85
-            colorMode = .color
-            removeMetadata = false
-            removeThumbnails = false
-            linearize = false
-        case .prepress:
-            targetDPI = 300
-            imageQuality = 0.95
-            colorMode = .color
-            removeMetadata = false
-            removeThumbnails = false
-            linearize = false
-        case .custom:
-            break
-        }
-    }
-
     private func chooseOutputDirectory() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Select Folder"
+        panel.prompt = "Choose"
         let completion: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK else { return }
             customOutputDirectory = panel.url
@@ -617,62 +449,32 @@ public struct PDFCompressDialogView: View {
     private func startCompression() {
         var preset = initialPreset
         var options = preset.processingOptions ?? ConversionProcessingOptions()
-
-        let profileName: String = {
-            switch selectedProfile {
-            case .web: return "screen"
-            case .ebook: return "ebook"
-            case .print: return "printer"
-            case .prepress: return "prepress"
-            case .custom: return "custom"
-            }
-        }()
-
-        options.pdfCompressionProfile = profileName
-        options.pdfDPI = targetDPI
-        options.pdfImageQuality = imageQuality
-        options.pdfColorMode = {
-            switch colorMode {
-            case .color: return "color"
-            case .grayscale: return "grayscale"
-            case .monochrome: return "monochrome"
-            }
-        }()
+        options.pdfCompressionProfile = profile.ghostscriptName
+        options.pdfFlattenToImages = !usesGhostscript && flattenPages
+        options.pdfDPI = showsImageControls ? pageDPI : nil
+        options.pdfImageQuality = options.pdfFlattenToImages ? imageQuality : nil
+        options.pdfColorMode = showsImageControls && grayscale ? "grayscale" : "color"
         options.pdfRemoveMetadata = removeMetadata
         options.pdfRemoveAnnotations = removeAnnotations
-        options.pdfRemoveThumbnails = removeThumbnails
-        options.pdfLinearize = linearize
-        // Preserve a compatibility level selected by the preset/editor. The
-        // native PDFKit backend will report that it cannot enforce it, while
-        // Ghostscript consumes the value when it is available.
-
+        options.pdfRemoveThumbnails = usesGhostscript
+        options.pdfLinearize = usesGhostscript && linearize
         preset.processingOptions = options
-        if filenameSuffix.hasPrefix("{name}") {
-            preset.filenamePattern = filenameSuffix
-        } else {
-            preset.filenamePattern = "{name}\(filenameSuffix)"
-        }
+
+        // The dialog's choices are this run's own values, not General ones.
+        var inheritance = preset.resolvedInheritance
+        inheritance.filenamePattern = false
+        preset.filenamePattern = "{name}" + (cleanedEnding.isEmpty ? "-compressed" : cleanedEnding)
+        preset.sameFormatSuffix = nil
 
         if let customOutputDirectory {
-            if let bookmark = try? customOutputDirectory.bookmarkData(
-                options: [.withSecurityScope],
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            ) {
+            let bookmark = (try? customOutputDirectory.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil))
+                ?? (try? customOutputDirectory.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil))
+            if let bookmark {
                 preset.outputDirectoryPolicy = .customFolder(bookmarkData: bookmark, displayPath: customOutputDirectory.path)
-            } else if let fallbackBookmark = try? customOutputDirectory.bookmarkData(
-                options: [],
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            ) {
-                preset.outputDirectoryPolicy = .customFolder(bookmarkData: fallbackBookmark, displayPath: customOutputDirectory.path)
+                inheritance.outputLocation = false
             }
-        } else if case .customFolder = initialPreset.outputDirectoryPolicy {
-            // Keep unchanged custom folder
-        } else {
-            // Retain original directory policy (e.g. .sameAsSource, .downloads)
-            preset.outputDirectoryPolicy = initialPreset.outputDirectoryPolicy
         }
+        preset.inheritance = inheritance
 
         onStart(preset, currentURLs)
     }

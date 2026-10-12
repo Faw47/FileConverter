@@ -54,6 +54,9 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     public var pdfRemoveThumbnails: Bool
     public var pdfLinearize: Bool
     public var pdfCompatibilityLevel: String? // "1.4", "1.5", "1.6", "1.7"
+    /// Native compression only: turn every page into an image (smallest
+    /// file; text stays searchable through on-device recognition).
+    public var pdfFlattenToImages: Bool
 
     public init(
         audioSplitDurationSeconds: Int? = nil,
@@ -75,7 +78,8 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         pdfRemoveAnnotations: Bool = false,
         pdfRemoveThumbnails: Bool = false,
         pdfLinearize: Bool = false,
-        pdfCompatibilityLevel: String? = nil
+        pdfCompatibilityLevel: String? = nil,
+        pdfFlattenToImages: Bool = false
     ) {
         self.audioSplitDurationSeconds = audioSplitDurationSeconds
         self.audioTargetFileSizeBytes = audioTargetFileSizeBytes
@@ -97,6 +101,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         self.pdfRemoveThumbnails = pdfRemoveThumbnails
         self.pdfLinearize = pdfLinearize
         self.pdfCompatibilityLevel = pdfCompatibilityLevel
+        self.pdfFlattenToImages = pdfFlattenToImages
     }
 
     public init(from decoder: Decoder) throws {
@@ -121,6 +126,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         self.pdfRemoveThumbnails = try container.decodeIfPresent(Bool.self, forKey: .pdfRemoveThumbnails) ?? false
         self.pdfLinearize = try container.decodeIfPresent(Bool.self, forKey: .pdfLinearize) ?? false
         self.pdfCompatibilityLevel = try container.decodeIfPresent(String.self, forKey: .pdfCompatibilityLevel)
+        self.pdfFlattenToImages = try container.decodeIfPresent(Bool.self, forKey: .pdfFlattenToImages) ?? false
     }
 
     public var isEmpty: Bool {
@@ -144,6 +150,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
             && !pdfRemoveThumbnails
             && !pdfLinearize
             && pdfCompatibilityLevel == nil
+            && !pdfFlattenToImages
     }
 }
 

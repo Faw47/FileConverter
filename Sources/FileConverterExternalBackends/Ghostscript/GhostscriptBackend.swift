@@ -70,11 +70,10 @@ public final class GhostscriptBackend: ConversionBackend, @unchecked Sendable {
             args.append("-dMonoImageResolution=\(dpi)")
         }
 
-        if options?.pdfColorMode == "grayscale" {
+        // pdfwrite converts to gray but has no 1-bit strategy; "monochrome"
+        // from older presets is treated as grayscale.
+        if options?.pdfColorMode == "grayscale" || options?.pdfColorMode == "monochrome" {
             args.append("-sColorConversionStrategy=Gray")
-            args.append("-dProcessColorModel=/DeviceGray")
-        } else if options?.pdfColorMode == "monochrome" {
-            args.append("-sColorConversionStrategy=Mono")
             args.append("-dProcessColorModel=/DeviceGray")
         }
 
@@ -82,11 +81,22 @@ public final class GhostscriptBackend: ConversionBackend, @unchecked Sendable {
             args.append("-dFastWebView=true")
         }
 
+        if options?.pdfRemoveAnnotations == true {
+            args.append("-dPreserveAnnots=false")
+        }
+
         args.append("-sOutputFile=\(destURL.path.replacingOccurrences(of: "%", with: "%%"))")
+        if options?.pdfRemoveMetadata == true {
+            // Blank the document info before the input is processed.
+            args.append(contentsOf: [
+                "-c", "[ /Title () /Author () /Subject () /Keywords () /Creator () /DOCINFO pdfmark",
+                "-f"
+            ])
+        }
         args.append(sourceURL.path.replacingOccurrences(of: "%", with: "%%"))
 
         let startTime = Date()
-        progressHandler(ConversionProgress(fractionCompleted: 0.1, elapsedTime: 0.1))
+        progressHandler(ConversionProgress(fractionCompleted: 0.1, elapsedTime: 0))
 
         let result: ExternalProcessResult
         do {

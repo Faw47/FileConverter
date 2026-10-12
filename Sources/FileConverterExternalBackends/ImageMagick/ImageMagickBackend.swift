@@ -66,8 +66,17 @@ public final class ImageMagickBackend: ConversionBackend, @unchecked Sendable {
             args.append(contentsOf: ["-define", "webp:lossless=true"])
         }
 
+        if let box = VideoGeometry.box(for: job.preset.resolution) {
+            // Longest side, shrink only (">" never enlarges).
+            args.append(contentsOf: ["-resize", "\(box.long)x\(box.long)>"])
+        }
+
         if !job.preset.preserveMetadata {
             args.append("-strip")
+        } else if job.preset.removeLocationData ?? true {
+            // GPS lives in the EXIF profile; drop every profile except the
+            // color profile so location cannot leak.
+            args.append(contentsOf: ["+profile", "!icc,*"])
         }
 
         args.append(destURL.path)

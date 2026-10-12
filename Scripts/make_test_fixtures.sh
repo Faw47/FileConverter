@@ -34,6 +34,11 @@ if have ffmpeg; then
     -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest \
     "${OUT}/small_640x360_h264.mp4"
 
+  # Video with GPS coordinates (QuickTime ©xyz location atom).
+  "${FF[@]}" -f lavfi -i testsrc2=size=640x360:rate=30:duration=1 \
+    -c:v libx264 -pix_fmt yuv420p -metadata location="+37.3349-122.0090/" \
+    "${OUT}/gps_video.mov"
+
   "${FF[@]}" -f lavfi -i testsrc2=size=1280x720:rate=30:duration=2 \
     -f lavfi -i sine=frequency=440:duration=2 \
     -c:v libx265 -tag:v hvc1 -pix_fmt yuv420p10le \

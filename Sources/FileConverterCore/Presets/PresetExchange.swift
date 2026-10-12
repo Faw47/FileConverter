@@ -260,6 +260,12 @@ public enum PresetExchange {
         if !preset.extraBackendOptions.isEmpty {
             conversion["extraBackendOptions"] = preset.extraBackendOptions
         }
+        if let suffix = preset.sameFormatSuffix {
+            conversion["sameFormatSuffix"] = suffix
+        }
+        if let streamCopy = preset.allowsStreamCopy {
+            conversion["allowsStreamCopy"] = streamCopy
+        }
         dict["conversion"] = conversion
 
         // Split section
@@ -302,13 +308,32 @@ public enum PresetExchange {
             if let removeThumbnails = preset.processingOptions?.pdfRemoveThumbnails, removeThumbnails { pdfOptions["removeThumbnails"] = removeThumbnails }
             if let linearize = preset.processingOptions?.pdfLinearize, linearize { pdfOptions["linearize"] = linearize }
             if let compatibility = preset.processingOptions?.pdfCompatibilityLevel { pdfOptions["compatibilityLevel"] = compatibility }
+            if preset.processingOptions?.pdfFlattenToImages == true { pdfOptions["flattenToImages"] = true }
             dict["pdf"] = pdfOptions
         }
 
         // Metadata section
-        dict["metadata"] = [
+        var metadata: [String: Any] = [
             "preserveMetadata": preset.preserveMetadata,
             "preserveCreationDate": preset.preserveCreationDate
+        ]
+        if let modification = preset.preserveModificationDate {
+            metadata["preserveModificationDate"] = modification
+        }
+        if let removeLocation = preset.removeLocationData {
+            metadata["removeLocationData"] = removeLocation
+        }
+        dict["metadata"] = metadata
+
+        // Which settings follow General settings in the importing app.
+        let inheritance = preset.resolvedInheritance
+        dict["inheritance"] = [
+            "outputLocation": inheritance.outputLocation,
+            "filenamePattern": inheritance.filenamePattern,
+            "collisionPolicy": inheritance.collisionPolicy,
+            "creationDate": inheritance.creationDate,
+            "modificationDate": inheritance.modificationDate,
+            "locationData": inheritance.locationData
         ]
 
         // Preserve unrecognized opaque fields from newer schema if present
@@ -624,12 +649,28 @@ public enum PresetExchange {
         let metaDict = dict["metadata"] as? [String: Any] ?? dict
         let preserveMetadata = metaDict["preserveMetadata"] as? Bool ?? true
         let preserveCreationDate = metaDict["preserveCreationDate"] as? Bool ?? true
+        let preserveModificationDate = metaDict["preserveModificationDate"] as? Bool
+        let removeLocationData = metaDict["removeLocationData"] as? Bool
+        var inheritance: PresetInheritance?
+        if let flags = dict["inheritance"] as? [String: Any] {
+            inheritance = PresetInheritance(
+                outputLocation: flags["outputLocation"] as? Bool ?? true,
+                filenamePattern: flags["filenamePattern"] as? Bool ?? true,
+                collisionPolicy: flags["collisionPolicy"] as? Bool ?? true,
+                creationDate: flags["creationDate"] as? Bool ?? true,
+                modificationDate: flags["modificationDate"] as? Bool ?? true,
+                locationData: flags["locationData"] as? Bool ?? true
+            )
+        }
+        let conversionDict = dict["conversion"] as? [String: Any] ?? [:]
+        let sameFormatSuffix = conversionDict["sameFormatSuffix"] as? String
+        let allowsStreamCopy = conversionDict["allowsStreamCopy"] as? Bool
 
         // Capture unrecognized fields into opaqueFields for inert round-tripping
         let recognizedKeys: Set<String> = [
             "id", "builtInKey", "name", "menuTitle", "menuName", "category", "enabled",
             "sources", "sourceFormats", "sortOrder", "output", "conversion", "split",
-            "targetFileSize", "metadata", "pdf", "processingOptions", "opaqueFields"
+            "targetFileSize", "metadata", "pdf", "processingOptions", "opaqueFields", "inheritance"
         ]
         let unrecognized = dict.filter { !recognizedKeys.contains($0.key) }
         var opaqueDict: [String: AnyCodableValue] = [:]
@@ -667,6 +708,7 @@ public enum PresetExchange {
         var pdfRemoveThumbnails = false
         var pdfLinearize = false
         var pdfCompatibilityLevel: String?
+        var pdfFlattenToImages = false
 
         if let pdfDict = dict["pdf"] as? [String: Any] {
             splitPDFIntoPages = pdfDict["splitIntoPages"] as? Bool ?? false
@@ -687,6 +729,7 @@ public enum PresetExchange {
             pdfRemoveThumbnails = pdfDict["removeThumbnails"] as? Bool ?? false
             pdfLinearize = pdfDict["linearize"] as? Bool ?? false
             pdfCompatibilityLevel = pdfDict["compatibilityLevel"] as? String
+            pdfFlattenToImages = pdfDict["flattenToImages"] as? Bool ?? false
         }
 
         let processingOptions = ConversionProcessingOptions(
@@ -709,7 +752,8 @@ public enum PresetExchange {
             pdfRemoveAnnotations: pdfRemoveAnnotations,
             pdfRemoveThumbnails: pdfRemoveThumbnails,
             pdfLinearize: pdfLinearize,
-            pdfCompatibilityLevel: pdfCompatibilityLevel
+            pdfCompatibilityLevel: pdfCompatibilityLevel,
+            pdfFlattenToImages: pdfFlattenToImages
         )
 
         let presetID = (dict["id"] as? String).flatMap(UUID.init) ?? UUID()
@@ -747,7 +791,12 @@ public enum PresetExchange {
             opaqueFields: opaqueFields,
             isEnabled: isEnabled,
             isBuiltIn: builtInKey != nil,
-            sortOrder: sortOrder
+            sortOrder: sortOrder,
+            inheritance: inheritance,
+            preserveModificationDate: preserveModificationDate,
+            removeLocationData: removeLocationData,
+            sameFormatSuffix: sameFormatSuffix,
+            allowsStreamCopy: allowsStreamCopy
         )
     }
 }

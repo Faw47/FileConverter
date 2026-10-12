@@ -29,6 +29,9 @@ public enum BuiltInPresetUpgrades {
         "video.hevc-hardware": [Upgrade(revision: 3) {
             replace(\.hardwareAcceleration, from: .forceAppleHardware, to: .auto, in: &$0)
         }],
+        "image.jpeg-web": [Upgrade(revision: 3) {
+            replace(\.resolution, from: .original, to: .custom(width: 2048, height: 2048), in: &$0)
+        }],
         "video.animated-gif": [Upgrade(revision: 3) {
             replace(\.resolution, from: .custom(width: 640, height: 360), to: .custom(width: 480, height: 480), in: &$0)
         }],

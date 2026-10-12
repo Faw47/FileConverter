@@ -1,5 +1,7 @@
 import Foundation
 import PDFKit
+import Vision
+import ImageIO
 import CoreGraphics
 import CoreText
 import AppKit
@@ -254,19 +256,14 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
             try await convert(job: singleJob, progressHandler: progressHandler)
             var warnings: [String] = []
             if job.preset.isPDFCompressWorkflow {
-                warnings.append("Native PDF compression rasterized pages to images. Install Ghostscript for lossless vector compression.")
+                // These options need Ghostscript; say so if it was not used.
                 let opts = job.preset.processingOptions
-                if opts?.pdfRemoveThumbnails == true {
-                    warnings.append("Thumbnail removal is not supported by native compression and was ignored.")
-                }
-                if opts?.pdfLinearize == true {
-                    warnings.append("Linearization (fast web view) is not supported by native compression and was ignored.")
-                }
-                if let level = opts?.pdfCompatibilityLevel, !level.isEmpty {
-                    warnings.append("PDF compatibility level \(level) is not enforced by native compression and was ignored.")
-                }
-                if opts?.pdfCompressionProfile?.lowercased() == "prepress" {
-                    warnings.append("The Prepress profile uses high-fidelity rasterization, not lossless vector output.")
+                var skipped: [String] = []
+                if opts?.pdfRemoveThumbnails == true { skipped.append("removing page thumbnails") }
+                if opts?.pdfLinearize == true { skipped.append("fast web view") }
+                if let level = opts?.pdfCompatibilityLevel, !level.isEmpty { skipped.append("PDF version \(level)") }
+                if !skipped.isEmpty {
+                    warnings.append("Without Ghostscript these options were skipped: \(skipped.joined(separator: ", ")).")
                 }
             }
             return BackendConversionResult(warnings: warnings)
@@ -282,7 +279,7 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
             }
             try Task.checkCancellation()
             try autoreleasepool {
-                try renderPage(pdfDoc.page(at: index), to: output.temporaryURL, targetFormat: job.preset.destinationFormat)
+                try Self.renderPage(pdfDoc.page(at: index), to: output.temporaryURL, preset: job.preset)
             }
             if checkCancelled(jobID: jobID) {
                 throw ConversionError.cancelled
@@ -345,7 +342,7 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
             }
         } else if FormatDetector.detect(url: job.sourceURL).format?.id == "pdf" {
             // Convert PDF to Image
-            try convertPDFToImage(sourceURL: sourceURL, destURL: destURL, targetFormat: targetFormat, isCancelled: isCancelled, progressHandler: progressHandler)
+            try convertPDFToImage(sourceURL: sourceURL, destURL: destURL, preset: job.preset, isCancelled: isCancelled, progressHandler: progressHandler)
         } else {
             throw ConversionError.incompatibleConversion(sourceFormat: sourceURL.pathExtension, targetFormat: targetFormat)
         }
@@ -439,90 +436,45 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
     private func convertPDFToImage(
         sourceURL: URL,
         destURL: URL,
-        targetFormat: String,
+        preset: ConversionPreset,
         isCancelled: () -> Bool,
         progressHandler: (ConversionProgress) -> Void
     ) throws {
         guard let pdfDoc = PDFDocument(url: sourceURL) else {
             throw ConversionError.malformedSource(path: sourceURL.path, reason: "Could not parse PDF document.")
         }
-
         guard let firstPage = pdfDoc.page(at: 0) else {
             throw ConversionError.malformedSource(path: sourceURL.path, reason: "PDF document contains no pages.")
         }
-
         if isCancelled() { throw ConversionError.cancelled }
-
-        let pageBounds = firstPage.bounds(for: .mediaBox)
-        let scale: CGFloat = 2.0 // High DPI rendering
-        let normalizedRotation = ((firstPage.rotation % 360) + 360) % 360
-        let isRotated = (normalizedRotation == 90 || normalizedRotation == 270)
-        let pixelWidth = max(1, Int((isRotated ? pageBounds.height : pageBounds.width) * scale))
-        let pixelHeight = max(1, Int((isRotated ? pageBounds.width : pageBounds.height) * scale))
-
-        let imageRep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: pixelWidth,
-            pixelsHigh: pixelHeight,
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        )
-
-        guard let rep = imageRep,
-              let context = NSGraphicsContext(bitmapImageRep: rep) else {
-            throw ConversionError.unknown(message: "Failed to create bitmap context.")
-        }
-
-        let previousContext = NSGraphicsContext.current
-        NSGraphicsContext.current = context
-        defer { NSGraphicsContext.current = previousContext }
-        context.cgContext.saveGState()
-        context.cgContext.setFillColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-        context.cgContext.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
-        context.cgContext.scaleBy(x: scale, y: scale)
-        context.cgContext.concatenate(firstPage.transform(for: .mediaBox))
-        firstPage.draw(with: .mediaBox, to: context.cgContext)
-        context.cgContext.restoreGState()
-
-        let storageType: NSBitmapImageRep.FileType
-        switch targetFormat {
-        case "jpg", "jpeg":
-            storageType = .jpeg
-        case "tiff", "tif":
-            storageType = .tiff
-        case "bmp":
-            storageType = .bmp
-        case "gif":
-            storageType = .gif
-        default:
-            storageType = .png
-        }
-
-        guard let data = rep.representation(using: storageType, properties: [:]) else {
-            throw ConversionError.unknown(message: "Failed to encode bitmap image.")
-        }
-
-        if isCancelled() { throw ConversionError.cancelled }
-
-        try data.write(to: destURL, options: .atomic)
-        progressHandler(ConversionProgress(fractionCompleted: 1.0, elapsedTime: 0.5))
+        let start = Date()
+        try Self.renderPage(firstPage, to: destURL, preset: preset)
+        progressHandler(ConversionProgress(fractionCompleted: 1.0, elapsedTime: Date().timeIntervalSince(start)))
     }
 
-    private func renderPage(_ page: PDFPage?, to destURL: URL, targetFormat: String) throws {
+    /// Dots per inch for PDF pages rendered to images.
+    static func renderDPI(for preset: ConversionPreset) -> Int {
+        if let dpi = preset.processingOptions?.pdfDPI, dpi > 0 { return min(dpi, 1_200) }
+        switch preset.destinationFormat.lowercased() {
+        case "jpg", "jpeg": return 200
+        default: return 300
+        }
+    }
+
+    /// Renders the visible page (crop box, upright) on white at the preset's DPI.
+    static func renderPage(_ page: PDFPage?, to destURL: URL, preset: ConversionPreset) throws {
         guard let page else {
             throw ConversionError.malformedSource(path: destURL.path, reason: "PDF page is unreadable.")
         }
-        let bounds = page.bounds(for: .mediaBox)
-        let scale: CGFloat = 2
+        let scale = CGFloat(renderDPI(for: preset)) / 72
+        let bounds = page.bounds(for: .cropBox)
         let normalizedRotation = ((page.rotation % 360) + 360) % 360
         let isRotated = (normalizedRotation == 90 || normalizedRotation == 270)
-        let pixelWidth = max(1, Int((isRotated ? bounds.height : bounds.width) * scale))
-        let pixelHeight = max(1, Int((isRotated ? bounds.width : bounds.height) * scale))
+        let pixelWidth = max(1, Int(((isRotated ? bounds.height : bounds.width) * scale).rounded()))
+        let pixelHeight = max(1, Int(((isRotated ? bounds.width : bounds.height) * scale).rounded()))
+        guard pixelWidth * pixelHeight <= 400_000_000 else {
+            throw ConversionError.imageTooLarge(width: pixelWidth, height: pixelHeight, limitMegapixels: 400)
+        }
         let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: pixelWidth,
@@ -539,8 +491,7 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
               let context = NSGraphicsContext(bitmapImageRep: rep) else {
             throw ConversionError.unknown(message: "Failed to create bitmap context.")
         }
-        let destDir = destURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         let previousContext = NSGraphicsContext.current
         NSGraphicsContext.current = context
@@ -549,19 +500,31 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
         context.cgContext.setFillColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
         context.cgContext.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
         context.cgContext.scaleBy(x: scale, y: scale)
-        context.cgContext.concatenate(page.transform(for: .mediaBox))
-        page.draw(with: .mediaBox, to: context.cgContext)
+        context.cgContext.concatenate(page.transform(for: .cropBox))
+        page.draw(with: .cropBox, to: context.cgContext)
         context.cgContext.restoreGState()
-        let type: NSBitmapImageRep.FileType = {
-            switch targetFormat.lowercased() {
-            case "jpg", "jpeg": return .jpeg
-            case "tiff", "tif": return .tiff
-            case "bmp": return .bmp
-            case "gif": return .gif
-            default: return .png
+
+        let type: NSBitmapImageRep.FileType
+        var properties: [NSBitmapImageRep.PropertyKey: Any] = [:]
+        switch preset.destinationFormat.lowercased() {
+        case "jpg", "jpeg":
+            type = .jpeg
+            let quality: Double
+            switch preset.quality {
+            case .low: quality = 0.5
+            case .medium: quality = 0.75
+            case .high, .custom: quality = 0.9
+            case .veryHigh, .lossless: quality = 0.98
             }
-        }()
-        guard let data = rep.representation(using: type, properties: [:]) else {
+            properties[.compressionFactor] = NSNumber(value: quality)
+        case "tiff", "tif":
+            type = .tiff
+            properties[.compressionMethod] = NSNumber(value: NSBitmapImageRep.TIFFCompression.lzw.rawValue)
+        case "bmp": type = .bmp
+        case "gif": type = .gif
+        default: type = .png
+        }
+        guard let data = rep.representation(using: type, properties: properties) else {
             throw ConversionError.unknown(message: "Failed to encode bitmap image.")
         }
         try data.write(to: destURL, options: .atomic)
@@ -609,135 +572,157 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
         guard count > 0 else {
             throw ConversionError.malformedSource(path: sourceURL.path, reason: "PDF document contains no pages.")
         }
-
         let options = preset.processingOptions
-        let dpi: Int = {
-            if let dpi = options?.pdfDPI { return dpi }
-            if let profile = options?.pdfCompressionProfile {
-                switch profile.lowercased() {
-                case "screen": return 72
-                case "ebook": return 150
-                case "printer", "prepress": return 300
-                default: return 150
-                }
-            }
-            switch preset.quality {
-            case .low: return 72
-            case .medium: return 150
-            case .high, .veryHigh, .lossless: return 300
-            case .custom: return 150
-            }
-        }()
-
-        let quality: Double = {
-            if let q = options?.pdfImageQuality { return q }
-            if let profile = options?.pdfCompressionProfile {
-                switch profile.lowercased() {
-                case "screen": return 0.5
-                case "ebook": return 0.7
-                case "printer": return 0.85
-                case "prepress": return 0.95
-                default: return 0.7
-                }
-            }
-            switch preset.quality {
-            case .low: return 0.5
-            case .medium: return 0.7
-            case .high: return 0.85
-            case .veryHigh, .lossless: return 0.95
-            case .custom: return 0.7
-            }
-        }()
-
-        let isGrayscale = options?.pdfColorMode == "grayscale" || options?.pdfColorMode == "monochrome"
         let stripMetadata = options?.pdfRemoveMetadata ?? false
         let removeAnnotations = options?.pdfRemoveAnnotations ?? false
 
-        let newDoc = PDFDocument()
-        for i in 0..<count {
+        guard options?.pdfFlattenToImages == true else {
+            // Default: recompress embedded images and keep everything else
+            // (text, links, bookmarks, form fields) intact.
+            if removeAnnotations {
+                for index in 0..<count {
+                    guard let page = doc.page(at: index) else { continue }
+                    for annotation in page.annotations where annotation.type != "Widget" {
+                        page.removeAnnotation(annotation)
+                    }
+                }
+            }
+            if stripMetadata {
+                doc.documentAttributes = [:]
+            }
             if isCancelled() { throw ConversionError.cancelled }
-            guard let page = doc.page(at: i) else { continue }
-            autoreleasepool {
-                let originalRotation = page.rotation
-                let originalDisplaysAnnotations = page.displaysAnnotations
-                page.rotation = 0
-                if removeAnnotations {
-                    page.displaysAnnotations = false
+            let profile = options?.pdfCompressionProfile?.lowercased() ?? "ebook"
+            let writeOptions: [PDFDocumentWriteOption: Any] = [
+                .saveImagesAsJPEGOption: true,
+                .optimizeImagesForScreenOption: profile != "prepress" && profile != "printer"
+            ]
+            guard doc.write(to: destURL, withOptions: writeOptions) else {
+                throw ConversionError.destinationUnavailable(path: destURL.path)
+            }
+            progressHandler(ConversionProgress(fractionCompleted: 1, elapsedTime: Date().timeIntervalSince(start)))
+            return
+        }
+
+        // Flatten: every page becomes one JPEG image (smallest file). Text
+        // recognized on this Mac is drawn invisibly under the image so the
+        // PDF stays searchable and selectable.
+        let dpi: Int = {
+            if let dpi = options?.pdfDPI { return dpi }
+            switch options?.pdfCompressionProfile?.lowercased() {
+            case "screen": return 96
+            case "printer", "prepress": return 300
+            default: return 150
+            }
+        }()
+        let quality = options?.pdfImageQuality ?? 0.7
+        let isGrayscale = options?.pdfColorMode == "grayscale" || options?.pdfColorMode == "monochrome"
+
+        var auxiliary: [CFString: Any] = [:]
+        if !stripMetadata, let attributes = doc.documentAttributes {
+            if let title = attributes[PDFDocumentAttribute.titleAttribute] { auxiliary[kCGPDFContextTitle] = title }
+            if let author = attributes[PDFDocumentAttribute.authorAttribute] { auxiliary[kCGPDFContextAuthor] = author }
+            if let subject = attributes[PDFDocumentAttribute.subjectAttribute] { auxiliary[kCGPDFContextSubject] = subject }
+        }
+        guard let consumer = CGDataConsumer(url: destURL as CFURL),
+              let pdf = CGContext(consumer: consumer, mediaBox: nil, auxiliary as CFDictionary) else {
+            throw ConversionError.destinationUnavailable(path: destURL.path)
+        }
+
+        for index in 0..<count {
+            if isCancelled() {
+                pdf.closePDF()
+                throw ConversionError.cancelled
+            }
+            guard let page = doc.page(at: index) else { continue }
+            try autoreleasepool {
+                if removeAnnotations { page.displaysAnnotations = false }
+                let bounds = page.bounds(for: .cropBox)
+                let rotation = ((page.rotation % 360) + 360) % 360
+                let pageSize = (rotation == 90 || rotation == 270)
+                    ? CGSize(width: bounds.height, height: bounds.width)
+                    : bounds.size
+                let scale = CGFloat(dpi) / 72
+                let pixelWidth = max(1, Int((pageSize.width * scale).rounded()))
+                let pixelHeight = max(1, Int((pageSize.height * scale).rounded()))
+                let space = isGrayscale ? CGColorSpaceCreateDeviceGray() : CGColorSpace(name: CGColorSpace.sRGB)!
+                guard let bitmap = CGContext(
+                    data: nil, width: pixelWidth, height: pixelHeight, bitsPerComponent: 8, bytesPerRow: 0,
+                    space: space,
+                    bitmapInfo: isGrayscale ? CGImageAlphaInfo.none.rawValue : CGImageAlphaInfo.noneSkipLast.rawValue
+                ) else {
+                    throw ConversionError.unknown(message: "Could not create a page image.")
                 }
-                defer {
-                    page.rotation = originalRotation
-                    if removeAnnotations {
-                        page.displaysAnnotations = originalDisplaysAnnotations
-                    }
+                bitmap.setFillColor(gray: 1, alpha: 1)
+                bitmap.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+                bitmap.scaleBy(x: scale, y: scale)
+                bitmap.concatenate(page.transform(for: .cropBox))
+                page.draw(with: .cropBox, to: bitmap)
+                guard let rendered = bitmap.makeImage() else {
+                    throw ConversionError.unknown(message: "Could not render page \(index + 1).")
                 }
 
-                let pageBounds = page.bounds(for: .mediaBox)
-                let scale = CGFloat(dpi) / 72.0
-                let pixelWidth = max(1, Int(pageBounds.width * scale))
-                let pixelHeight = max(1, Int(pageBounds.height * scale))
-
-                guard let rep = NSBitmapImageRep(
-                    bitmapDataPlanes: nil,
-                    pixelsWide: pixelWidth,
-                    pixelsHigh: pixelHeight,
-                    bitsPerSample: 8,
-                    samplesPerPixel: isGrayscale ? 1 : 4,
-                    hasAlpha: !isGrayscale,
-                    isPlanar: false,
-                    colorSpaceName: isGrayscale ? .deviceWhite : .deviceRGB,
-                    bytesPerRow: 0,
-                    bitsPerPixel: 0
-                ), let context = NSGraphicsContext(bitmapImageRep: rep) else {
-                    let copied = (page.copy() as? PDFPage) ?? page
-                    newDoc.insert(copied, at: newDoc.pageCount)
-                    return
+                // Store the page as JPEG so the PDF embeds compressed data.
+                let jpegData = NSMutableData()
+                guard let destination = CGImageDestinationCreateWithData(jpegData, "public.jpeg" as CFString, 1, nil) else {
+                    throw ConversionError.unknown(message: "Could not encode page \(index + 1).")
+                }
+                CGImageDestinationAddImage(destination, rendered, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
+                CGImageDestinationFinalize(destination)
+                guard let jpegSource = CGImageSourceCreateWithData(jpegData, nil),
+                      let jpeg = CGImageSourceCreateImageAtIndex(jpegSource, 0, nil) else {
+                    throw ConversionError.unknown(message: "Could not encode page \(index + 1).")
                 }
 
-                let prevContext = NSGraphicsContext.current
-                NSGraphicsContext.current = context
-                do {
-                    defer { NSGraphicsContext.current = prevContext }
-                    let cgContext = context.cgContext
-                    cgContext.saveGState()
-                    if isGrayscale {
-                        cgContext.setFillColor(gray: 1.0, alpha: 1.0)
-                    } else {
-                        cgContext.setFillColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-                    }
-                    cgContext.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
-                    cgContext.scaleBy(x: scale, y: scale)
-                    cgContext.concatenate(page.transform(for: .mediaBox))
-                    page.draw(with: .mediaBox, to: cgContext)
-                    cgContext.restoreGState()
-                }
-
-                if let imgData = rep.representation(using: .jpeg, properties: [.compressionFactor: NSNumber(value: quality)]),
-                   let compressedImage = NSImage(data: imgData),
-                   let compressedPage = PDFPage(image: compressedImage) {
-                    compressedPage.setBounds(pageBounds, for: .mediaBox)
-                    compressedPage.rotation = originalRotation
-                    newDoc.insert(compressedPage, at: newDoc.pageCount)
-                } else {
-                    let copied = (page.copy() as? PDFPage) ?? page
-                    newDoc.insert(copied, at: newDoc.pageCount)
-                }
+                var box = CGRect(origin: .zero, size: pageSize)
+                pdf.beginPage(mediaBox: &box)
+                pdf.draw(jpeg, in: box)
+                Self.drawRecognizedText(in: rendered, onto: pdf, pageSize: pageSize)
+                pdf.endPage()
             }
 
             progressHandler(ConversionProgress(
-                fractionCompleted: Double(i + 1) / Double(count),
+                fractionCompleted: Double(index + 1) / Double(count),
                 elapsedTime: Date().timeIntervalSince(start)
             ))
         }
+        pdf.closePDF()
+    }
 
-        if stripMetadata {
-            newDoc.documentAttributes = [:]
-        } else {
-            newDoc.documentAttributes = doc.documentAttributes
-        }
+    /// Recognizes text in a rendered page and draws it invisibly at the same
+    /// place, the way scanned-document PDFs are made searchable.
+    static func drawRecognizedText(in image: CGImage, onto context: CGContext, pageSize: CGSize) {
+        let request = VNRecognizeTextRequest()
+        // Fast recognition is accurate enough for search on printed pages
+        // and several times quicker than the accurate model.
+        request.recognitionLevel = .fast
+        request.usesLanguageCorrection = false
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        guard (try? handler.perform([request])) != nil, let observations = request.results else { return }
 
-        guard newDoc.write(to: destURL) else {
-            throw ConversionError.destinationUnavailable(path: destURL.path)
+        context.saveGState()
+        context.setTextDrawingMode(.invisible)
+        for observation in observations {
+            guard let text = observation.topCandidates(1).first?.string, !text.isEmpty else { continue }
+            // Vision boxes are normalized with a bottom-left origin, like PDF.
+            let rect = CGRect(
+                x: observation.boundingBox.minX * pageSize.width,
+                y: observation.boundingBox.minY * pageSize.height,
+                width: observation.boundingBox.width * pageSize.width,
+                height: observation.boundingBox.height * pageSize.height
+            )
+            guard rect.width > 1, rect.height > 1 else { continue }
+            let font = CTFontCreateWithName("Helvetica" as CFString, rect.height * 0.85, nil)
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+            let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            guard width > 0 else { continue }
+            context.saveGState()
+            context.translateBy(x: rect.minX, y: rect.minY + rect.height * 0.15)
+            context.scaleBy(x: rect.width / width, y: 1)
+            context.textPosition = .zero
+            CTLineDraw(line, context)
+            context.restoreGState()
         }
+        context.restoreGState()
     }
 
     private static func renderTextToPDF(_ source: TextPDFSource, destURL: URL) throws {
@@ -746,7 +731,8 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
         case .plainText(let text):
             attributedString = NSAttributedString(string: text, attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
-                .foregroundColor: NSColor.textColor
+                // Paper is white regardless of the Mac's appearance.
+                .foregroundColor: NSColor.black
             ])
         case .richText(let data, let sourcePath):
             do {

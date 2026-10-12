@@ -595,6 +595,23 @@ public final class ConversionQueue: ObservableObject {
                 }
             }
 
+            // Compression that does not shrink the file is not worth keeping.
+            if job.preset.isPDFCompressWorkflow, plannedOutputs.count == 1 {
+                let sourceSize = FileAccessManager.shared.fileSize(at: job.sourceURL)
+                let outputSize = FileAccessManager.shared.fileSize(at: plannedOutputs[0].temporaryURL)
+                if sourceSize > 0, outputSize >= sourceSize {
+                    OutputNamingEngine.cleanupTemporaryFile(at: plannedOutputs[0].temporaryURL)
+                    StagingArtifactManifest.shared.unregisterArtifacts(for: jobID)
+                    ConversionJournal.shared.transitionState(jobID: jobID, to: .cancelled)
+                    await finishJob(
+                        id: jobID,
+                        state: .skipped("Already optimized: the compressed file was not smaller"),
+                        batchID: capturedBatchID
+                    )
+                    return
+                }
+            }
+
             // 5. Finalize output without replacing files for non-overwrite policies.
             ConversionJournal.shared.transitionState(jobID: jobID, to: .committing)
             await updateJob(job, state: .finalizing)

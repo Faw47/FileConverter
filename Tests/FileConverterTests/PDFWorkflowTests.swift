@@ -346,9 +346,9 @@ final class PDFWorkflowTests: XCTestCase {
             XCTFail("Could not get bitmap representation")
             return
         }
-        // At 2x scale, 400x200 (rotated from 200x400) should be 800 wide by 400 high
-        XCTAssertEqual(rep.pixelsWide, 800)
-        XCTAssertEqual(rep.pixelsHigh, 400)
+        // Rotated from 200×400 pt to 400×200 pt, rendered at 300 dpi.
+        XCTAssertEqual(rep.pixelsWide, 1667)
+        XCTAssertEqual(rep.pixelsHigh, 833)
 
         // Verify that the rotated drawing contains rendered pixels
         var nonWhiteFound = false

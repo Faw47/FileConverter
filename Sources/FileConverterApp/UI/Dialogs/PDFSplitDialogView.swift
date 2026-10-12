@@ -82,7 +82,11 @@ public struct PDFSplitDialogView: View {
     @State private var rangeString: String = "1"
     @State private var chunkSize: Int = 2
     @State private var mergeOutputs: Bool = false
-    @State private var selectedPages: Set<Int> = []
+    @State private var selectedPages: Set<Int> = [] {
+        didSet { selectedPagesText = Self.rangeText(for: selectedPages) }
+    }
+    @State private var selectedPagesText = ""
+    @State private var lastClickedPage: Int?
     @State private var zeroPadDigits: NumberingPadding = .twoDigits
     @State private var createSubfolder: Bool = false
     @State private var customOutputDirectory: URL? = nil
@@ -670,38 +674,45 @@ public struct PDFSplitDialogView: View {
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                             Spacer()
-                            Button("Select All") { selectedPages = Set(1...totalPages) }
+                            Button("Select All") {
+                                selectedPages = Set(1...totalPages)
+                                selectedPagesText = Self.rangeText(for: selectedPages)
+                            }
                                 .font(.caption)
-                            Button("Clear") { selectedPages.removeAll() }
+                            Button("Clear") {
+                                selectedPages.removeAll()
+                                selectedPagesText = ""
+                            }
                                 .font(.caption)
                         }
 
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: min(10, max(4, totalPages))), spacing: 6) {
-                            ForEach(1...totalPages, id: \.self) { page in
-                                let isSelected = selectedPages.contains(page)
-                                Button(action: {
-                                    if isSelected {
-                                        selectedPages.remove(page)
-                                    } else {
-                                        selectedPages.insert(page)
-                                    }
-                                }) {
-                                    Text("\(page)")
-                                        .font(.system(size: 12, weight: isSelected ? .bold : .regular))
-                                        .frame(maxWidth: .infinity, minHeight: 32)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 6)
-                                                .fill(isSelected ? Color.accentColor : Color(NSColor.windowBackgroundColor))
-                                        )
-                                        .foregroundColor(isSelected ? .white : .primary)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 6)
-                                                .stroke(isSelected ? Color.clear : Color.gray.opacity(0.3), lineWidth: 1)
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                            }
+                        HStack {
+                            Text("Pages")
+                                .foregroundStyle(.secondary)
+                            TextField("e.g. 1-3, 5", text: $selectedPagesText)
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit { applySelectedPagesText() }
+                                .accessibilityLabel("Selected pages")
                         }
+                        Text("Click a page to select it. Shift-click selects a range.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 10)], spacing: 10) {
+                                ForEach(1...totalPages, id: \.self) { page in
+                                    PageThumbnailCell(
+                                        documentURL: firstURL,
+                                        pageNumber: page,
+                                        isSelected: selectedPages.contains(page)
+                                    ) {
+                                        togglePage(page, extendingRange: NSEvent.modifierFlags.contains(.shift))
+                                    }
+                                }
+                            }
+                            .padding(2)
+                        }
+                        .frame(minHeight: 160, maxHeight: 300)
 
                         Toggle("Merge selected pages into a single new PDF document", isOn: $mergeOutputs)
                             .font(.subheadline)
@@ -743,13 +754,15 @@ public struct PDFSplitDialogView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .help(dir.path)
-                        Button("Change...") { chooseOutputDirectory() }
-                        Button("Reset") { customOutputDirectory = nil }
+                        Button("Change…") { chooseOutputDirectory() }
+                        Button("Use Default") { customOutputDirectory = nil }
                     } else {
-                        Text("Same folder as original")
+                        Text(createSubfolder ? "A “{name} - Pages” folder next to the original" : DestinationDescription.folder(for: initialPreset))
                             .foregroundColor(.secondary)
                             .font(.subheadline)
-                        Button("Choose Folder...") { chooseOutputDirectory() }
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Button("Choose Folder…") { chooseOutputDirectory() }
                     }
                 }
             }
@@ -823,6 +836,39 @@ public struct PDFSplitDialogView: View {
         }
     }
 
+    private func togglePage(_ page: Int, extendingRange: Bool) {
+        if extendingRange, let anchor = lastClickedPage {
+            let range = min(anchor, page)...max(anchor, page)
+            selectedPages.formUnion(range)
+        } else if selectedPages.contains(page) {
+            selectedPages.remove(page)
+        } else {
+            selectedPages.insert(page)
+        }
+        lastClickedPage = page
+        selectedPagesText = Self.rangeText(for: selectedPages)
+    }
+
+    private func applySelectedPagesText() {
+        let ranges = PDFPageRangeParser.parseRanges(selectedPagesText, totalPages: totalPages)
+        selectedPages = Set(ranges.flatMap { Array($0) })
+        selectedPagesText = Self.rangeText(for: selectedPages)
+    }
+
+    /// "1, 2, 3, 5" → "1-3, 5".
+    static func rangeText(for pages: Set<Int>) -> String {
+        let sorted = pages.sorted()
+        var parts: [String] = []
+        var index = 0
+        while index < sorted.count {
+            var end = index
+            while end + 1 < sorted.count, sorted[end + 1] == sorted[end] + 1 { end += 1 }
+            parts.append(end > index ? "\(sorted[index])-\(sorted[end])" : "\(sorted[index])")
+            index = end + 1
+        }
+        return parts.joined(separator: ", ")
+    }
+
     private func chooseOutputDirectory() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -889,11 +935,17 @@ public struct PDFSplitDialogView: View {
         }
     }
 
+    /// A folder chosen in this dialog is this run's own choice, so the
+    /// preset stops following the General output location for it.
     private func applyOutputDirectory(to preset: inout ConversionPreset, options: inout ConversionProcessingOptions) {
+        var inheritance = preset.resolvedInheritance
+        defer { preset.inheritance = inheritance }
         if createSubfolder {
             options.pdfOutputSubfolder = "{name} - Pages"
             preset.outputDirectoryPolicy = .sourceSubfolder(subfolderName: "{name} - Pages")
+            inheritance.outputLocation = false
         } else if let customOutputDirectory {
+            inheritance.outputLocation = false
             if let bookmark = try? customOutputDirectory.bookmarkData(
                 options: [.withSecurityScope],
                 includingResourceValuesForKeys: nil,
@@ -907,10 +959,63 @@ public struct PDFSplitDialogView: View {
             ) {
                 preset.outputDirectoryPolicy = .customFolder(bookmarkData: fallbackBookmark, displayPath: customOutputDirectory.path)
             }
-        } else if case .customFolder = initialPreset.outputDirectoryPolicy {
-            // Keep unchanged
-        } else {
-            preset.outputDirectoryPolicy = initialPreset.outputDirectoryPolicy
         }
+    }
+}
+
+/// One page of the "select pages" grid, rendered as a small thumbnail.
+private struct PageThumbnailCell: View {
+    let documentURL: URL?
+    let pageNumber: Int
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var thumbnail: NSImage?
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(nsColor: .textBackgroundColor))
+                    if let thumbnail {
+                        Image(nsImage: thumbnail)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .padding(2)
+                    }
+                }
+                .frame(width: 72, height: 96)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: isSelected ? 3 : 1)
+                )
+                Text("\(pageNumber)")
+                    .font(.caption.weight(isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Page \(pageNumber)")
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .task(id: documentURL) {
+            guard thumbnail == nil, let documentURL,
+                  let page = ThumbnailDocumentCache.document(for: documentURL)?.page(at: pageNumber - 1) else { return }
+            thumbnail = page.thumbnail(of: CGSize(width: 144, height: 192), for: .cropBox)
+        }
+    }
+}
+
+/// Opens each PDF once for all of its page thumbnails.
+@MainActor
+private enum ThumbnailDocumentCache {
+    private static var documents: [URL: PDFDocument] = [:]
+
+    static func document(for url: URL) -> PDFDocument? {
+        if let cached = documents[url] { return cached }
+        guard let document = PDFDocument(url: url) else { return nil }
+        if documents.count > 8 { documents.removeAll() }
+        documents[url] = document
+        return document
     }
 }

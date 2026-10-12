@@ -20,26 +20,16 @@ final class AccessibilityAuditTests: XCTestCase {
     func testPDFCompressDialogHasComprehensiveAccessibility() {
         let content = sourceFileContents(relativePath: "Sources/FileConverterApp/UI/Dialogs/PDFCompressDialogView.swift")
         XCTAssertFalse(content.isEmpty)
-
-        // Profiles
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"\\(profile.rawValue) profile\")"))
-        XCTAssertTrue(content.contains(".accessibilityHint(profile.subtitle)"))
-
-        // Custom options
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Color Mode\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Target Resolution in DPI\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"JPEG Image Quality\")"))
-
-        // Document cleanup toggles
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Remove metadata\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Remove annotations\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Remove embedded page thumbnails\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Linearize for fast web view\")"))
-
-        // Output destination & actions
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Filename suffix\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Cancel compression\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Start PDF compression\")"))
+        for label in [
+            "Compression level", "Turn pages into images", "Convert to grayscale",
+            "Image resolution in dots per inch", "JPEG image quality", "Remove document details",
+            "Remove comments and highlights", "Optimize for fast web viewing", "Filename ending",
+            "Change output folder", "Cancel compression", "Start PDF compression"
+        ] {
+            XCTAssertTrue(content.contains(".accessibilityLabel(\"\(label)\")"), label)
+        }
+        XCTAssertFalse(content.contains("lossless vector"), "native compression is not lossless")
+        XCTAssertTrue(content.contains("inheritance.filenamePattern = false"), "dialog values must not be overridden by General")
     }
 
     func testPDFSplitDialogHasComprehensiveAccessibility() {

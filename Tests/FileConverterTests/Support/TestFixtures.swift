@@ -52,52 +52,78 @@ enum TestFixtures {
         }
     }
 
-    /// Three-page PDF whose crop box is smaller than its media box, with one
-    /// link annotation and one outline entry.
-    static func makeTextLinksOutlinePDF(in directory: URL) throws -> URL {
-        let url = directory.appendingPathComponent("text_links_outline.pdf")
-        let document = PDFDocument()
+    /// Three-page PDF with real page text, a large noisy image (so image
+    /// recompression has something to shrink), a crop box smaller than the
+    /// media box, one link annotation, and one outline entry.
+    static func makeTextLinksOutlinePDF(in directory: URL, includeImage: Bool = true) throws -> URL {
+        let drawnURL = directory.appendingPathComponent("drawn-\(UUID().uuidString).pdf")
+        var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
+        guard let consumer = CGDataConsumer(url: drawnURL as CFURL),
+              let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+            throw XCTSkip("Could not create a PDF context.")
+        }
+        let noise = includeImage ? makeNoiseImage(width: 1200, height: 900) : nil
         for index in 0..<3 {
-            let image = NSImage(size: NSSize(width: 612, height: 792), flipped: false) { rect in
-                NSColor.white.setFill()
-                rect.fill()
-                return true
-            }
-            guard let page = PDFPage(image: image) else {
-                throw XCTSkip("PDFKit could not create a page.")
-            }
-            page.setBounds(CGRect(x: 0, y: 0, width: 612, height: 792), for: .mediaBox)
-            page.setBounds(CGRect(x: 36, y: 36, width: 540, height: 720), for: .cropBox)
-            let text = PDFAnnotation(
-                bounds: CGRect(x: 72, y: 600, width: 400, height: 40),
-                forType: .freeText,
-                withProperties: nil
+            let cropBox = CGRect(x: 36, y: 36, width: 540, height: 720)
+            let boxData = NSData(bytes: [cropBox], length: MemoryLayout<CGRect>.size)
+            context.beginPDFPage([kCGPDFContextCropBox as String: boxData] as CFDictionary)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+            let text = NSAttributedString(
+                string: "Page \(index + 1) searchable text",
+                attributes: [.font: NSFont.systemFont(ofSize: 24), .foregroundColor: NSColor.black]
             )
-            text.contents = "Page \(index + 1) searchable text"
-            text.font = NSFont.systemFont(ofSize: 18)
-            page.addAnnotation(text)
-            if index == 0 {
-                let link = PDFAnnotation(
-                    bounds: CGRect(x: 72, y: 500, width: 200, height: 20),
-                    forType: .link,
-                    withProperties: nil
-                )
-                link.url = URL(string: "https://example.com")
-                page.addAnnotation(link)
+            text.draw(at: CGPoint(x: 72, y: 680))
+            NSGraphicsContext.restoreGraphicsState()
+            if let noise {
+                context.draw(noise, in: CGRect(x: 72, y: 120, width: 468, height: 351))
             }
-            document.insert(page, at: document.pageCount)
+            context.endPDFPage()
         }
-        let outline = PDFOutline()
-        let entry = PDFOutline()
-        entry.label = "Chapter 1"
-        if let first = document.page(at: 0) {
-            entry.destination = PDFDestination(page: first, at: CGPoint(x: 0, y: 792))
+        context.closePDF()
+
+        // A real bookmark, written the way PDF tools write them (PDFKit does
+        // not save outlines created in a command-line process).
+        let bookmarkedURL = directory.appendingPathComponent("bookmarked-\(UUID().uuidString).pdf")
+        try requireTool("/opt/homebrew/bin/gs")
+        let gs = Process()
+        gs.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/gs")
+        gs.arguments = ["-q", "-o", bookmarkedURL.path, "-sDEVICE=pdfwrite", drawnURL.path,
+                        "-c", "[/Title (Chapter 1) /Page 1 /OUT pdfmark"]
+        try gs.run()
+        gs.waitUntilExit()
+        try? FileManager.default.removeItem(at: drawnURL)
+
+        guard let document = PDFDocument(url: bookmarkedURL), let first = document.page(at: 0) else {
+            throw XCTSkip("PDFKit could not read the drawn fixture.")
         }
-        outline.insertChild(entry, at: 0)
-        document.outlineRoot = outline
-        guard document.write(to: url) else {
-            throw XCTSkip("PDFKit could not write the fixture PDF.")
-        }
+        let link = PDFAnnotation(bounds: CGRect(x: 72, y: 600, width: 200, height: 20), forType: .link, withProperties: nil)
+        link.url = URL(string: "https://example.com")
+        first.addAnnotation(link)
+
+        let url = directory.appendingPathComponent(includeImage ? "text_links_outline.pdf" : "text_only.pdf")
+        guard document.write(to: url) else { throw XCTSkip("PDFKit could not write the fixture PDF.") }
+        try? FileManager.default.removeItem(at: bookmarkedURL)
         return url
+    }
+
+    private static func makeNoiseImage(width: Int, height: Int) -> CGImage? {
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        var seed: UInt32 = 12345
+        for i in stride(from: 0, to: bytes.count, by: 4) {
+            seed = seed &* 1_664_525 &+ 1_013_904_223
+            bytes[i] = UInt8(truncatingIfNeeded: seed >> 24)
+            bytes[i + 1] = UInt8(truncatingIfNeeded: seed >> 16)
+            bytes[i + 2] = UInt8(truncatingIfNeeded: seed >> 8)
+            bytes[i + 3] = 255
+        }
+        let data = Data(bytes) as CFData
+        guard let provider = CGDataProvider(data: data) else { return nil }
+        return CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        )
     }
 }
