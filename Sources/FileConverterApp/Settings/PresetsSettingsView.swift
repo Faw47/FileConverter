@@ -433,10 +433,10 @@ public struct PresetsSettingsView: View {
     private func addPreset(_ template: ConversionPreset) {
         var preset = template
         preset.id = UUID()
-        preset.outputDirectoryPolicy = settings.defaultOutputPolicy
-        preset.filenamePattern = settings.defaultFilenamePattern
-        preset.overwritePolicy = settings.defaultOverwritePolicy
-        preset.preserveCreationDate = settings.preserveTimestamps
+        // New presets follow General settings until the user overrides a
+        // value in the editor; nothing is copied, so later General changes
+        // still apply.
+        preset.inheritance = .inheritAll
 
         do {
             try PresetStore.shared.addPreset(preset)

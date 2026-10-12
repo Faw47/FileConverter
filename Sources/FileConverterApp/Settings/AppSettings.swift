@@ -7,17 +7,22 @@ import UserNotifications
 public final class AppSettings: ObservableObject {
     public static let shared = AppSettings()
 
+    /// Conversion keys are shared with Core (`ConversionDefaults.Keys`), which
+    /// reads them; this type is the only writer.
     public enum Keys {
-        public static let defaultOutputPolicy = "outputDirectoryPolicy"
-        public static let defaultOverwritePolicy = "overwritePolicy"
-        public static let preserveTimestamps = "preserveTimestamps"
-        public static let enableNotifications = "enableNotifications"
+        public static let defaultOutputPolicy = ConversionDefaults.Keys.outputDirectoryPolicy
+        public static let defaultOverwritePolicy = ConversionDefaults.Keys.overwritePolicy
+        public static let preserveCreationDate = ConversionDefaults.Keys.preserveCreationDate
+        public static let preserveModificationDate = ConversionDefaults.Keys.preserveModificationDate
+        public static let legacyPreserveTimestamps = ConversionDefaults.Keys.legacyPreserveTimestamps
+        public static let removeLocationData = ConversionDefaults.Keys.removeLocationData
+        public static let enableNotifications = ConversionDefaults.Keys.enableNotifications
         public static let revealInFinder = "revealInFinderOnComplete"
-        public static let maxConcurrentJobs = "maxConcurrentJobs"
-        public static let defaultFilenamePattern = "fc.defaultFilenamePattern"
+        public static let maxConcurrentJobs = ConversionDefaults.Keys.maxConcurrentJobs
+        public static let defaultFilenamePattern = ConversionDefaults.Keys.filenamePattern
         public static let selectedSettingsTab = "fc.selectedSettingsTab"
-        public static let customOutputFolderBookmark = "fc.customOutputFolderBookmark"
-        public static let customOutputFolderPath = "fc.customOutputFolderPath"
+        public static let customOutputFolderBookmark = ConversionDefaults.Keys.customOutputFolderBookmark
+        public static let customOutputFolderPath = ConversionDefaults.Keys.customOutputFolderPath
     }
 
     public enum NotificationAuthorizationState: Equatable {
@@ -64,8 +69,16 @@ public final class AppSettings: ObservableObject {
         }
     }
 
-    @Published public var preserveTimestamps: Bool {
-        didSet { defaults.set(preserveTimestamps, forKey: Keys.preserveTimestamps) }
+    @Published public var preserveCreationDate: Bool {
+        didSet { defaults.set(preserveCreationDate, forKey: Keys.preserveCreationDate) }
+    }
+
+    @Published public var preserveModificationDate: Bool {
+        didSet { defaults.set(preserveModificationDate, forKey: Keys.preserveModificationDate) }
+    }
+
+    @Published public var removeLocationData: Bool {
+        didSet { defaults.set(removeLocationData, forKey: Keys.removeLocationData) }
     }
 
     @Published public var enableNotifications: Bool {
@@ -94,15 +107,36 @@ public final class AppSettings: ObservableObject {
         }
     }
 
+    /// Saved as given. Editing UI commits through `commitFilenamePattern`,
+    /// which trims and validates once editing ends, never per keystroke.
     @Published public var defaultFilenamePattern: String {
         didSet {
-            let normalized = Self.normalizeFilenamePattern(defaultFilenamePattern)
-            if normalized != defaultFilenamePattern {
-                defaultFilenamePattern = normalized
-                return
-            }
             defaults.set(defaultFilenamePattern, forKey: Keys.defaultFilenamePattern)
         }
+    }
+
+    /// Characters that cannot appear in a filename pattern.
+    public static let invalidPatternCharacters = CharacterSet(charactersIn: "/:\\?%*|\"<>")
+
+    /// Problem with a pattern, or nil when it is usable.
+    public static func filenamePatternProblem(_ pattern: String) -> String? {
+        let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        if trimmed.rangeOfCharacter(from: invalidPatternCharacters) != nil {
+            return "Remove these characters: / : \\ ? % * | \" < >"
+        }
+        if !trimmed.contains("{name}") {
+            return "Include {name} so converted files keep their original names."
+        }
+        return nil
+    }
+
+    /// Saves a pattern the user finished editing. Empty means "{name}".
+    @discardableResult
+    public func commitFilenamePattern(_ draft: String) -> Bool {
+        guard Self.filenamePatternProblem(draft) == nil else { return false }
+        defaultFilenamePattern = Self.normalizeFilenamePattern(draft)
+        return true
     }
 
     private let defaults: UserDefaults
@@ -135,8 +169,8 @@ public final class AppSettings: ObservableObject {
         defaults.register(defaults: [
             Keys.defaultOutputPolicy: "sameAsSource",
             Keys.defaultOverwritePolicy: OverwritePolicy.appendNumber.rawValue,
-            Keys.preserveTimestamps: true,
-            Keys.enableNotifications: false,
+            Keys.removeLocationData: true,
+            Keys.enableNotifications: true,
             Keys.revealInFinder: false,
             Keys.maxConcurrentJobs: Self.systemDefaultConcurrency,
             Keys.defaultFilenamePattern: "{name}",
@@ -153,7 +187,10 @@ public final class AppSettings: ObservableObject {
         customOutputFolderBookmark = defaults.data(forKey: Keys.customOutputFolderBookmark)
         customOutputFolderError = nil
 
-        preserveTimestamps = defaults.bool(forKey: Keys.preserveTimestamps)
+        let conversionDefaults = ConversionDefaults.load(from: defaults)
+        preserveCreationDate = conversionDefaults.preserveCreationDate
+        preserveModificationDate = conversionDefaults.preserveModificationDate
+        removeLocationData = conversionDefaults.removeLocationData
         enableNotifications = defaults.bool(forKey: Keys.enableNotifications)
         revealInFinder = defaults.bool(forKey: Keys.revealInFinder)
 
@@ -202,8 +239,10 @@ public final class AppSettings: ObservableObject {
         customOutputFolderPath = ""
         customOutputFolderBookmark = nil
         customOutputFolderError = nil
-        preserveTimestamps = true
-        enableNotifications = false
+        preserveCreationDate = true
+        preserveModificationDate = false
+        removeLocationData = true
+        enableNotifications = true
         revealInFinder = false
         defaultFilenamePattern = "{name}"
         maxConcurrentJobs = Self.systemDefaultConcurrency

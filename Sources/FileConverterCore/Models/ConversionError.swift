@@ -21,6 +21,11 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
     case backendContractViolation(message: String)
     case executionDeadlineExceeded(tool: String, duration: TimeInterval)
     case destinationChangingTooQuickly(path: String)
+    /// Another job in the queue is writing the same output file.
+    case destinationReserved(path: String)
+    /// A Finder request was refused before any job started.
+    case admissionRejected(reason: String)
+    case imageTooLarge(width: Int, height: Int, limitMegapixels: Int)
     case unknown(message: String)
 
     public var errorDescription: String? {
@@ -74,7 +79,7 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
 
         case .outputCollision(let path):
             let filename = URL(fileURLWithPath: path).lastPathComponent
-            return "Output file '\(filename)' already exists and overwrite policy is skip or prompt."
+            return "'\(filename)' already exists."
 
         case .sandboxAccessFailure(let path):
             let filename = URL(fileURLWithPath: path).lastPathComponent
@@ -96,6 +101,17 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
         case .destinationChangingTooQuickly(let path):
             let filename = URL(fileURLWithPath: path).lastPathComponent
             return "Destination '\(filename)' is changing too quickly to safely complete conversion."
+
+        case .destinationReserved(let path):
+            let filename = URL(fileURLWithPath: path).lastPathComponent
+            return "Another conversion in the queue is already creating '\(filename)'."
+
+        case .admissionRejected(let reason):
+            return reason
+
+        case .imageTooLarge(let width, let height, let limit):
+            let megapixels = (width * height) / 1_000_000
+            return "This image is \(width)×\(height) (\(megapixels) MP), too large to convert at full size (limit \(limit) MP). Choose a preset with a size limit."
 
         case .unknown(let message):
             return message

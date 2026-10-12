@@ -121,14 +121,20 @@ public final class FileAccessManager: @unchecked Sendable {
         return false
     }
 
-    public func preserveTimestamps(from sourceURL: URL, to destinationURL: URL) throws {
+    public func preserveTimestamps(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        creation: Bool = true,
+        modification: Bool = true
+    ) throws {
+        guard creation || modification else { return }
         let sourceAttributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
 
         var destAttributes: [FileAttributeKey: Any] = [:]
-        if let modDate = sourceAttributes[.modificationDate] {
+        if modification, let modDate = sourceAttributes[.modificationDate] {
             destAttributes[.modificationDate] = modDate
         }
-        if let creationDate = sourceAttributes[.creationDate] {
+        if creation, let creationDate = sourceAttributes[.creationDate] {
             destAttributes[.creationDate] = creationDate
         }
 

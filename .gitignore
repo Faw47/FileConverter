@@ -14,3 +14,6 @@ xcuserdata/
 *.xcscmblueprint
 .swiftpm/xcode/package.xcworkspace/xcuserdata/
 :-
+
+# Generated test media (Scripts/make_test_fixtures.sh)
+Tests/Fixtures/Generated/

@@ -85,4 +85,28 @@ public struct FormatDefinition: Identifiable, Hashable, Codable, Sendable {
         }
         return false
     }
+
+    public func withNativeEncoderAvailable(_ available: Bool) -> FormatDefinition {
+        FormatDefinition(
+            id: id,
+            name: name,
+            primaryExtension: primaryExtension,
+            extensions: extensions,
+            utTypeIdentifiers: utTypeIdentifiers,
+            category: category,
+            supportedInput: supportedInput,
+            supportedOutput: supportedOutput,
+            nativeDecoderAvailable: nativeDecoderAvailable,
+            nativeEncoderAvailable: available,
+            ffmpegDecoderAvailable: ffmpegDecoderAvailable,
+            ffmpegEncoderAvailable: ffmpegEncoderAvailable,
+            imageMagickSupported: imageMagickSupported,
+            ghostscriptSupported: ghostscriptSupported,
+            libreOfficeSupported: libreOfficeSupported,
+            supportsAlpha: supportsAlpha,
+            supportsAnimation: supportsAnimation,
+            supportsHDR: supportsHDR,
+            mimeType: mimeType
+        )
+    }
 }

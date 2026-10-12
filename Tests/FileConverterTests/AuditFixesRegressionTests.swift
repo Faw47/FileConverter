@@ -162,6 +162,8 @@ final class AuditFixesRegressionTests: XCTestCase {
     func testPreventDoubleExtension() {
         let sourceURL = URL(fileURLWithPath: "/tmp/MyVideo.mp4")
         var preset = BuiltInPresets.makeDefaultPresets().first { $0.destinationFormat == "mp4" }!
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.filenamePattern = "{name}_{ext}"
 
         let outputFilename = OutputNamingEngine.generateFormattedFilename(

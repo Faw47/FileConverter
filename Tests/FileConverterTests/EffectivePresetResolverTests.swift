@@ -3,10 +3,11 @@ import XCTest
 
 final class EffectivePresetResolverTests: XCTestCase {
 
-    private func makeBasePreset(
+    private func makeCustomPreset(
         outputPolicy: OutputDirectoryPolicy = .sameAsSource,
-        overwritePolicy: OverwritePolicy = .ask,
-        filenamePattern: String = "{name}"
+        overwritePolicy: OverwritePolicy = .appendNumber,
+        filenamePattern: String = "{name}",
+        inheritance: PresetInheritance
     ) -> ConversionPreset {
         ConversionPreset(
             id: UUID(),
@@ -20,94 +21,132 @@ final class EffectivePresetResolverTests: XCTestCase {
             outputDirectoryPolicy: outputPolicy,
             filenamePattern: filenamePattern,
             overwritePolicy: overwritePolicy,
-            isBuiltIn: false
+            isBuiltIn: false,
+            inheritance: inheritance
         )
     }
 
-    func testResolveOutputDirectoryInheritance() {
-        // Case 1: Preset specifies sameAsSource; global specifies downloads -> inherits global
-        let preset1 = makeBasePreset(outputPolicy: .sameAsSource)
-        let resolved1 = EffectivePresetResolver.resolve(
-            preset: preset1,
-            globalOutputPolicy: .downloads
-        )
-        XCTAssertEqual(resolved1.outputDirectoryPolicy.value, .downloads)
-        XCTAssertEqual(resolved1.outputDirectoryPolicy.provenance, .globalDefault)
+    private let globals = ConversionDefaults(
+        outputDirectoryPolicy: .downloads,
+        overwritePolicy: .ask,
+        filenamePattern: "{name}_converted",
+        preserveCreationDate: true,
+        preserveModificationDate: false,
+        removeLocationData: true
+    )
 
-        // Case 2: Preset overrides output directory (e.g. sourceSubfolder) -> preset overrides global
-        let subfolderPolicy = OutputDirectoryPolicy.sourceSubfolder(subfolderName: "Converted")
-        let preset2 = makeBasePreset(outputPolicy: subfolderPolicy)
-        let resolved2 = EffectivePresetResolver.resolve(
-            preset: preset2,
-            globalOutputPolicy: .downloads
+    func testInheritedValuesComeFromGeneralSettings() {
+        let preset = makeCustomPreset(
+            outputPolicy: .sourceSubfolder(subfolderName: "Out"),
+            overwritePolicy: .overwrite,
+            filenamePattern: "{name}_mine",
+            inheritance: .inheritAll
         )
-        XCTAssertEqual(resolved2.outputDirectoryPolicy.value, subfolderPolicy)
-        XCTAssertEqual(resolved2.outputDirectoryPolicy.provenance, .presetOverride)
+        let resolved = EffectivePresetResolver.resolve(preset: preset, defaults: globals)
+        XCTAssertEqual(resolved.outputDirectoryPolicy.value, .downloads)
+        XCTAssertEqual(resolved.outputDirectoryPolicy.provenance, .globalDefault)
+        XCTAssertEqual(resolved.overwritePolicy.value, .ask)
+        XCTAssertEqual(resolved.filenamePattern.value, "{name}_converted")
+        XCTAssertTrue(resolved.preserveCreationDate.value)
+        XCTAssertFalse(resolved.preserveModificationDate.value)
+        XCTAssertTrue(resolved.removeLocationData.value)
     }
 
-    func testResolveOverwritePolicyInheritance() {
-        // Case 1: Explicit collision override takes top precedence
-        let preset = makeBasePreset(overwritePolicy: .appendNumber)
-        let resolvedOverride = EffectivePresetResolver.resolve(
-            preset: preset,
-            collisionOverride: .overwrite,
-            globalOverwritePolicy: .ask
+    func testPresetValuesWinWhenNotInherited() {
+        var preset = makeCustomPreset(
+            outputPolicy: .sameAsSource,
+            overwritePolicy: .appendNumber,
+            filenamePattern: "{name}",
+            inheritance: .inheritNone
         )
-        XCTAssertEqual(resolvedOverride.overwritePolicy.value, .overwrite)
-        XCTAssertEqual(resolvedOverride.overwritePolicy.provenance, .explicitContext)
-
-        // Case 2: Preset has .ask, global has .appendNumber -> inherits global
-        let presetAsk = makeBasePreset(overwritePolicy: .ask)
-        let resolvedGlobal = EffectivePresetResolver.resolve(
-            preset: presetAsk,
-            collisionOverride: nil,
-            globalOverwritePolicy: .appendNumber
-        )
-        XCTAssertEqual(resolvedGlobal.overwritePolicy.value, .appendNumber)
-        XCTAssertEqual(resolvedGlobal.overwritePolicy.provenance, .globalDefault)
-
-        // Case 3: Preset specifies .overwrite explicitly -> preset overrides
-        let presetExplicit = makeBasePreset(overwritePolicy: .overwrite)
-        let resolvedPreset = EffectivePresetResolver.resolve(
-            preset: presetExplicit,
-            collisionOverride: nil,
-            globalOverwritePolicy: .appendNumber
-        )
-        XCTAssertEqual(resolvedPreset.overwritePolicy.value, .overwrite)
-        XCTAssertEqual(resolvedPreset.overwritePolicy.provenance, .presetOverride)
+        preset.preserveCreationDate = false
+        preset.preserveModificationDate = true
+        preset.removeLocationData = false
+        let resolved = EffectivePresetResolver.resolve(preset: preset, defaults: globals)
+        // "Same folder as source" is an explicit choice now, not a sentinel.
+        XCTAssertEqual(resolved.outputDirectoryPolicy.value, .sameAsSource)
+        XCTAssertEqual(resolved.outputDirectoryPolicy.provenance, .presetOverride)
+        XCTAssertEqual(resolved.overwritePolicy.value, .appendNumber)
+        XCTAssertEqual(resolved.filenamePattern.value, "{name}")
+        XCTAssertFalse(resolved.preserveCreationDate.value)
+        XCTAssertTrue(resolved.preserveModificationDate.value)
+        XCTAssertFalse(resolved.removeLocationData.value)
     }
 
-    func testResolveFilenamePatternInheritance() {
-        // Case 1: Preset has default "{name}"; global has custom pattern -> inherits global
-        let presetDefault = makeBasePreset(filenamePattern: "{name}")
-        let resolvedGlobal = EffectivePresetResolver.resolve(
-            preset: presetDefault,
-            globalFilenamePattern: "{name}_converted"
-        )
-        XCTAssertEqual(resolvedGlobal.filenamePattern.value, "{name}_converted")
-        XCTAssertEqual(resolvedGlobal.filenamePattern.provenance, .globalDefault)
-
-        // Case 2: Preset has custom pattern -> preset overrides global
-        let presetCustom = makeBasePreset(filenamePattern: "{name}_custom_{date}")
-        let resolvedPreset = EffectivePresetResolver.resolve(
-            preset: presetCustom,
-            globalFilenamePattern: "{name}_converted"
-        )
-        XCTAssertEqual(resolvedPreset.filenamePattern.value, "{name}_custom_{date}")
-        XCTAssertEqual(resolvedPreset.filenamePattern.provenance, .presetOverride)
-    }
-
-    func testResolveOverwritePolicyInheritanceForBuiltInPreset() {
-        var builtIn = BuiltInPresets.makeDefaultPresets().first!
-        builtIn.overwritePolicy = .appendNumber
-        XCTAssertTrue(builtIn.isBuiltIn)
-
-        let resolved = EffectivePresetResolver.resolve(
-            preset: builtIn,
-            collisionOverride: nil,
-            globalOverwritePolicy: .overwrite
-        )
+    func testCollisionOverrideBeatsEverything() {
+        let preset = makeCustomPreset(overwritePolicy: .skip, inheritance: .inheritAll)
+        let resolved = EffectivePresetResolver.resolve(preset: preset, defaults: globals, collisionOverride: .overwrite)
         XCTAssertEqual(resolved.overwritePolicy.value, .overwrite)
-        XCTAssertEqual(resolved.overwritePolicy.provenance, .globalDefault)
+        XCTAssertEqual(resolved.overwritePolicy.provenance, .explicitContext)
+    }
+
+    func testEachFlagIsIndependent() {
+        var inheritance = PresetInheritance.inheritNone
+        inheritance.collisionPolicy = true
+        let preset = makeCustomPreset(
+            outputPolicy: .sameAsSource,
+            overwritePolicy: .overwrite,
+            inheritance: inheritance
+        )
+        let resolved = EffectivePresetResolver.resolve(preset: preset, defaults: globals)
+        XCTAssertEqual(resolved.outputDirectoryPolicy.value, .sameAsSource)
+        XCTAssertEqual(resolved.overwritePolicy.value, .ask)
+    }
+
+    func testBuiltInsFollowGeneralSettingsIncludingDates() throws {
+        let builtIn = try XCTUnwrap(BuiltInPresets.makeDefaultPresets().first)
+        XCTAssertEqual(builtIn.inheritance, .inheritAll)
+        var noDates = globals
+        noDates.preserveCreationDate = false
+        let resolved = EffectivePresetResolver.resolve(preset: builtIn, defaults: noDates)
+        XCTAssertFalse(resolved.preserveCreationDate.value, "the General date toggle must reach built-in presets")
+        XCTAssertEqual(resolved.overwritePolicy.value, .ask)
+    }
+
+    func testLegacyRulesReproduceOldBehavior() {
+        var custom = makeCustomPreset(
+            outputPolicy: .sameAsSource,
+            overwritePolicy: .ask,
+            filenamePattern: "{name}_x",
+            inheritance: .inheritAll
+        )
+        custom.inheritance = nil
+        let legacy = custom.resolvedInheritance
+        XCTAssertTrue(legacy.outputLocation)
+        XCTAssertFalse(legacy.filenamePattern)
+        XCTAssertTrue(legacy.collisionPolicy)
+        XCTAssertFalse(legacy.creationDate)
+
+        var editedBuiltIn = BuiltInPresets.makeDefaultPresets()[0]
+        editedBuiltIn.inheritance = nil
+        editedBuiltIn.outputDirectoryPolicy = .sourceSubfolder(subfolderName: "Mine")
+        XCTAssertFalse(editedBuiltIn.resolvedInheritance.outputLocation, "an edited built-in keeps its own folder")
+        XCTAssertTrue(editedBuiltIn.resolvedInheritance.collisionPolicy)
+    }
+
+    func testAppliedPresetCannotReinherit() {
+        let preset = makeCustomPreset(inheritance: .inheritAll)
+        let resolved = EffectivePresetResolver.resolve(preset: preset, defaults: globals)
+        let applied = resolved.applied(to: preset)
+        XCTAssertEqual(applied.inheritance, .inheritNone)
+        let again = EffectivePresetResolver.resolve(preset: applied, defaults: ConversionDefaults())
+        XCTAssertEqual(again.outputDirectoryPolicy.value, .downloads)
+        XCTAssertEqual(again.overwritePolicy.value, .ask)
+        XCTAssertEqual(again.filenamePattern.value, "{name}_converted")
+    }
+
+    func testDefaultsMigrateLegacyTimestampToggle() throws {
+        let suite = "ResolverTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertTrue(ConversionDefaults.load(from: defaults).preserveCreationDate)
+        XCTAssertFalse(ConversionDefaults.load(from: defaults).preserveModificationDate)
+        XCTAssertTrue(ConversionDefaults.load(from: defaults).removeLocationData)
+
+        defaults.set(false, forKey: ConversionDefaults.Keys.legacyPreserveTimestamps)
+        XCTAssertFalse(ConversionDefaults.load(from: defaults).preserveCreationDate)
+        defaults.set(true, forKey: ConversionDefaults.Keys.preserveCreationDate)
+        XCTAssertTrue(ConversionDefaults.load(from: defaults).preserveCreationDate)
     }
 }

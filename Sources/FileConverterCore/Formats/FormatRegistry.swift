@@ -471,7 +471,7 @@ public final class FormatRegistry: @unchecked Sendable {
                 supportedInput: true,
                 supportedOutput: true,
                 nativeDecoderAvailable: true,
-                nativeEncoderAvailable: true,
+                nativeEncoderAvailable: false, // macOS ImageIO reads WebP but cannot write it
                 imageMagickSupported: true,
                 supportsAlpha: true,
                 supportsAnimation: true,
@@ -846,10 +846,20 @@ public final class FormatRegistry: @unchecked Sendable {
     private func register(_ list: [FormatDefinition]) {
         for item in list {
             do {
-                try registerFormat(item)
+                try registerFormat(Self.applyingRuntimeImageCodecs(to: item))
             } catch {
                 preconditionFailure("Invalid built-in format registration for \(item.id): \(error)")
             }
         }
+    }
+
+    /// Built-in image formats declare what macOS can usually do; ImageIO's
+    /// own type lists decide what this Mac can do. A format is only marked
+    /// natively encodable when ImageIO can actually write it.
+    static func applyingRuntimeImageCodecs(to format: FormatDefinition) -> FormatDefinition {
+        guard format.category == .image, format.nativeEncoderAvailable else { return format }
+        let canEncode = NativeImageCodecs.canEncode(format)
+        guard !canEncode else { return format }
+        return format.withNativeEncoderAvailable(false)
     }
 }

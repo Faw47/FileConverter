@@ -44,6 +44,7 @@ public struct PresetEditorView: View {
     }
 
     private enum OutputChoice: Hashable {
+        case useGeneral
         case sameAsSource
         case downloads
         case subfolder
@@ -935,6 +936,8 @@ public struct PresetEditorView: View {
                 VStack(spacing: 0) {
                     SettingsRow(title: "Save converted files to") {
                         Picker("", selection: outputPolicySelection(for: preset)) {
+                            Text("Use General setting (\(Self.describe(generalDefaults.outputDirectoryPolicy)))").tag(OutputChoice.useGeneral)
+                            Divider()
                             Text("Same folder as source").tag(OutputChoice.sameAsSource)
                             Text("Downloads folder").tag(OutputChoice.downloads)
                             Text("Named subfolder").tag(OutputChoice.subfolder)
@@ -942,10 +945,11 @@ public struct PresetEditorView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .frame(width: 200)
+                        .frame(width: 260)
                     }
 
-                    if case .sourceSubfolder = preset.wrappedValue.outputDirectoryPolicy {
+                    if !preset.wrappedValue.resolvedInheritance.outputLocation,
+                       case .sourceSubfolder = preset.wrappedValue.outputDirectoryPolicy {
                         Divider().padding(.leading, 14)
 
                         SettingsRow(title: "Subfolder name", subtitle: "Single directory name without slashes") {
@@ -960,7 +964,8 @@ public struct PresetEditorView: View {
                         }
                     }
 
-                    if case .customFolder(_, let displayPath) = preset.wrappedValue.outputDirectoryPolicy {
+                    if !preset.wrappedValue.resolvedInheritance.outputLocation,
+                       case .customFolder(_, let displayPath) = preset.wrappedValue.outputDirectoryPolicy {
                         let isAuthorized = preset.wrappedValue.outputDirectoryPolicy.isCustomFolderAuthorized
                         Divider().padding(.leading, 14)
 
@@ -993,8 +998,10 @@ public struct PresetEditorView: View {
                                 }
                                 .controlSize(.small)
 
-                                Button("Use Source Folder") {
-                                    preset.wrappedValue.outputDirectoryPolicy = .sameAsSource
+                                Button("Use General Setting") {
+                                    var inheritance = preset.wrappedValue.resolvedInheritance
+                                    inheritance.outputLocation = true
+                                    preset.wrappedValue.inheritance = inheritance
                                     onDirtyChange(true)
                                 }
                                 .controlSize(.small)
@@ -1008,11 +1015,22 @@ public struct PresetEditorView: View {
 
                     Divider().padding(.leading, 14)
 
-                    SettingsRow(title: "Filename pattern", subtitle: "Tokens: {name}, {preset}, {date}, {time}, {ext}") {
-                        TextField("{name}", text: preset.filenamePattern)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(width: 180)
+                    SettingsRow(
+                        title: "Filename",
+                        subtitle: inheritanceBinding(\.filenamePattern, of: preset).wrappedValue
+                            ? "Uses the General pattern \(generalDefaults.filenamePattern)"
+                            : "Tokens: {name}, {preset}, {date}, {time}"
+                    ) {
+                        HStack(spacing: 8) {
+                            Toggle("Use General pattern", isOn: inheritanceBinding(\.filenamePattern, of: preset))
+                                .toggleStyle(.checkbox)
+                            if !inheritanceBinding(\.filenamePattern, of: preset).wrappedValue {
+                                TextField("{name}", text: preset.filenamePattern)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(.body, design: .monospaced))
+                                    .frame(width: 160)
+                            }
+                        }
                     }
 
                     Divider().padding(.leading, 14)
@@ -1026,14 +1044,16 @@ public struct PresetEditorView: View {
                     Divider().padding(.leading, 14)
 
                     SettingsRow(title: "If the file already exists") {
-                        Picker("", selection: preset.overwritePolicy) {
+                        Picker("", selection: collisionSelection(for: preset)) {
+                            Text("Use General setting (\(generalDefaults.overwritePolicy.displayName))").tag(OverwritePolicy?.none)
+                            Divider()
                             ForEach(OverwritePolicy.allCases, id: \.self) { policy in
-                                Text(policy.displayName).tag(policy)
+                                Text(policy.displayName).tag(OverwritePolicy?.some(policy))
                             }
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .frame(width: 200)
+                        .frame(width: 260)
                     }
                 }
             }
@@ -1057,13 +1077,47 @@ public struct PresetEditorView: View {
 
                     Divider().padding(.leading, 14)
 
+                    SettingsRow(title: "Keep original creation date") {
+                        inheritedBoolPicker(
+                            \.creationDate,
+                            general: generalDefaults.preserveCreationDate,
+                            value: preset.preserveCreationDate,
+                            of: preset
+                        )
+                    }
+
+                    Divider().padding(.leading, 14)
+
                     SettingsRow(
-                        title: "Preserve creation date",
-                        subtitle: "Copies the source file's exact timestamps to converted files"
+                        title: "Keep original modification date",
+                        subtitle: "Off: new files show today's date and sort first in Finder"
                     ) {
-                        Toggle("", isOn: preset.preserveCreationDate)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
+                        inheritedBoolPicker(
+                            \.modificationDate,
+                            general: generalDefaults.preserveModificationDate,
+                            value: Binding(
+                                get: { preset.wrappedValue.preserveModificationDate ?? false },
+                                set: { preset.wrappedValue.preserveModificationDate = $0 }
+                            ),
+                            of: preset
+                        )
+                    }
+
+                    Divider().padding(.leading, 14)
+
+                    SettingsRow(
+                        title: "Remove location",
+                        subtitle: "Strips GPS coordinates from photos and videos"
+                    ) {
+                        inheritedBoolPicker(
+                            \.locationData,
+                            general: generalDefaults.removeLocationData,
+                            value: Binding(
+                                get: { preset.wrappedValue.removeLocationData ?? true },
+                                set: { preset.wrappedValue.removeLocationData = $0 }
+                            ),
+                            of: preset
+                        )
                     }
                 }
             }
@@ -1461,9 +1515,91 @@ public struct PresetEditorView: View {
         return "\(seconds) sec"
     }
 
-    private func outputPolicySelection(for preset: Binding<ConversionPreset>) -> Binding<OutputChoice> {
+    /// General settings as conversions will read them right now.
+    private var generalDefaults: ConversionDefaults {
+        ConversionDefaults.current
+    }
+
+    static func describe(_ policy: OutputDirectoryPolicy) -> String {
+        switch policy {
+        case .sameAsSource: return "same folder as source"
+        case .downloads: return "Downloads"
+        case .sourceSubfolder(let name): return "subfolder “\(name)”"
+        case .customFolder(_, let path): return URL(fileURLWithPath: path).lastPathComponent
+        }
+    }
+
+    private func inheritanceBinding(
+        _ keyPath: WritableKeyPath<PresetInheritance, Bool>,
+        of preset: Binding<ConversionPreset>
+    ) -> Binding<Bool> {
         Binding(
+            get: { preset.wrappedValue.resolvedInheritance[keyPath: keyPath] },
+            set: { newValue in
+                var inheritance = preset.wrappedValue.resolvedInheritance
+                inheritance[keyPath: keyPath] = newValue
+                preset.wrappedValue.inheritance = inheritance
+            }
+        )
+    }
+
+    private enum InheritedBoolChoice: Hashable {
+        case general, on, off
+    }
+
+    @ViewBuilder
+    private func inheritedBoolPicker(
+        _ keyPath: WritableKeyPath<PresetInheritance, Bool>,
+        general: Bool,
+        value: Binding<Bool>,
+        of preset: Binding<ConversionPreset>
+    ) -> some View {
+        let inherit = inheritanceBinding(keyPath, of: preset)
+        Picker("", selection: Binding<InheritedBoolChoice>(
+            get: { inherit.wrappedValue ? .general : (value.wrappedValue ? .on : .off) },
+            set: { choice in
+                switch choice {
+                case .general:
+                    inherit.wrappedValue = true
+                case .on:
+                    value.wrappedValue = true
+                    inherit.wrappedValue = false
+                case .off:
+                    value.wrappedValue = false
+                    inherit.wrappedValue = false
+                }
+            }
+        )) {
+            Text("Use General setting (\(general ? "On" : "Off"))").tag(InheritedBoolChoice.general)
+            Divider()
+            Text("On").tag(InheritedBoolChoice.on)
+            Text("Off").tag(InheritedBoolChoice.off)
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .frame(width: 220)
+    }
+
+    private func collisionSelection(for preset: Binding<ConversionPreset>) -> Binding<OverwritePolicy?> {
+        let inherit = inheritanceBinding(\.collisionPolicy, of: preset)
+        return Binding(
+            get: { inherit.wrappedValue ? nil : preset.wrappedValue.overwritePolicy },
+            set: { newValue in
+                if let newValue {
+                    preset.wrappedValue.overwritePolicy = newValue
+                    inherit.wrappedValue = false
+                } else {
+                    inherit.wrappedValue = true
+                }
+            }
+        )
+    }
+
+    private func outputPolicySelection(for preset: Binding<ConversionPreset>) -> Binding<OutputChoice> {
+        let inherit = inheritanceBinding(\.outputLocation, of: preset)
+        return Binding(
             get: {
+                if inherit.wrappedValue { return .useGeneral }
                 switch preset.wrappedValue.outputDirectoryPolicy {
                 case .sameAsSource: return .sameAsSource
                 case .downloads: return .downloads
@@ -1472,7 +1608,16 @@ public struct PresetEditorView: View {
                 }
             },
             set: { newChoice in
+                if newChoice == .useGeneral {
+                    inherit.wrappedValue = true
+                    return
+                }
+                if newChoice != .custom {
+                    inherit.wrappedValue = false
+                }
                 switch newChoice {
+                case .useGeneral:
+                    break
                 case .sameAsSource:
                     preset.wrappedValue.outputDirectoryPolicy = .sameAsSource
                 case .downloads:
@@ -1636,6 +1781,9 @@ public struct PresetEditorView: View {
                 )
 
                 Task { @MainActor in
+                    var inheritance = preset.wrappedValue.resolvedInheritance
+                    inheritance.outputLocation = false
+                    preset.wrappedValue.inheritance = inheritance
                     preset.wrappedValue.outputDirectoryPolicy = .customFolder(
                         bookmarkData: bookmarkData,
                         displayPath: url.path

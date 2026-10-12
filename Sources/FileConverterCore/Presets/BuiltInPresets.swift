@@ -10,6 +10,8 @@ public enum BuiltInPresets {
             p.id = BuiltInPresetIdentity.id(for: key)
             p.builtInKey = key
             p.sortOrder = order
+            p.factoryRevision = BuiltInPresetUpgrades.currentRevision
+            p.inheritance = .inheritAll
             order += 10
             presets.append(p)
         }
@@ -533,7 +535,7 @@ public enum BuiltInPresets {
             category: .image,
             sourceFormats: ["image"],
             destinationFormat: "webp",
-            backend: .imageIO,
+            backend: .auto,
             quality: .high,
             isBuiltIn: true
         ))
@@ -544,7 +546,7 @@ public enum BuiltInPresets {
             category: .image,
             sourceFormats: ["image"],
             destinationFormat: "webp",
-            backend: .imageIO,
+            backend: .auto,
             quality: .lossless,
             isBuiltIn: true
         ))
@@ -555,7 +557,7 @@ public enum BuiltInPresets {
             category: .image,
             sourceFormats: ["image"],
             destinationFormat: "avif",
-            backend: .imageIO,
+            backend: .auto,
             quality: .high,
             isBuiltIn: true
         ))

@@ -312,6 +312,71 @@ public enum OverwritePolicy: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// Which settings a preset takes from General settings. `true` means the
+/// preset uses the General value; `false` means it uses its own stored value.
+public struct PresetInheritance: Codable, Hashable, Sendable {
+    public var outputLocation: Bool
+    public var filenamePattern: Bool
+    public var collisionPolicy: Bool
+    public var creationDate: Bool
+    public var modificationDate: Bool
+    public var locationData: Bool
+
+    public init(
+        outputLocation: Bool = true,
+        filenamePattern: Bool = true,
+        collisionPolicy: Bool = true,
+        creationDate: Bool = true,
+        modificationDate: Bool = true,
+        locationData: Bool = true
+    ) {
+        self.outputLocation = outputLocation
+        self.filenamePattern = filenamePattern
+        self.collisionPolicy = collisionPolicy
+        self.creationDate = creationDate
+        self.modificationDate = modificationDate
+        self.locationData = locationData
+    }
+
+    public static let inheritAll = PresetInheritance()
+    public static let inheritNone = PresetInheritance(
+        outputLocation: false,
+        filenamePattern: false,
+        collisionPolicy: false,
+        creationDate: false,
+        modificationDate: false,
+        locationData: false
+    )
+
+    /// Rules for presets saved before inheritance was explicit. They keep the
+    /// behavior those presets had: built-ins followed General settings; custom
+    /// presets followed General only where they held the old sentinel values.
+    public static func legacy(for preset: ConversionPreset) -> PresetInheritance {
+        let outputWasSentinel = preset.outputDirectoryPolicy == .sameAsSource
+        let patternWasSentinel = preset.filenamePattern.isEmpty || preset.filenamePattern == "{name}"
+        if preset.isBuiltIn {
+            // Built-ins always took the General collision policy; their dates
+            // now follow General too (the General toggle never reached them).
+            return PresetInheritance(
+                outputLocation: outputWasSentinel,
+                filenamePattern: patternWasSentinel,
+                collisionPolicy: true,
+                creationDate: true,
+                modificationDate: true,
+                locationData: true
+            )
+        }
+        return PresetInheritance(
+            outputLocation: outputWasSentinel,
+            filenamePattern: patternWasSentinel,
+            collisionPolicy: preset.overwritePolicy == .ask,
+            creationDate: false,
+            modificationDate: false,
+            locationData: true
+        )
+    }
+}
+
 public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
     public var id: UUID
     public var builtInKey: String?
@@ -345,6 +410,23 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
     public var isEnabled: Bool
     public var isBuiltIn: Bool
     public var sortOrder: Int
+    /// Factory revision a stored built-in was last upgraded to. `nil` for
+    /// custom presets and for built-ins saved before revisions existed.
+    public var factoryRevision: Int?
+    /// Which settings come from General settings. `nil` only for presets
+    /// saved before inheritance was explicit; see `resolvedInheritance`.
+    public var inheritance: PresetInheritance?
+    /// Used when `modificationDate` is not inherited. `nil` means false.
+    public var preserveModificationDate: Bool?
+    /// Used when `locationData` is not inherited. `nil` means true (remove).
+    public var removeLocationData: Bool?
+    /// Appended to the name when the output keeps the source's file type and
+    /// the pattern is just `{name}` (for example "-web" for "photo-web.jpg").
+    public var sameFormatSuffix: String?
+
+    public var resolvedInheritance: PresetInheritance {
+        inheritance ?? .legacy(for: self)
+    }
 
     public init(
         id: UUID = UUID(),
@@ -378,7 +460,11 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
         opaqueFields: PresetOpaqueFields? = nil,
         isEnabled: Bool = true,
         isBuiltIn: Bool = false,
-        sortOrder: Int = 0
+        sortOrder: Int = 0,
+        inheritance: PresetInheritance? = nil,
+        preserveModificationDate: Bool? = nil,
+        removeLocationData: Bool? = nil,
+        sameFormatSuffix: String? = nil
     ) {
         self.id = id
         self.builtInKey = builtInKey
@@ -412,6 +498,10 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
         self.isEnabled = isEnabled
         self.isBuiltIn = isBuiltIn
         self.sortOrder = sortOrder
+        self.inheritance = inheritance
+        self.preserveModificationDate = preserveModificationDate
+        self.removeLocationData = removeLocationData
+        self.sameFormatSuffix = sameFormatSuffix
     }
 
     public var audioSplitDurationSeconds: Int? {

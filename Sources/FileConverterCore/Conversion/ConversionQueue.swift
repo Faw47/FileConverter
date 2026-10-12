@@ -91,9 +91,11 @@ public final class ConversionQueue: ObservableObject {
         // Batch identity is immutable through completion: each submitted batch
         // gets its own ID; no shared activeBatchID fallback is used.
         let batchID = UUID()
+        let batchDate = Date()
         var batchJobs = newJobs
         for index in batchJobs.indices {
             batchJobs[index].batchID = batchID
+            batchJobs[index].batchCreatedAt = batchDate
             ConversionJournal.shared.recordAdmission(
                 jobID: batchJobs[index].id,
                 requestID: batchID,
@@ -277,6 +279,8 @@ public final class ConversionQueue: ObservableObject {
             // new policy: clear the per-attempt collision override.
             jobs[index].collisionOverride = nil
             jobs[index].collisionPlan = nil
+            jobs[index].resolvedSettings = nil
+            jobs[index].waitingForDestinationKey = nil
             jobs[index].sourceAccessLease?.release()
             jobs[index].sourceAccessLease = nil
             jobs[index].conflictingOutputURLs = []
@@ -357,11 +361,14 @@ public final class ConversionQueue: ObservableObject {
         let effectiveConcurrency = calculateEffectiveConcurrency()
 
         while activeJobIDs.count < effectiveConcurrency {
-            guard let nextJobIndex = jobs.firstIndex(where: { $0.state == .queued }) else {
+            guard let nextJobIndex = jobs.firstIndex(where: {
+                $0.state == .queued && !isWaitingForReservedDestination($0)
+            }) else {
                 break
             }
 
             var job = jobs[nextJobIndex]
+            job.waitingForDestinationKey = nil
             job.state = .preparing
             job.startedAt = Date()
             jobs[nextJobIndex] = job
@@ -427,11 +434,17 @@ public final class ConversionQueue: ObservableObject {
             let backend = try BackendResolver.shared.resolveBackend(for: job)
             job.resolvedBackend = backend.backendType
 
-            // Centralized resolution of effective settings (TASK-038 / REQ-010)
-            let tempGlobalOutputPolicy = OutputNamingEngine.globalDefaultOutputPolicy
-            let tempOutputPolicy = (job.preset.outputDirectoryPolicy == .sameAsSource && tempGlobalOutputPolicy != .sameAsSource) ? tempGlobalOutputPolicy : job.preset.outputDirectoryPolicy
+            // Resolve General settings and preset values once for this
+            // attempt; everything below uses only the resolved values.
+            let settings = EffectivePresetResolver.resolve(
+                preset: job.preset,
+                defaults: ConversionDefaults.current,
+                collisionOverride: job.collisionOverride
+            )
+            job.resolvedSettings = settings
+            await storeResolvedSettings(settings, for: jobID)
 
-            if case .customFolder(let bookmarkData, let displayPath) = tempOutputPolicy {
+            if case .customFolder(let bookmarkData, let displayPath) = settings.outputDirectoryPolicy.value {
                 guard !bookmarkData.isEmpty else {
                     throw ConversionError.sandboxAccessFailure(path: displayPath.isEmpty ? job.sourceURL.path : displayPath)
                 }
@@ -442,24 +455,9 @@ public final class ConversionQueue: ObservableObject {
                 }
             }
 
-            var globalOverwritePolicy: OverwritePolicy? = nil
-            if let raw = UserDefaults.standard.string(forKey: "overwritePolicy"), let policy = OverwritePolicy(rawValue: raw) {
-                globalOverwritePolicy = policy
-            }
-
-            let effectiveSettings = EffectivePresetResolver.resolve(
-                preset: job.preset,
-                customFolderURL: destinationAccessLease?.url,
-                collisionOverride: job.collisionOverride,
-                globalOverwritePolicy: globalOverwritePolicy
-            )
-            let effectivePolicy = effectiveSettings.overwritePolicy.value
+            let effectivePolicy = settings.overwritePolicy.value
             var effectiveJob = job
-            var resolvedPreset = job.preset
-            resolvedPreset.overwritePolicy = effectivePolicy
-            resolvedPreset.outputDirectoryPolicy = effectiveSettings.outputDirectoryPolicy.value
-            resolvedPreset.filenamePattern = effectiveSettings.filenamePattern.value
-            effectiveJob.preset = resolvedPreset
+            effectiveJob.preset = settings.applied(to: job.preset)
 
             // 3. Determine and reserve every output path before conversion.
             let plannedOutputs = try await reserveOutputs(
@@ -549,7 +547,7 @@ public final class ConversionQueue: ObservableObject {
             let allowsReplacement = effectivePolicy == .overwrite
                 || effectivePolicy == .replaceIfNewer
                 || job.collisionPlan != nil
-            let committedURLs = try OutputNamingEngine.finalizeConversionOutputs(
+            let report = try OutputNamingEngine.finalizeConversionOutputsWithReport(
                 plannedOutputs,
                 overwrite: allowsReplacement,
                 collisionPlan: job.collisionPlan,
@@ -557,6 +555,10 @@ public final class ConversionQueue: ObservableObject {
                 isReplaceIfNewer: effectivePolicy == .replaceIfNewer,
                 allowKeepBothRetry: isKeepBoth
             )
+            let committedURLs = report.committedURLs
+            for original in report.untrashableOriginals {
+                warnings.append("The previous \(original.lastPathComponent) could not be moved to the Trash and was replaced.")
+            }
             job.outputURLs = committedURLs
             if let first = committedURLs.first {
                 job.destinationURL = first
@@ -566,10 +568,15 @@ public final class ConversionQueue: ObservableObject {
 
             // 6. Preserve timestamps if requested. Metadata failures should not
             // discard an otherwise valid output; make them visible as warnings.
-            if job.preset.preserveCreationDate {
+            if settings.preserveCreationDate.value || settings.preserveModificationDate.value {
                 for outputURL in committedURLs {
                     do {
-                        try FileAccessManager.shared.preserveTimestamps(from: job.sourceURL, to: outputURL)
+                        try FileAccessManager.shared.preserveTimestamps(
+                            from: job.sourceURL,
+                            to: outputURL,
+                            creation: settings.preserveCreationDate.value,
+                            modification: settings.preserveModificationDate.value
+                        )
                     } catch {
                         warnings.append("Could not preserve timestamps for \(outputURL.lastPathComponent): \(error.localizedDescription)")
                     }
@@ -598,6 +605,10 @@ public final class ConversionQueue: ObservableObject {
                 AppLogger.conversion.error("Job \(jobID) failed: \(convErr.localizedDescription)")
                 if convErr == .cancelled {
                     await finishJob(id: jobID, state: .cancelled, batchID: capturedBatchID)
+                } else if case .destinationReserved(let path) = convErr {
+                    job.sourceAccessLease?.release()
+                    job.sourceAccessLease = nil
+                    await deferUntilDestinationIsFree(jobID: jobID, path: path)
                 } else if case .outputCollision(let path) = convErr, job.effectiveOverwritePolicy == .ask {
                     await markAwaitingCollision(jobID: jobID, destinationPath: path)
                     job.sourceAccessLease = nil
@@ -666,7 +677,8 @@ public final class ConversionQueue: ObservableObject {
                         suffix: requirement.suffix,
                         reservedURLs: localReservations,
                         customFolderURL: customFolderURL,
-                        collisionPlan: job.collisionPlan
+                        collisionPlan: job.collisionPlan,
+                        namingDate: job.batchCreatedAt
                     )
                     // Serialize jobs targeting the same destination, including
                     // overwrite policies: the reservation is ownership-aware.
@@ -714,8 +726,47 @@ public final class ConversionQueue: ObservableObject {
         return outputs
     }
 
+    /// Puts a job back in line until the job that reserved `path` releases
+    /// it. The waiting job holds no reservations of its own meanwhile.
+    private func deferUntilDestinationIsFree(jobID: UUID, path: String) {
+        runningTasks.removeValue(forKey: jobID)
+        activeJobIDs.remove(jobID)
+        releaseReservations(for: jobID)
+        if let index = jobs.firstIndex(where: { $0.id == jobID }), !jobs[index].state.isTerminal {
+            jobs[index].state = .queued
+            jobs[index].startedAt = nil
+            jobs[index].progress = ConversionProgress()
+            jobs[index].waitingForDestinationKey = FileAccessManager.shared.reservationKey(for: URL(fileURLWithPath: path))
+            jobs[index].destinationURL = nil
+            jobs[index].temporaryOutputURL = nil
+            jobs[index].plannedOutputs = []
+            jobs[index].outputURLs = []
+            jobs[index].resolvedSettings = nil
+            jobs[index].sourceAccessLease?.release()
+            jobs[index].sourceAccessLease = nil
+        }
+        updateCountsAndProgress()
+        processNextJobs()
+    }
+
+    private func isWaitingForReservedDestination(_ job: ConversionJob) -> Bool {
+        guard let key = job.waitingForDestinationKey else { return false }
+        if let owner = reservedOutputURLs[key], owner != job.id { return true }
+        return false
+    }
+
+    private func storeResolvedSettings(_ settings: ResolvedConversionSettings, for jobID: UUID) {
+        guard let index = jobs.firstIndex(where: { $0.id == jobID }) else { return }
+        jobs[index].resolvedSettings = settings
+    }
+
     private func releaseReservations(for jobID: UUID) {
+        let hadReservations = reservedOutputURLs.values.contains(jobID)
         reservedOutputURLs = reservedOutputURLs.filter { $0.value != jobID }
+        if hadReservations, jobs.contains(where: { $0.waitingForDestinationKey != nil && $0.state == .queued }) {
+            // A waiting job may now be able to run.
+            Task { @MainActor [weak self] in self?.processNextJobs() }
+        }
     }
 
     private func replaceReservations(for jobID: UUID, with urls: [URL]) {

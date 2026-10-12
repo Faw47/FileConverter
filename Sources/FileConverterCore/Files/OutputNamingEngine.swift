@@ -48,41 +48,118 @@ public enum OutputNamingEngine {
         }
     }
 
+    /// Filename for a conversion, using the preset's effective pattern
+    /// (its own, or the General pattern when it inherits it).
     public static func generateFormattedFilename(
         sourceURL: URL,
         preset: ConversionPreset,
         targetExtension: String,
-        suffix: String? = nil
+        suffix: String? = nil,
+        date: Date = Date(),
+        defaults: ConversionDefaults? = nil
     ) -> String {
+        let pattern = EffectivePresetResolver.resolve(
+            preset: preset,
+            defaults: defaults ?? .current
+        ).filenamePattern.value
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
-        let cleanExt = targetExtension.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+        let sourceExtension = sourceURL.pathExtension
+        var fullSuffix = suffix
+        if let sameFormatSuffix = sameFormatSuffix(
+            for: preset,
+            pattern: pattern,
+            sourceExtension: sourceExtension,
+            targetExtension: targetExtension
+        ) {
+            fullSuffix = [sameFormatSuffix, suffix].compactMap { $0 }.joined(separator: "-")
+        }
+        return formatFilename(
+            pattern: pattern,
+            baseName: baseName,
+            presetMenuName: preset.menuName,
+            targetExtension: targetExtension,
+            suffix: fullSuffix,
+            date: date
+        )
+    }
 
-        var pattern = preset.filenamePattern
-        if pattern.isEmpty || pattern == "{name}" {
-            if let defaultPattern = UserDefaults.standard.string(forKey: "fc.defaultFilenamePattern"),
-               !defaultPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                pattern = defaultPattern
-            } else if pattern.isEmpty {
-                pattern = "{name}"
+    /// The same formatting the queue uses, for previews in Settings.
+    public static func previewFilename(
+        pattern: String,
+        sourceName: String,
+        sourceExtension: String,
+        targetExtension: String,
+        presetMenuName: String,
+        date: Date = Date()
+    ) -> String {
+        formatFilename(
+            pattern: pattern,
+            baseName: sourceName,
+            presetMenuName: presetMenuName,
+            targetExtension: targetExtension,
+            suffix: nil,
+            date: date
+        )
+    }
+
+    /// When a conversion keeps the file type (JPEG → smaller JPEG) and the
+    /// pattern is just the source name, a descriptive suffix keeps the result
+    /// from being named "photo (1).jpg".
+    static func sameFormatSuffix(
+        for preset: ConversionPreset,
+        pattern: String,
+        sourceExtension: String,
+        targetExtension: String
+    ) -> String? {
+        guard let suffix = preset.sameFormatSuffix?.trimmingCharacters(in: CharacterSet(charactersIn: "-_ ")),
+              !suffix.isEmpty,
+              pattern.trimmingCharacters(in: .whitespacesAndNewlines) == "{name}" else { return nil }
+        let source = FormatRegistry.shared.format(forExtension: sourceExtension)?.id ?? sourceExtension.lowercased()
+        let target = FormatRegistry.shared.format(forExtension: targetExtension)?.id ?? targetExtension.lowercased()
+        return source == target ? suffix : nil
+    }
+
+    /// "MKV → MP4" becomes "MKV_to_MP4": arrows read as "to", and every run of
+    /// characters that is not a letter, digit, or hyphen becomes one underscore.
+    public static func sanitizedPresetToken(_ menuName: String) -> String {
+        let spelled = menuName
+            .replacingOccurrences(of: "→", with: " to ")
+            .replacingOccurrences(of: "–", with: "-")
+        var result = ""
+        var pendingSeparator = false
+        for scalar in spelled.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) || scalar == "-" {
+                if pendingSeparator && !result.isEmpty { result.append("_") }
+                pendingSeparator = false
+                result.unicodeScalars.append(scalar)
+            } else {
+                pendingSeparator = true
             }
         }
+        return result
+    }
 
-        // Format dates
+    static func formatFilename(
+        pattern rawPattern: String,
+        baseName: String,
+        presetMenuName: String,
+        targetExtension: String,
+        suffix: String?,
+        date: Date
+    ) -> String {
+        let cleanExt = targetExtension.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+        let pattern = rawPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "{name}" : rawPattern
+
         let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
         dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateString = dateFormatter.string(from: Date())
-
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH-mm-ss"
-        let timeString = timeFormatter.string(from: Date())
-
-        let sanitizedPresetName = preset.menuName
-            .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_")).inverted)
-            .joined(separator: "_")
+        let dateString = dateFormatter.string(from: date)
+        dateFormatter.dateFormat = "HH-mm-ss"
+        let timeString = dateFormatter.string(from: date)
 
         var formatted = pattern
             .replacingOccurrences(of: "{name}", with: baseName)
-            .replacingOccurrences(of: "{preset}", with: sanitizedPresetName)
+            .replacingOccurrences(of: "{preset}", with: sanitizedPresetToken(presetMenuName))
             .replacingOccurrences(of: "{date}", with: dateString)
             .replacingOccurrences(of: "{time}", with: timeString)
             .replacingOccurrences(of: "{ext}", with: cleanExt)
@@ -112,22 +189,7 @@ public enum OutputNamingEngine {
     }
 
     public static var globalDefaultOutputPolicy: OutputDirectoryPolicy {
-        let policyRaw = UserDefaults.standard.string(forKey: "outputDirectoryPolicy")
-            ?? UserDefaults.standard.string(forKey: "fc.defaultOutputPolicy")
-            ?? "sameAsSource"
-        switch policyRaw {
-        case "downloads":
-            return .downloads
-        case "custom":
-            if let bookmark = UserDefaults.standard.data(forKey: "fc.customOutputFolderBookmark"),
-               let path = UserDefaults.standard.string(forKey: "fc.customOutputFolderPath"),
-               !path.isEmpty {
-                return .customFolder(bookmarkData: bookmark, displayPath: path)
-            }
-            return .sameAsSource
-        default:
-            return .sameAsSource
-        }
+        ConversionDefaults.current.outputDirectoryPolicy
     }
 
     public static func resolveFinalDestinationURL(
@@ -137,28 +199,13 @@ public enum OutputNamingEngine {
         suffix: String? = nil,
         reservedURLs: Set<URL> = [],
         customFolderURL: URL? = nil,
-        collisionPlan: CollisionResolutionPlan? = nil
+        collisionPlan: CollisionResolutionPlan? = nil,
+        namingDate: Date = Date()
     ) throws -> URL {
         let reservationKeys = canonicalReservationKeys(reservedURLs)
         let ext = targetExtension ?? preset.destinationFormat
-        let effectivePolicy: OutputDirectoryPolicy
+        let effectivePolicy = EffectivePresetResolver.resolve(preset: preset).outputDirectoryPolicy.value
         var effectiveCustomFolderURL = customFolderURL
-        if preset.outputDirectoryPolicy == .sameAsSource {
-            let globalPolicy = globalDefaultOutputPolicy
-            if globalPolicy != .sameAsSource {
-                effectivePolicy = globalPolicy
-                if case .customFolder(let bookmarkData, let displayPath) = globalPolicy, effectiveCustomFolderURL == nil {
-                    effectiveCustomFolderURL = try resolveCustomFolderBookmark(
-                        bookmarkData,
-                        displayPath: displayPath
-                    )
-                }
-            } else {
-                effectivePolicy = .sameAsSource
-            }
-        } else {
-            effectivePolicy = preset.outputDirectoryPolicy
-        }
 
         if case .customFolder(let bookmarkData, _) = effectivePolicy, effectiveCustomFolderURL == nil {
             let displayPath: String = {
@@ -202,7 +249,7 @@ public enum OutputNamingEngine {
             targetDir = baseTargetDir
         }
 
-        let filename = generateFormattedFilename(sourceURL: sourceURL, preset: preset, targetExtension: ext, suffix: suffix)
+        let filename = generateFormattedFilename(sourceURL: sourceURL, preset: preset, targetExtension: ext, suffix: suffix, date: namingDate)
         let idealURL = targetDir.appendingPathComponent(filename)
 
         // Same-file guard: never convert a file onto itself, even when the
@@ -235,7 +282,9 @@ public enum OutputNamingEngine {
             case .appendNumber:
                 return findAvailableNumberedURL(for: idealURL, reservedURLs: reservationKeys)
             case .ask, .overwrite, .replaceIfNewer, .skip:
-                throw ConversionError.outputCollision(path: idealURL.path)
+                // Another queued job is creating this file. Wait for it, then
+                // apply the collision policy to the file it produced.
+                throw ConversionError.destinationReserved(path: idealURL.path)
             }
         }
 
@@ -378,6 +427,32 @@ public enum OutputNamingEngine {
         isReplaceIfNewer: Bool = false,
         allowKeepBothRetry: Bool = false
     ) throws -> [URL] {
+        try finalizeConversionOutputsWithReport(
+            outputs,
+            overwrite: overwrite,
+            collisionPlan: collisionPlan,
+            sourceURL: sourceURL,
+            isReplaceIfNewer: isReplaceIfNewer,
+            allowKeepBothRetry: allowKeepBothRetry
+        ).committedURLs
+    }
+
+    public struct FinalizeReport: Sendable {
+        public let committedURLs: [URL]
+        /// Replaced files now in the Trash.
+        public let trashedOriginals: [URL]
+        /// Replaced files that could not be moved to the Trash and were deleted.
+        public let untrashableOriginals: [URL]
+    }
+
+    public static func finalizeConversionOutputsWithReport(
+        _ outputs: [PlannedConversionOutput],
+        overwrite: Bool = true,
+        collisionPlan: CollisionResolutionPlan? = nil,
+        sourceURL: URL? = nil,
+        isReplaceIfNewer: Bool = false,
+        allowKeepBothRetry: Bool = false
+    ) throws -> FinalizeReport {
         try finalizeConversionOutputs(
             outputs,
             overwrite: overwrite,
@@ -410,7 +485,7 @@ public enum OutputNamingEngine {
             allowKeepBothRetry: allowKeepBothRetry,
             beforeCoordination: beforeCoordination,
             coordinatorErrorForTesting: coordinatorErrorForTesting
-        )
+        ).committedURLs
     }
 
     private static func splitBaseNameAndCounter(_ name: String) -> (base: String, counter: Int?) {
@@ -440,7 +515,7 @@ public enum OutputNamingEngine {
         allowKeepBothRetry: Bool,
         beforeCoordination: (() throws -> Void)?,
         coordinatorErrorForTesting: NSError?
-    ) throws -> [URL] {
+    ) throws -> FinalizeReport {
         guard !outputs.isEmpty else {
             throw ConversionError.destinationUnavailable(path: "")
         }
@@ -681,10 +756,21 @@ public enum OutputNamingEngine {
         }
 
         if coordinationFailure == nil, commitError == nil {
-            for backupURL in backupsByDestination.values {
-                try? fileManager.removeItem(at: backupURL)
+            var trashed: [URL] = []
+            var untrashable: [URL] = []
+            for (destination, backupURL) in backupsByDestination {
+                if let trashedURL = moveReplacedOriginalToTrash(backupURL, originalURL: destination) {
+                    trashed.append(trashedURL)
+                } else {
+                    try? fileManager.removeItem(at: backupURL)
+                    untrashable.append(destination)
+                }
             }
-            return committed.map(\.finalURL)
+            return FinalizeReport(
+                committedURLs: committed.map(\.finalURL),
+                trashedOriginals: trashed,
+                untrashableOriginals: untrashable
+            )
         }
 
         let failure: Error
@@ -747,6 +833,43 @@ public enum OutputNamingEngine {
             )
         }
         throw failure
+    }
+
+    /// Gives the hidden backup of a replaced file a readable name next to the
+    /// new file, then moves it to the Trash so the user can restore it.
+    /// Returns the item's location in the Trash, or nil when the volume has
+    /// no Trash.
+    static func moveReplacedOriginalToTrash(_ backupURL: URL, originalURL: URL, date: Date = Date()) -> URL? {
+        let fileManager = FileManager.default
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let base = originalURL.deletingPathExtension().lastPathComponent
+        let ext = originalURL.pathExtension
+        let label = "\(base) (replaced \(formatter.string(from: date)))"
+        let readableURL = originalURL.deletingLastPathComponent()
+            .appendingPathComponent(ext.isEmpty ? label : "\(label).\(ext)")
+        do {
+            if !fileManager.fileExists(atPath: readableURL.path) {
+                try fileManager.moveItem(at: backupURL, to: readableURL)
+            }
+            let source = fileManager.fileExists(atPath: readableURL.path) ? readableURL : backupURL
+            if let testTrash = ReplacedFileTrash.directoryOverride {
+                try fileManager.createDirectory(at: testTrash, withIntermediateDirectories: true)
+                let target = testTrash.appendingPathComponent("\(UUID().uuidString)-\(source.lastPathComponent)")
+                try fileManager.moveItem(at: source, to: target)
+                return target
+            }
+            var resulting: NSURL?
+            try fileManager.trashItem(at: source, resultingItemURL: &resulting)
+            return (resulting as URL?) ?? source
+        } catch {
+            // Leave nothing visible behind; the caller deletes the backup.
+            if fileManager.fileExists(atPath: readableURL.path), !fileManager.fileExists(atPath: backupURL.path) {
+                try? fileManager.moveItem(at: readableURL, to: backupURL)
+            }
+            return nil
+        }
     }
 
     public static func cleanupTemporaryFile(at url: URL?) {
@@ -812,5 +935,28 @@ public enum OutputNamingEngine {
 
     private static func canonicalReservationKeys(_ reservedURLs: Set<URL>) -> Set<URL> {
         Set(reservedURLs.map { FileAccessManager.shared.reservationKey(for: $0) })
+    }
+}
+
+/// Where replaced files go. In test processes they go to a temporary folder
+/// instead of the user's Trash.
+public enum ReplacedFileTrash {
+    private static let box = OverrideBox()
+
+    public static var directoryOverride: URL? {
+        get { box.value }
+        set { box.value = newValue }
+    }
+
+    private final class OverrideBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: URL? = NSClassFromString("XCTestCase") != nil
+            ? FileManager.default.temporaryDirectory.appendingPathComponent("FileConverterTestTrash", isDirectory: true)
+            : nil
+
+        var value: URL? {
+            get { lock.withLock { stored } }
+            set { lock.withLock { stored = newValue } }
+        }
     }
 }

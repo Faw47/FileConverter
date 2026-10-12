@@ -40,6 +40,8 @@ final class OutputNamingTests: XCTestCase {
     func testPatternFormatting() {
         let sourceURL = tempDirectory.appendingPathComponent("My Vacation Video.mov")
         var preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP4" }!
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.filenamePattern = "{name}_converted"
 
         let formatted = OutputNamingEngine.generateFormattedFilename(sourceURL: sourceURL, preset: preset, targetExtension: "mp4")
@@ -49,6 +51,8 @@ final class OutputNamingTests: XCTestCase {
     func testExtensionTokenUsesTheDestinationExtension() {
         let sourceURL = tempDirectory.appendingPathComponent("My Vacation Video.mov")
         var preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP4" }!
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.filenamePattern = "{name}_{ext}"
 
         let formatted = OutputNamingEngine.generateFormattedFilename(
@@ -257,6 +261,8 @@ final class OutputNamingTests: XCTestCase {
         var preset = try XCTUnwrap(
             BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
         )
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.outputDirectoryPolicy = .customFolder(
             bookmarkData: Data("not a bookmark".utf8),
             displayPath: tempDirectory.path
@@ -286,6 +292,8 @@ final class OutputNamingTests: XCTestCase {
         var preset = try XCTUnwrap(
             BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
         )
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.outputDirectoryPolicy = .customFolder(
             bookmarkData: bookmark,
             displayPath: customFolder.path

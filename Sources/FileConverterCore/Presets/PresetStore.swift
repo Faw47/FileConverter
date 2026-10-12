@@ -34,10 +34,12 @@ public enum PresetStoreError: Error, LocalizedError, Sendable {
 }
 
 private struct PresetStoreDocument: Codable {
+    /// 3: presets carry explicit `inheritance` flags.
+    static let currentSchemaVersion = 3
     let schemaVersion: Int
     let presets: [ConversionPreset]
 
-    init(schemaVersion: Int = 2, presets: [ConversionPreset]) {
+    init(schemaVersion: Int = PresetStoreDocument.currentSchemaVersion, presets: [ConversionPreset]) {
         self.schemaVersion = schemaVersion
         self.presets = presets
     }
@@ -135,7 +137,12 @@ public final class PresetStore: @unchecked Sendable {
                 // keys and could contain stale matching rules. `mergeBuiltIns`
                 // restores factory rules while preserving user state, so legacy
                 // entries are not mistaken for malformed customs.
-                let merged = mergeBuiltIns(into: decoded)
+                let merged = Self.migrateInheritance(mergeBuiltIns(into: decoded))
+                if merged.contains(where: { $0.inheritance != nil })
+                    && decoded.contains(where: { $0.inheritance == nil }),
+                   !isExtensionProcess {
+                    Self.writeOneTimeBackup(of: data, beside: fileURL, label: "v2")
+                }
                 // Quarantine malformed custom records instead of rejecting the
                 // whole file: preserve built-ins and every valid custom preset
                 // with a visible diagnostic. The last-known-good in-memory
@@ -662,6 +669,33 @@ public final class PresetStore: @unchecked Sendable {
         return candidate
     }
 
+    /// Schema 3: gives every preset explicit inheritance flags using the
+    /// rules that reproduce how it behaved before (`PresetInheritance.legacy`).
+    static func migrateInheritance(_ presets: [ConversionPreset]) -> [ConversionPreset] {
+        presets.map { preset in
+            guard preset.inheritance == nil else { return preset }
+            var migrated = preset
+            migrated.inheritance = .legacy(for: preset)
+            if !preset.isBuiltIn, migrated.preserveModificationDate == nil {
+                // The single old toggle covered both dates.
+                migrated.preserveModificationDate = preset.preserveCreationDate
+            }
+            return migrated
+        }
+    }
+
+    private static func writeOneTimeBackup(of data: Data, beside fileURL: URL, label: String) {
+        let backupURL = fileURL.deletingLastPathComponent()
+            .appendingPathComponent("presets.\(label)-backup.json")
+        guard !FileManager.default.fileExists(atPath: backupURL.path) else { return }
+        do {
+            try data.write(to: backupURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backupURL.path)
+        } catch {
+            AppLogger.presets.error("Could not write the \(label) preset backup: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func mergeBuiltIns(into storedPresets: [ConversionPreset]) -> [ConversionPreset] {
         let defaultPresets = BuiltInPresets.makeDefaultPresets()
         let knownBuiltInKeys = Set(defaultPresets.compactMap(\.builtInKey))
@@ -709,6 +743,7 @@ public final class PresetStore: @unchecked Sendable {
             if defaultPreset.builtInKey == "document.pdf-compressed" && updated.backend == .ghostscript {
                 updated.backend = .auto
             }
+            updated = BuiltInPresetUpgrades.upgrade(updated)
             merged[matchIndex] = updated
         }
 
@@ -750,10 +785,13 @@ public final class PresetStore: @unchecked Sendable {
         }
     }
 
-    private func persistAndNotifyThrowing(_ presets: [ConversionPreset]) throws {
+    private func persistAndNotifyThrowing(_ incoming: [ConversionPreset]) throws {
         guard !isExtensionProcess else {
             throw PresetStoreError.readOnlyExtension
         }
+        // Presets added or imported without explicit inheritance get it here,
+        // so nothing on disk depends on sentinel values.
+        let presets = Self.migrateInheritance(incoming)
         try validatePresetCollection(presets)
         do {
             try persist(presets)
@@ -802,7 +840,7 @@ public final class PresetStore: @unchecked Sendable {
         // 1. Try schemaVersion <= 2 PresetStoreDocument (internal storage)
         let decoder = JSONDecoder()
         if let document = try? decoder.decode(PresetStoreDocument.self, from: data) {
-            guard document.schemaVersion <= 2 else {
+            guard document.schemaVersion <= PresetStoreDocument.currentSchemaVersion else {
                 throw PresetStoreError.invalidPresetDocument
             }
             return document.presets
@@ -816,7 +854,7 @@ public final class PresetStore: @unchecked Sendable {
         // 3. Reject future schema versions before attempting exchange parsing
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let version = json["schemaVersion"] as? Int,
-           version > 2 {
+           version > PresetStoreDocument.currentSchemaVersion {
             throw PresetStoreError.invalidPresetDocument
         }
 

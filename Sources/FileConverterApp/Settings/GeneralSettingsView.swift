@@ -4,211 +4,132 @@ import SwiftUI
 
 public struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @StateObject private var patternField = PatternFieldController()
+    @State private var draftPattern = AppSettings.shared.defaultFilenamePattern
     @State private var showingResetConfirmation = false
-    @State private var sampleFilename = "Video_Interview"
 
     public init() {}
 
     public var body: some View {
-        ScrollView {
-            LiquidGlassContainer(spacing: 22) {
-                VStack(alignment: .leading, spacing: 22) {
-                    // Header
-                    headerView
-
-                    // Output Location
-                    outputLocationSection
-
-                    // Conflict Resolution
-                    conflictResolutionSection
-
-                    // Filename Pattern with Live Preview
-                    filenamePatternSection
-
-                    // File Attributes
-                    fileAttributesSection
-
-                    // After Conversion
-                    afterConversionSection
-
-                    // Reset Defaults
-                    resetSection
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
-            .padding(.bottom, 28)
-            .frame(maxWidth: 720, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .confirmationDialog(
-            "Reset General Settings?",
-            isPresented: $showingResetConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Reset to Defaults", role: .destructive) {
-                settings.resetAllToDefaults()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will restore default output paths, conflict rules, file naming patterns, and notification preferences. Your saved presets will not be affected.")
-        }
-    }
-
-    // MARK: - Header
-
-    private var headerView: some View {
-        HStack(spacing: 14) {
-            SettingsIconBadge(systemImage: "gearshape.fill", color: .gray, size: .header)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("General")
-                    .font(.title2.weight(.bold))
-
-                Text("Configure default destinations, file naming, conflict rules, and notifications.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding(.bottom, 4)
-    }
-
-    // MARK: - Output Location Section
-
-    private var outputLocationSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Default Output Location")
-
-            SettingsCard {
-                VStack(spacing: 0) {
-                    // Option 1: Same as Source
-                    outputOptionRow(
-                        title: "Same folder as source file",
-                        subtitle: "Converted files will be created in the exact directory of each original file.",
-                        icon: "folder.badge.gearshape",
-                        tag: "sameAsSource"
-                    )
-
-                    Divider().padding(.leading, 42)
-
-                    // Option 2: Downloads folder
-                    outputOptionRow(
-                        title: "Downloads folder",
-                        subtitle: "~/Downloads",
-                        icon: "arrow.down.circle",
-                        tag: "downloads"
-                    )
-
-                    Divider().padding(.leading, 42)
-
-                    // Option 3: Custom folder
-                    outputOptionRow(
-                        title: "Custom folder",
-                        subtitle: customFolderSubtitle,
-                        icon: "folder.fill.badge.plus",
-                        tag: "custom"
-                    )
-
-                    if settings.defaultOutputPolicyRaw == "custom" {
-                        VStack(spacing: 0) {
-                            Divider().padding(.leading, 14)
-
-                            HStack(spacing: 12) {
-                                Image(systemName: "folder.fill")
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(Color.accentColor)
-
-                                if settings.customOutputFolderPath.isEmpty {
-                                    Text("No destination folder selected")
-                                        .font(.callout)
-                                        .foregroundStyle(.secondary)
-                                } else {
-                                    Text(settings.customOutputFolderPath)
-                                        .font(.system(.callout, design: .monospaced))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                }
-
-                                Spacer()
-
-                                Button("Choose Folder...") {
-                                    chooseCustomFolder()
-                                }
-                                .glassAction()
-                                .controlSize(.small)
-                                .accessibilityLabel("Choose custom output folder")
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(.quaternary.opacity(0.35))
-                        }
-                        if let error = settings.customOutputFolderError {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                                .padding(.horizontal, 14)
-                        }
+        Form {
+            savingSection
+            fileNameSection
+            fileDetailsSection
+            afterConvertingSection
+            Section {
+                HStack {
+                    Spacer()
+                    Button("Restore Defaults…") {
+                        showingResetConfirmation = true
                     }
                 }
             }
         }
+        .formStyle(.grouped)
+        .confirmationDialog(
+            "Restore General settings to their defaults?",
+            isPresented: $showingResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Restore Defaults", role: .destructive) {
+                settings.resetAllToDefaults()
+                draftPattern = settings.defaultFilenamePattern
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your presets are not changed.")
+        }
+        .onChange(of: settings.defaultFilenamePattern) { _, newValue in
+            draftPattern = newValue
+        }
     }
 
-    private func outputOptionRow(title: String, subtitle: String, icon: String, tag: String) -> some View {
-        Button {
-            if tag == "custom" && settings.customOutputFolderPath.isEmpty {
-                chooseCustomFolder()
-            } else {
-                settings.defaultOutputPolicyRaw = tag
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(settings.defaultOutputPolicyRaw == tag ? Color.accentColor : .secondary)
-                    .frame(width: 24)
+    // MARK: - Saving
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if settings.defaultOutputPolicyRaw == tag {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Color.accentColor)
-                } else {
-                    Circle()
-                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1.5)
-                        .frame(width: 16, height: 16)
-                }
-            }
-            .contentShape(Rectangle())
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title)
-        .accessibilityHint(subtitle)
-        .accessibilityValue(settings.defaultOutputPolicyRaw == tag ? "Selected" : "Not selected")
+    private enum LocationChoice: Hashable {
+        case sameAsSource, downloads, custom
     }
 
-    private var customFolderSubtitle: String {
-        if settings.customOutputFolderPath.isEmpty {
-            return "Choose a dedicated destination directory on your Mac"
+    private var locationSelection: Binding<LocationChoice> {
+        Binding(
+            get: {
+                switch settings.defaultOutputPolicyRaw {
+                case "downloads": return .downloads
+                case "custom": return .custom
+                default: return .sameAsSource
+                }
+            },
+            set: { choice in
+                switch choice {
+                case .sameAsSource: settings.defaultOutputPolicyRaw = "sameAsSource"
+                case .downloads: settings.defaultOutputPolicyRaw = "downloads"
+                case .custom:
+                    if settings.customOutputFolderPath.isEmpty {
+                        chooseCustomFolder()
+                    } else {
+                        settings.defaultOutputPolicyRaw = "custom"
+                    }
+                }
+            }
+        )
+    }
+
+    private var savingSection: some View {
+        Section("Saving") {
+            Picker("Save converted files to", selection: locationSelection) {
+                Text("The same folder as the original").tag(LocationChoice.sameAsSource)
+                Text("Downloads").tag(LocationChoice.downloads)
+                Text(customFolderLabel).tag(LocationChoice.custom)
+            }
+            .pickerStyle(.radioGroup)
+
+            if settings.defaultOutputPolicyRaw == "custom" || !settings.customOutputFolderPath.isEmpty {
+                LabeledContent("Folder") {
+                    HStack {
+                        Text(settings.customOutputFolderPath.isEmpty ? "None chosen" : settings.customOutputFolderPath)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.secondary)
+                            .help(settings.customOutputFolderPath)
+                        Button("Choose…") { chooseCustomFolder() }
+                    }
+                }
+            }
+            if let error = settings.customOutputFolderError {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+
+            Picker("If a file with the same name exists", selection: $settings.defaultOverwritePolicyRaw) {
+                ForEach(OverwritePolicy.allCases, id: \.rawValue) { policy in
+                    Text(policy.displayName).tag(policy.rawValue)
+                }
+            }
+            Text(overwritePolicyDescription)
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
-        return settings.customOutputFolderPath
+    }
+
+    private var customFolderLabel: String {
+        if settings.customOutputFolderPath.isEmpty { return "A folder I choose…" }
+        return URL(fileURLWithPath: settings.customOutputFolderPath).lastPathComponent
+    }
+
+    private var overwritePolicyDescription: String {
+        switch settings.defaultOverwritePolicy {
+        case .appendNumber:
+            return "Adds a number, like “video (1).mp4”. Nothing is replaced."
+        case .overwrite:
+            return "Replaces the existing file. The old file is moved to the Trash."
+        case .ask:
+            return "Asks what to do for each file that already exists."
+        case .skip:
+            return "Leaves the existing file and skips the conversion."
+        case .replaceIfNewer:
+            return "Replaces the existing file only when the original is newer."
+        }
     }
 
     private func chooseCustomFolder() {
@@ -217,339 +138,134 @@ public struct GeneralSettingsView: View {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Select Output Folder"
-        panel.message = "Choose a default folder for newly converted files:"
-
-        let completion: (NSApplication.ModalResponse) -> Void = { response in
-            guard response == .OK, let url = panel.url else { return }
+        panel.prompt = "Choose"
+        panel.message = "Choose where converted files are saved."
+        if let window = NSApp.keyWindow, window.attachedSheet == nil {
+            panel.beginSheetModal(for: window) { response in
+                if response == .OK, let url = panel.url { settings.setCustomOutputFolder(url: url) }
+            }
+        } else if panel.runModal() == .OK, let url = panel.url {
             settings.setCustomOutputFolder(url: url)
         }
-
-        if let window = NSApp.keyWindow ?? NSApp.mainWindow, window.attachedSheet == nil {
-            panel.beginSheetModal(for: window, completionHandler: completion)
-        } else {
-            panel.begin(completionHandler: completion)
-        }
     }
 
-    // MARK: - Conflict Resolution Section
+    // MARK: - File names
 
-    private var conflictResolutionSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("File Collisions", accessory: "When Output Exists")
+    private var patternProblem: String? {
+        AppSettings.filenamePatternProblem(draftPattern)
+    }
 
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 10) {
-                    SettingsRow(
-                        title: "If a file already exists",
-                        subtitle: overwritePolicyDescription,
-                        icon: "doc.on.doc",
-                        iconColor: .orange
-                    ) {
-                        Picker("Collision policy", selection: $settings.defaultOverwritePolicyRaw) {
-                            ForEach(OverwritePolicy.allCases, id: \.rawValue) { policy in
-                                Text(policy.displayName).tag(policy.rawValue)
-                            }
-                        }
-                        .labelsHidden()
-                        .accessibilityLabel("Default collision policy when output already exists")
-                        .pickerStyle(.menu)
-                        .frame(width: 220)
-                    }
+    private var fileNameSection: some View {
+        Section {
+            LabeledContent("Name pattern") {
+                PatternTextField(
+                    text: $draftPattern,
+                    placeholder: "{name}",
+                    controller: patternField,
+                    onCommit: commitPattern
+                )
+                .frame(minWidth: 200)
+            }
+            LabeledContent("Insert") {
+                HStack(spacing: 6) {
+                    tokenButton("{name}", help: "Original file name")
+                    tokenButton("{preset}", help: "Preset name")
+                    tokenButton("{date}", help: "Date, like 2026-10-12")
+                    tokenButton("{time}", help: "Time, like 14-05-09")
                 }
             }
-        }
-    }
-
-    private var overwritePolicyDescription: String {
-        switch settings.defaultOverwritePolicy {
-        case .appendNumber:
-            return "Appends an incremental number (e.g. filename (1).mp4) without overwriting existing data."
-        case .overwrite:
-            return "Replaces the existing destination file immediately. Use with caution."
-        case .ask:
-            return "Prompts for confirmation before overwriting."
-        case .skip:
-            return "Skips the conversion if an existing file with the target name is found."
-        case .replaceIfNewer:
-            return "Replaces the destination file only if the source file is newer."
-        }
-    }
-
-    // MARK: - Filename Pattern with Live Preview
-
-    private var filenamePatternSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Filename Format", accessory: "Tokens: {name}, {preset}, {date}, {time}, {ext}")
-
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    // Text Field
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Pattern Template")
-                                .font(.subheadline.weight(.medium))
-                            Spacer()
-                            if settings.defaultFilenamePattern != "{name}" {
-                                Button("Reset to Default") {
-                                    settings.defaultFilenamePattern = "{name}"
-                                }
-                                .font(.caption)
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel("Reset filename pattern to default")
-                            }
-                        }
-
-                        HStack {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 13))
-                                .foregroundStyle(.secondary)
-
-                            TextField("Pattern", text: $settings.defaultFilenamePattern, prompt: Text("{name}"))
-                                .font(.system(.body, design: .monospaced))
-                                .textFieldStyle(.plain)
-                                .accessibilityLabel("Filename pattern template")
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color(nsColor: .textBackgroundColor).opacity(0.6))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 1)
-                        )
-                    }
-
-                    // Token Chips (Click to Insert)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Available Tokens (Click to insert):")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 6) {
-                            TokenPill(token: "{name}", description: "Source filename") {
-                                insertToken("{name}")
-                            }
-                            TokenPill(token: "{preset}", description: "Preset name") {
-                                insertToken("_{preset}")
-                            }
-                            TokenPill(token: "{date}", description: "YYYY-MM-DD") {
-                                insertToken("_{date}")
-                            }
-                            TokenPill(token: "{time}", description: "HH-MM-SS") {
-                                insertToken("_{time}")
-                            }
-                        }
-                    }
-
-                    Divider()
-
-                    // Live Preview Banner
-                    HStack(spacing: 12) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(Color.accentColor)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Live Output Preview")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-
-                            HStack(spacing: 6) {
-                                Text("\(sampleFilename).mov")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-
-                                Image(systemName: "arrow.right")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.tertiary)
-
-                                Text(computedPreviewFormatted)
-                                    .font(.system(.caption, design: .monospaced).weight(.semibold))
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                        }
-
-                        Spacer()
-
-                        StatusBadge("Live", icon: "bolt.fill", style: .success)
-                    }
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.06))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.accentColor.opacity(0.18), lineWidth: 0.5)
-                    )
-                }
-                .padding(14)
-            }
-        }
-    }
-
-    private func insertToken(_ token: String) {
-        let current = settings.defaultFilenamePattern
-        let tokenWithoutLeadingSeparator = token.hasPrefix("_") ? String(token.dropFirst()) : token
-        let alreadyHasSeparator = current.last.map { "_-".contains($0) } == true
-        let separator = current.isEmpty || alreadyHasSeparator || tokenWithoutLeadingSeparator == token ? "" : "_"
-        settings.defaultFilenamePattern += separator + tokenWithoutLeadingSeparator
-    }
-
-    private var computedPreviewFormatted: String {
-        let name = computedPreviewName
-        if name.lowercased().hasSuffix(".mp4") {
-            return name
-        }
-        return "\(name).mp4"
-    }
-
-    private var computedPreviewName: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let dateStr = formatter.string(from: Date())
-
-        formatter.dateFormat = "HH-mm-ss"
-        let timeStr = formatter.string(from: Date())
-
-        var result = settings.defaultFilenamePattern
-        if result.isEmpty { result = "{name}" }
-
-        result = result.replacingOccurrences(of: "{name}", with: sampleFilename)
-        result = result.replacingOccurrences(of: "{preset}", with: "MP4")
-        result = result.replacingOccurrences(of: "{date}", with: dateStr)
-        result = result.replacingOccurrences(of: "{time}", with: timeStr)
-        result = result.replacingOccurrences(of: "{ext}", with: "mp4")
-        return result
-    }
-
-    // MARK: - File Attributes Section
-
-    private var fileAttributesSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("File Attributes")
-
-            SettingsCard {
-                SettingsRow(
-                    title: "Preserve creation and modification dates",
-                    subtitle: "Copies the source file's exact timestamps to the converted file so your photos and videos retain their chronological place in Finder and Photos.",
-                    icon: "calendar.badge.clock",
-                    iconColor: .purple
-                ) {
-                    Toggle("", isOn: $settings.preserveTimestamps)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                        .accessibilityLabel("Preserve creation and modification dates")
+            if let patternProblem {
+                Text(patternProblem)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            } else {
+                LabeledContent("Example") {
+                    Text("Interview.mov → \(previewName)")
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
             }
-        }
-    }
-
-    // MARK: - After Conversion Section
-
-    private var afterConversionSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("After Conversion")
-
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(
-                        title: "Show macOS notification banner",
-                        subtitle: "Alerts you with a banner when a batch conversion completes. \(settings.notificationStatusText)",
-                        icon: "bell.badge",
-                        iconColor: .red
-                    ) {
-                        Toggle("", isOn: $settings.enableNotifications)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .accessibilityLabel("Show macOS notification banner")
-                    }
-
-                    if settings.enableNotifications,
-                       settings.notificationAuthorizationState == .notDetermined {
-                        Divider().padding(.leading, 42)
-
-                        SettingsRow(
-                            title: "Allow notifications",
-                            subtitle: "Grant permission now so completed conversions can show a banner.",
-                            icon: "bell.and.waves.left.and.right",
-                            iconColor: .red
-                        ) {
-                            Button("Allow…") {
-                                settings.requestNotificationAuthorization()
-                            }
-                            .controlSize(.small)
-                            .accessibilityLabel("Request notification permission")
-                        }
-                    } else if settings.enableNotifications,
-                              settings.notificationAuthorizationState == .denied {
-                        Divider().padding(.leading, 42)
-
-                        SettingsRow(
-                            title: "Notifications are disabled in System Settings",
-                            subtitle: "macOS is blocking notification banners for File Converter. Open System Settings to restore permission.",
-                            icon: "exclamationmark.triangle.fill",
-                            iconColor: .orange
-                        ) {
-                            Button("Open System Settings…") {
-                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
-                                    NSWorkspace.shared.open(url)
-                                }
-                            }
-                            .controlSize(.small)
-                            .accessibilityLabel("Open macOS Notification Settings")
-                        }
-                    }
-
-                    Divider().padding(.leading, 42)
-
-                    SettingsRow(
-                        title: "Reveal completed files in Finder",
-                        subtitle: "Automatically activates Finder and highlights the converted files when finished.",
-                        icon: "macwindow",
-                        iconColor: .blue
-                    ) {
-                        Toggle("", isOn: $settings.revealInFinder)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .accessibilityLabel("Reveal completed files in Finder")
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Reset Section
-
-    private var resetSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsCard {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Reset General Settings")
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.primary)
-
-                        Text("Restores all general options to factory defaults. Your presets are kept intact.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
+        } header: {
+            Text("File Names")
+        } footer: {
+            if settings.defaultFilenamePattern != "{name}" {
+                HStack {
                     Spacer()
-
-                    Button("Reset to Defaults...", role: .destructive) {
-                        showingResetConfirmation = true
+                    Button("Use Original Name Only") {
+                        draftPattern = "{name}"
+                        commitPattern()
                     }
-                    .glassActionDestructive()
-                    .controlSize(.small)
-                    .accessibilityLabel("Reset general settings to defaults")
+                    .buttonStyle(.link)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
             }
+        }
+    }
+
+    private func tokenButton(_ token: String, help: String) -> some View {
+        Button(token) {
+            patternField.insert(token)
+        }
+        .font(.system(.callout, design: .monospaced))
+        .help(help)
+        .accessibilityLabel("Insert \(help)")
+    }
+
+    private var previewName: String {
+        let sampleMenuName = PresetStore.shared.enabledPresets.first { $0.category == .video }?.menuName ?? "MP4"
+        return OutputNamingEngine.previewFilename(
+            pattern: draftPattern,
+            sourceName: "Interview",
+            sourceExtension: "mov",
+            targetExtension: "mp4",
+            presetMenuName: sampleMenuName
+        )
+    }
+
+    private func commitPattern() {
+        if settings.commitFilenamePattern(draftPattern) {
+            draftPattern = settings.defaultFilenamePattern
+        }
+    }
+
+    // MARK: - File details
+
+    private var fileDetailsSection: some View {
+        Section {
+            Toggle("Keep the original creation date", isOn: $settings.preserveCreationDate)
+            Toggle("Keep the original modification date", isOn: $settings.preserveModificationDate)
+            Toggle("Remove location from photos and videos", isOn: $settings.removeLocationData)
+        } header: {
+            Text("File Details")
+        } footer: {
+            Text("With the modification date off, new files show today's date and appear first when Finder sorts by date. Presets can override these.")
+        }
+    }
+
+    // MARK: - After converting
+
+    private var afterConvertingSection: some View {
+        Section("After Converting") {
+            Toggle("Show a notification when a batch finishes", isOn: $settings.enableNotifications)
+            if settings.enableNotifications {
+                switch settings.notificationAuthorizationState {
+                case .notDetermined:
+                    LabeledContent("File Converter needs permission to show notifications.") {
+                        Button("Allow…") { settings.requestNotificationAuthorization() }
+                    }
+                case .denied:
+                    LabeledContent("Notifications are turned off for File Converter in System Settings.") {
+                        Button("Open System Settings…") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                    }
+                default:
+                    EmptyView()
+                }
+            }
+            Toggle("Show converted files in Finder", isOn: $settings.revealInFinder)
         }
     }
 }

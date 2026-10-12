@@ -17,7 +17,7 @@ public final class ImageIOBackend: ConversionBackend, @unchecked Sendable {
         guard sourceFormat.category == .image && destinationFormat.category == .image else {
             return false
         }
-        return destinationFormat.nativeEncoderAvailable
+        return destinationFormat.nativeEncoderAvailable && NativeImageCodecs.canEncode(destinationFormat)
     }
 
     private func markCancelled(jobID: UUID) {
@@ -105,7 +105,10 @@ public final class ImageIOBackend: ConversionBackend, @unchecked Sendable {
 
         // Create Destination
         guard let imageDestination = CGImageDestinationCreateWithURL(destURL as CFURL, destUTType.identifier as CFString, framesToWrite, nil) else {
-            throw ConversionError.destinationUnavailable(path: destURL.path)
+            throw ConversionError.encoderUnavailable(
+                codec: targetFormatDef.name,
+                reason: "macOS cannot write \(targetFormatDef.name) files on this Mac."
+            )
         }
 
         let qualityFactor: Float

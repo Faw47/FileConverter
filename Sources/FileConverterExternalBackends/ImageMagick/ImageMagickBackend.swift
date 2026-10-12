@@ -45,7 +45,7 @@ public final class ImageMagickBackend: ConversionBackend, @unchecked Sendable {
         } else {
             sourceArg = sourceURL.path
         }
-        var args: [String] = [sourceArg]
+        var args: [String] = [sourceArg, "-auto-orient"]
 
         switch job.preset.quality {
         case .low:
@@ -60,6 +60,10 @@ public final class ImageMagickBackend: ConversionBackend, @unchecked Sendable {
             args.append(contentsOf: ["-quality", "100"])
         case .custom:
             break
+        }
+
+        if destExt == "webp" && job.preset.quality == .lossless {
+            args.append(contentsOf: ["-define", "webp:lossless=true"])
         }
 
         if !job.preset.preserveMetadata {

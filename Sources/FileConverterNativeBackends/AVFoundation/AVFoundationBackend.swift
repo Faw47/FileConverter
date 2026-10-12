@@ -104,8 +104,8 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
 
         let asset = AVURLAsset(url: sourceURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
 
-        if ["wav", "aiff", "aif"].contains(job.preset.destinationFormat.lowercased()) {
-            try await convertToPCM(asset: asset, sourcePath: sourceURL.path, destinationURL: destURL, targetExtension: job.preset.destinationFormat, preset: job.preset, jobID: jobID, progressHandler: progressHandler)
+        if Self.isAudioOnlyOutput(job.preset) {
+            try await convertAudio(asset: asset, sourcePath: sourceURL.path, destinationURL: destURL, targetExtension: job.preset.destinationFormat, preset: job.preset, jobID: jobID, progressHandler: progressHandler)
             return
         }
 
@@ -242,7 +242,67 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         }
     }
 
-    private func convertToPCM(
+    /// Audio-only outputs are written with AVAssetReader/AVAssetWriter so the
+    /// preset's codec, bitrate, sample rate, channel count, and bit depth are
+    /// honored. (AVAssetExportPresetAppleM4A always produces 256 kbps AAC.)
+    static func isAudioOnlyOutput(_ preset: ConversionPreset) -> Bool {
+        let ext = preset.destinationFormat.lowercased()
+        return preset.category == .audio
+            || preset.videoCodec == .none
+            || ["m4a", "qta", "wav", "aiff", "aif"].contains(ext)
+    }
+
+    enum NativeAudioTarget: Equatable {
+        case pcm(bigEndian: Bool)
+        case aac
+        case alac
+    }
+
+    static func audioTarget(for preset: ConversionPreset) -> NativeAudioTarget {
+        let ext = preset.destinationFormat.lowercased()
+        if ext == "wav" { return .pcm(bigEndian: false) }
+        if ext == "aiff" || ext == "aif" { return .pcm(bigEndian: true) }
+        switch preset.audioCodec {
+        case .alac: return .alac
+        case .wav: return .pcm(bigEndian: false)
+        case .aiff: return .pcm(bigEndian: true)
+        default: return .aac
+        }
+    }
+
+    /// AAC supports these rates; anything else is mapped to the nearest
+    /// supported rate not above the requested one (minimum 8 kHz).
+    static func aacSampleRate(for requested: Double) -> Double {
+        let supported: [Double] = [8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000]
+        return supported.last { $0 <= requested } ?? supported[0]
+    }
+
+    /// Apple's AAC encoder accepts roughly 32–160 kbps per channel.
+    static func aacBitRate(requestedKbps: Int?, channels: Int) -> Int {
+        let perChannelMin = 32_000, perChannelMax = 160_000
+        let requested = (requestedKbps ?? 256) * 1_000
+        let count = max(1, channels)
+        return min(max(requested, perChannelMin * count), perChannelMax * count)
+    }
+
+    /// Bit depth carried by a lossless or PCM source, if it reports one.
+    static func sourceBitDepth(_ asbd: AudioStreamBasicDescription) -> Int? {
+        if asbd.mFormatID == kAudioFormatLinearPCM, asbd.mBitsPerChannel > 0 {
+            return Int(asbd.mBitsPerChannel)
+        }
+        if asbd.mFormatID == kAudioFormatAppleLossless || asbd.mFormatID == kAudioFormatFLAC {
+            switch asbd.mFormatFlags {
+            case 1: return 16
+            case 2: return 20
+            case 3: return 24
+            case 4: return 32
+            default: return nil
+            }
+        }
+        return nil
+    }
+
+    private func convertAudio(
         asset: AVAsset,
         sourcePath: String,
         destinationURL: URL,
@@ -259,6 +319,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         var sampleRate: Double = 44100.0
         var channels: Int = 2
         var channelLayoutData: Data? = nil
+        var sourceBits: Int? = nil
         if let descriptions = try? await track.load(.formatDescriptions),
            let firstDesc = descriptions.first {
             let audioDesc = firstDesc as CMAudioFormatDescription
@@ -269,6 +330,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
                 if asbd.mChannelsPerFrame > 0 {
                     channels = Int(asbd.mChannelsPerFrame)
                 }
+                sourceBits = Self.sourceBitDepth(asbd)
             }
             var layoutSize: Int = 0
             if let layoutPtr = CMAudioFormatDescriptionGetChannelLayout(audioDesc, sizeOut: &layoutSize), layoutSize > 0 {
@@ -284,46 +346,90 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
             channelLayoutData = nil
         }
 
-        let bitDepth = preset.audioBitDepth ?? .bit16
+        let target = Self.audioTarget(for: preset)
+        if target == .aac {
+            sampleRate = Self.aacSampleRate(for: sampleRate)
+        }
+
+        var layoutData: Data? = channelLayoutData
+        if layoutData == nil, channels > 2 {
+            var layout = AudioChannelLayout()
+            if channels == 6 {
+                layout.mChannelLayoutTag = kAudioChannelLayoutTag_MPEG_5_1_A
+                layoutData = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
+            } else if channels == 8 {
+                layout.mChannelLayoutTag = kAudioChannelLayoutTag_MPEG_7_1_A
+                layoutData = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
+            } else {
+                channels = 2
+            }
+        }
+
         let reader = try AVAssetReader(asset: asset)
-        let bigEndian = ["aiff", "aif"].contains(targetExtension.lowercased())
-        var pcmSettings: [String: Any] = [
+        // Decoded samples handed from reader to writer.
+        var decodeSettings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVSampleRateKey: sampleRate,
             AVNumberOfChannelsKey: channels,
-            AVLinearPCMBitDepthKey: bitDepth.bitDepthNumber,
-            AVLinearPCMIsFloatKey: bitDepth.isFloat,
-            AVLinearPCMIsBigEndianKey: bigEndian,
             AVLinearPCMIsNonInterleaved: false
         ]
-        if let channelLayoutData {
-            pcmSettings[AVChannelLayoutKey] = channelLayoutData
-        } else if channels > 2 {
-            if channels == 6 {
-                var layout = AudioChannelLayout()
-                layout.mChannelLayoutTag = kAudioChannelLayoutTag_MPEG_5_1_A
-                pcmSettings[AVChannelLayoutKey] = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
-            } else if channels == 8 {
-                var layout = AudioChannelLayout()
-                layout.mChannelLayoutTag = kAudioChannelLayoutTag_MPEG_7_1_A
-                pcmSettings[AVChannelLayoutKey] = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
-            } else {
-                channels = 2
-                pcmSettings[AVNumberOfChannelsKey] = channels
-            }
+        // Encoded format written to the file.
+        var encodeSettings: [String: Any]
+        let fileType: AVFileType
+        switch target {
+        case .pcm(let bigEndian):
+            let bitDepth = preset.audioBitDepth ?? .bit16
+            decodeSettings[AVLinearPCMBitDepthKey] = bitDepth.bitDepthNumber
+            decodeSettings[AVLinearPCMIsFloatKey] = bitDepth.isFloat
+            decodeSettings[AVLinearPCMIsBigEndianKey] = bigEndian
+            encodeSettings = decodeSettings
+            fileType = bigEndian ? .aiff : .wav
+        case .aac:
+            decodeSettings[AVLinearPCMBitDepthKey] = 32
+            decodeSettings[AVLinearPCMIsFloatKey] = true
+            decodeSettings[AVLinearPCMIsBigEndianKey] = false
+            encodeSettings = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: channels,
+                AVEncoderBitRateKey: Self.aacBitRate(requestedKbps: preset.audioBitrateKbps, channels: channels)
+            ]
+            fileType = Self.outputFileType(forTarget: targetExtension) ?? .m4a
+        case .alac:
+            let requestedBits = preset.audioBitDepth?.bitDepthNumber ?? sourceBits ?? 16
+            let bits = [16, 20, 24, 32].contains(requestedBits) ? requestedBits : 16
+            decodeSettings[AVLinearPCMBitDepthKey] = bits == 20 ? 24 : bits
+            decodeSettings[AVLinearPCMIsFloatKey] = false
+            decodeSettings[AVLinearPCMIsBigEndianKey] = false
+            encodeSettings = [
+                AVFormatIDKey: kAudioFormatAppleLossless,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: channels,
+                AVEncoderBitDepthHintKey: bits
+            ]
+            fileType = Self.outputFileType(forTarget: targetExtension) ?? .m4a
         }
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: pcmSettings)
+        if let layoutData {
+            decodeSettings[AVChannelLayoutKey] = layoutData
+            encodeSettings[AVChannelLayoutKey] = layoutData
+        }
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: decodeSettings)
         guard reader.canAdd(output) else {
             throw ConversionError.decoderUnavailable(codec: "audio", reason: "Could not read the source audio stream.")
         }
         reader.add(output)
 
-        let fileType: AVFileType = bigEndian ? .aiff : .wav
         let writer = try AVAssetWriter(outputURL: destinationURL, fileType: fileType)
-        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: pcmSettings)
+        guard writer.canApply(outputSettings: encodeSettings, forMediaType: .audio) else {
+            throw ConversionError.encoderUnavailable(
+                codec: targetExtension,
+                reason: "macOS cannot encode audio with these settings (\(Int(sampleRate)) Hz, \(channels) channels)."
+            )
+        }
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: encodeSettings)
         input.expectsMediaDataInRealTime = false
         guard writer.canAdd(input) else {
-            throw ConversionError.encoderUnavailable(codec: targetExtension, reason: "Could not create a PCM writer.")
+            throw ConversionError.encoderUnavailable(codec: targetExtension, reason: "Could not create an audio writer.")
         }
         writer.add(input)
         guard reader.startReading() else {

@@ -55,6 +55,8 @@ final class ConversionQueueTests: XCTestCase {
         var preset = try XCTUnwrap(
             BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
         )
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.filenamePattern = "shared-output"
         preset.overwritePolicy = .appendNumber
         queue.addJobs([
@@ -91,6 +93,8 @@ final class ConversionQueueTests: XCTestCase {
         try Data("second".utf8).write(to: secondURL)
 
         var preset = try XCTUnwrap(BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" })
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.filenamePattern = "shared-output"
         preset.overwritePolicy = .appendNumber
         queue.addJobs([
@@ -121,6 +125,8 @@ final class ConversionQueueTests: XCTestCase {
         try Data("old".utf8).write(to: existingOutput)
 
         var preset = try XCTUnwrap(BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" })
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.filenamePattern = "replace-target"
         preset.overwritePolicy = .ask
         let job = ConversionJob(sourceURL: sourceURL, preset: preset, state: .preparing)
@@ -156,6 +162,8 @@ final class ConversionQueueTests: XCTestCase {
         var preset = try XCTUnwrap(
             BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
         )
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.filenamePattern = "existing"
         preset.overwritePolicy = .skip
         queue.addJobs([ConversionJob(sourceURL: sourceURL, preset: preset)])
@@ -186,6 +194,8 @@ final class ConversionQueueTests: XCTestCase {
         var preset = try XCTUnwrap(
             BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
         )
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.filenamePattern = "existing_newer"
         preset.overwritePolicy = .replaceIfNewer
         queue.addJobs([ConversionJob(sourceURL: sourceURL, preset: preset)])
@@ -216,6 +226,8 @@ final class ConversionQueueTests: XCTestCase {
         var preset = try XCTUnwrap(
             BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" }
         )
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.filenamePattern = "existing_older"
         preset.overwritePolicy = .replaceIfNewer
         queue.addJobs([ConversionJob(sourceURL: sourceURL, preset: preset)])
@@ -300,6 +312,8 @@ final class ConversionQueueTests: XCTestCase {
         try Data("source image".utf8).write(to: sourceURL)
 
         var preset = try XCTUnwrap(BuiltInPresets.makeDefaultPresets().first { $0.builtInKey == "image.png" })
+        // Custom values below are this preset's own, not General settings.
+        preset.inheritance = .inheritNone
         preset.overwritePolicy = .ask
         preset.filenamePattern = "{name}"
 

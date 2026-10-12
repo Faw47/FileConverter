@@ -86,6 +86,14 @@ public struct ConversionJob: Identifiable, Sendable {
     public var outputURLs: [URL]
     public var warnings: [String]
     public var detectionSnapshot: DetectionSnapshot?
+    /// Settings resolved from the preset and General settings for this
+    /// attempt. Set when the job starts; cleared on retry.
+    public var resolvedSettings: ResolvedConversionSettings?
+    /// Shared by every job in a batch so `{date}` and `{time}` match.
+    public var batchCreatedAt: Date
+    /// Set while the job waits for another job that is creating the same
+    /// output file (reservation key of that file).
+    public var waitingForDestinationKey: URL?
 
     public init(
         id: UUID = UUID(),
@@ -108,7 +116,9 @@ public struct ConversionJob: Identifiable, Sendable {
         plannedOutputs: [PlannedConversionOutput] = [],
         outputURLs: [URL] = [],
         warnings: [String] = [],
-        detectionSnapshot: DetectionSnapshot? = nil
+        detectionSnapshot: DetectionSnapshot? = nil,
+        resolvedSettings: ResolvedConversionSettings? = nil,
+        batchCreatedAt: Date? = nil
     ) {
         self.id = id
         self.batchID = batchID
@@ -131,11 +141,17 @@ public struct ConversionJob: Identifiable, Sendable {
         self.outputURLs = outputURLs
         self.warnings = warnings
         self.detectionSnapshot = detectionSnapshot
+        self.resolvedSettings = resolvedSettings
+        self.batchCreatedAt = batchCreatedAt ?? createdAt
     }
 
     /// Effective overwrite policy for this attempt.
+    /// Uses the policy actually applied to this attempt (which may come from
+    /// General settings), not the preset's stored value.
     public var effectiveOverwritePolicy: OverwritePolicy {
-        collisionOverride ?? preset.overwritePolicy
+        collisionOverride
+            ?? resolvedSettings?.overwritePolicy.value
+            ?? EffectivePresetResolver.resolve(preset: preset).overwritePolicy.value
     }
 
     public var filename: String {
