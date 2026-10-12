@@ -187,7 +187,7 @@ public struct PDFCompressDialogView: View {
                 } header: {
                     Text("Compression")
                 } footer: {
-                    Text(compressionFooter)
+                    FooterText(compressionFooter)
                 }
 
                 Section("Clean Up") {
@@ -225,7 +225,7 @@ public struct PDFCompressDialogView: View {
                 } header: {
                     Text("Saving")
                 } footer: {
-                    Text("Example: \(exampleName). If the result is not smaller, nothing is saved.")
+                    FooterText("Example: \(exampleName). If the result is not smaller, nothing is saved.")
                 }
             }
             .formStyle(.grouped)

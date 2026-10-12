@@ -16,7 +16,6 @@ public struct PresetsSettingsView: View {
     @State private var importErrorMessage = ""
     @State private var showingImportWarning = false
     @State private var importWarningMessage = ""
-    @State private var replaceOnImport = false
     @State private var isEditorDirty = false
     @State private var showingUnsavedChangesConfirmation = false
     @State private var pendingEditorAction: PendingEditorAction?
@@ -41,29 +40,8 @@ public struct PresetsSettingsView: View {
     public init() {}
 
     public var body: some View {
-        LiquidGlassContainer(spacing: 0) {
+        Group {
             VStack(spacing: 0) {
-                // Header
-                HStack(spacing: 14) {
-                    SettingsIconBadge(systemImage: "slider.horizontal.3", color: .purple, size: .header)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Presets")
-                            .font(.title2.weight(.bold))
-
-                        Text("Choose what appears in Finder and how each conversion is performed.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
-                .padding(.bottom, 12)
-
-                Divider()
-
                 recoveryBanner
 
                 HSplitView {
@@ -132,7 +110,7 @@ public struct PresetsSettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(selectedPreset?.isBuiltIn == true ? "Built-in presets are disabled instead of deleted. Restore it from the editor or reset factory values." : "Deleted custom presets cannot be recovered unless you exported them.")
+            Text("A deleted preset cannot be recovered unless you exported it.")
         }
         .confirmationDialog(
             "Reset all presets to factory values?",
@@ -195,8 +173,8 @@ public struct PresetsSettingsView: View {
             Text("Save or revert the current preset before switching to another one.")
         }
         .onDeleteCommand {
-            if selection != nil {
-                request(.delete(selection!))
+            if let selection, selectedPreset?.isBuiltIn == false {
+                request(.delete(selection))
             }
         }
     }
@@ -251,24 +229,40 @@ public struct PresetsSettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: guardedSelection) {
-                    ForEach(filteredPresets) { preset in
-                        PresetSidebarRow(preset: preset)
-                            .tag(preset.id)
-                            .contextMenu {
-                                Button(preset.isEnabled ? "Disable" : "Enable") {
-                                    request(.toggle(preset.id))
-                                }
-                                Button("Duplicate") {
-                                    request(.duplicate(preset.id))
-                                }
-                                Button("Export Preset...") {
-                                    exportSinglePreset(preset)
-                                }
-                                Divider()
-                                Button(preset.isBuiltIn ? "Disable" : "Delete", role: .destructive) {
-                                    request(.delete(preset.id))
+                    ForEach(FormatCategory.allCases) { category in
+                        let members = filteredPresets.filter { $0.category == category }
+                        if !members.isEmpty {
+                            Section(category.displayName) {
+                                ForEach(members) { preset in
+                                    PresetSidebarRow(preset: preset)
+                                        .tag(preset.id)
+                                        .contextMenu {
+                                            Button(preset.isEnabled ? "Hide from Menus" : "Show in Menus") {
+                                                request(.toggle(preset.id))
+                                            }
+                                            Button("Duplicate") {
+                                                request(.duplicate(preset.id))
+                                            }
+                                            Button("Export…") {
+                                                exportSinglePreset(preset)
+                                            }
+                                            if preset.isBuiltIn {
+                                                if isModifiedBuiltIn(preset) {
+                                                    Divider()
+                                                    Button("Restore Factory Settings") {
+                                                        restoreFactory(preset)
+                                                    }
+                                                }
+                                            } else {
+                                                Divider()
+                                                Button("Delete…", role: .destructive) {
+                                                    request(.delete(preset.id))
+                                                }
+                                            }
+                                        }
                                 }
                             }
+                        }
                     }
                 }
                 .listStyle(.sidebar)
@@ -301,11 +295,11 @@ public struct PresetsSettingsView: View {
                         request(.delete(selectedPreset.id))
                     }
                 } label: {
-                    Image(systemName: selectedPreset?.isBuiltIn == true ? "eye.slash" : "trash")
+                    Image(systemName: "minus")
                 }
-                .disabled(selectedPreset == nil)
-                .help(selectedPreset?.isBuiltIn == true ? "Disable selected built-in preset" : "Delete selected preset")
-                .accessibilityLabel(selectedPreset?.isBuiltIn == true ? "Disable selected built-in preset" : "Delete selected preset")
+                .disabled(selectedPreset == nil || selectedPreset?.isBuiltIn == true)
+                .help(selectedPreset?.isBuiltIn == true ? "Built-in presets can be hidden but not deleted" : "Delete selected preset")
+                .accessibilityLabel("Delete selected preset")
 
                 Spacer()
 
@@ -321,8 +315,6 @@ public struct PresetsSettingsView: View {
                             exportSinglePreset(selected)
                         }
                     }
-                    Divider()
-                    Toggle("Replace matching presets on import", isOn: $replaceOnImport)
                     Divider()
                     Button("Reset All Presets...", role: .destructive) {
                         request(.resetAll)
@@ -416,6 +408,20 @@ public struct PresetsSettingsView: View {
         // destroying an unsaved draft.
         if selection != nil { return }
         selection = filteredPresets.first?.id
+    }
+
+    private func isModifiedBuiltIn(_ preset: ConversionPreset) -> Bool {
+        BuiltInPresetUpgrades.isModifiedFromFactory(preset)
+    }
+
+    private func restoreFactory(_ preset: ConversionPreset) {
+        do {
+            try PresetStore.shared.restoreBuiltIn(withID: preset.id)
+            reload()
+        } catch {
+            mutationErrorMessage = error.localizedDescription
+            showingMutationError = true
+        }
     }
 
     private func toggleEnabled(_ preset: ConversionPreset) {
@@ -573,7 +579,7 @@ public struct PresetsSettingsView: View {
                 let data = try Data(contentsOf: url)
                 let conflicts = try PresetStore.shared.detectImportConflicts(in: data)
                 if conflicts.isEmpty {
-                    try PresetStore.shared.importPresetsJSON(data, overwrite: replaceOnImport)
+                    try PresetStore.shared.importPresetsJSON(data)
                     Task { @MainActor in
                         reload()
                         if let warning = PresetStore.shared.lastImportWarning {
@@ -847,7 +853,7 @@ private struct PresetConflictResolutionSheet: View {
                 Button("Import") {
                     onResolve(resolutions)
                 }
-                .glassActionProminent()
+                .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
             }
             .padding(16)
@@ -860,59 +866,37 @@ private struct PresetSidebarRow: View {
     let preset: ConversionPreset
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: preset.category.systemImage)
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(preset.menuName)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-
-                Text(subtitle)
-                    .font(.caption)
+        HStack(spacing: 6) {
+            Text(preset.menuName)
+                .lineLimit(1)
+                .foregroundStyle(preset.isEnabled ? .primary : .secondary)
+            if !preset.isBuiltIn {
+                Text("Custom")
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .padding(.horizontal, 4)
+                    .background(Capsule().stroke(Color.secondary.opacity(0.4)))
             }
-
-            Spacer(minLength: 6)
-
+            Spacer(minLength: 4)
             if !preset.outputDirectoryPolicy.isCustomFolderAuthorized {
-                Image(systemName: "folder.badge.gearshape")
+                Image(systemName: "folder.badge.questionmark")
                     .foregroundStyle(.orange)
-                    .help("Requires folder authorization")
+                    .help("The folder this preset saves to needs to be chosen again")
             } else if !preset.isEnabled {
-                Image(systemName: "pause.circle.fill")
+                Image(systemName: "eye.slash")
                     .foregroundStyle(.secondary)
-                    .help("Disabled")
+                    .help("Hidden from menus")
             } else if !BackendResolver.shared.supportsAnySource(for: preset) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                    .help("Requires an external tool")
+                    .help("Needs a tool that is not installed")
             }
+            Text(preset.destinationFormat.uppercased())
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
-    }
-
-    private var subtitle: String {
-        let kind = preset.isBuiltIn ? "Built-in" : "Custom"
-        return "\(kind)  ·  \(sourceSummary) → .\(preset.destinationFormat.uppercased())"
-    }
-
-    private var sourceSummary: String {
-        let sources = Set(preset.sourceFormats.map { $0.lowercased() })
-        if sources == ["*"] { return "Any file" }
-        if sources == ["audio", "video"] { return "Audio/video" }
-        if sources.count == 1, let source = sources.first {
-            if let category = FormatCategory(rawValue: source) {
-                return "Any \(category.displayName.lowercased())"
-            }
-            if let format = FormatRegistry.shared.format(forID: source) {
-                return format.primaryExtension.uppercased()
-            }
-        }
-        return "Custom sources"
+        .accessibilityValue(preset.isEnabled ? "" : "Hidden from menus")
     }
 }
 
@@ -1064,11 +1048,9 @@ private struct NewPresetWizardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 12) {
-                SettingsIconBadge(systemImage: "wand.and.stars", color: .purple, size: .header)
-
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Create a preset")
-                        .font(.title2.weight(.bold))
+                    Text("New Preset")
+                        .font(.title2.weight(.semibold))
                     Text("Start with a recipe. You can fine-tune it after it is created.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -1090,11 +1072,10 @@ private struct NewPresetWizardView: View {
                             selectedTemplate = template
                         } label: {
                             HStack(alignment: .top, spacing: 10) {
-                                SettingsIconBadge(
-                                    systemImage: template.systemImage,
-                                    color: template == selectedTemplate ? .accentColor : .secondary,
-                                    size: .tool
-                                )
+                                Image(systemName: template.systemImage)
+                                    .font(.title3)
+                                    .foregroundStyle(template == selectedTemplate ? Color.accentColor : .secondary)
+                                    .frame(width: 28)
 
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(template.title)
@@ -1162,7 +1143,7 @@ private struct NewPresetWizardView: View {
                     onCreate(selectedTemplate.makePreset())
                     dismiss()
                 }
-                .glassActionProminent()
+                .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
             }
         }

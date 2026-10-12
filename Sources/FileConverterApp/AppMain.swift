@@ -311,8 +311,7 @@ struct FileConverterApp: App {
             SettingsView()
                 .environmentObject(appState)
         }
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: 1040, height: 700)
+        .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 SettingsLink {

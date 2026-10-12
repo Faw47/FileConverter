@@ -240,7 +240,7 @@ public struct GeneralSettingsView: View {
         } header: {
             Text("File Details")
         } footer: {
-            Text("With the modification date off, new files show today's date and appear first when Finder sorts by date. Presets can override these.")
+            FooterText("With the modification date off, new files show today's date and appear first when Finder sorts by date. Presets can override these.")
         }
     }
 
@@ -285,7 +285,7 @@ public struct GeneralSettingsView: View {
         } header: {
             Text("Opening Files")
         } footer: {
-            Text("Applies to Open With, Services, and files dropped on the Dock icon. The File Converter menu in Finder always converts right away.")
+            FooterText("Applies to Open With, Services, and files dropped on the Dock icon. The File Converter menu in Finder always converts right away.")
         }
     }
 }

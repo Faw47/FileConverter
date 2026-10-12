@@ -174,11 +174,10 @@ public struct PresetEditorView: View {
         return VStack(spacing: 0) {
             // Pinned Inspector Header
             HStack(alignment: .center, spacing: 12) {
-                SettingsIconBadge(
-                    systemImage: preset.wrappedValue.category.systemImage,
-                    color: categoryColor(preset.wrappedValue.category),
-                    size: .tool
-                )
+                Image(systemName: preset.wrappedValue.category.systemImage)
+                    .font(.title2)
+                    .foregroundStyle(categoryColor(preset.wrappedValue.category))
+                    .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(preset.wrappedValue.name.isEmpty ? "Untitled Preset" : preset.wrappedValue.name)
@@ -191,14 +190,13 @@ public struct PresetEditorView: View {
 
                 Spacer()
 
-                Toggle("Enabled", isOn: preset.isEnabled)
+                Toggle("Show in menus", isOn: preset.isEnabled)
                     .toggleStyle(.switch)
-                    .labelsHidden()
-                    .help(preset.wrappedValue.isEnabled ? "Preset enabled" : "Preset disabled")
-                    .accessibilityLabel("Preset enabled")
+                    .help("Show this preset in the Finder menu and the preset picker")
+                    .accessibilityLabel("Show in menus")
 
                 if preset.wrappedValue.isBuiltIn && (hasFactoryChanges || !preset.wrappedValue.isEnabled) {
-                    Button("Restore") {
+                    Button("Restore Factory Settings") {
                         do {
                             try PresetStore.shared.restoreBuiltIn(withID: presetID)
                             load()
@@ -283,30 +281,32 @@ public struct PresetEditorView: View {
 
             // Pinned Action Footer
             HStack(spacing: 8) {
-                Button(preset.wrappedValue.isBuiltIn ? "Disable..." : "Delete...", role: .destructive) {
-                    if hasChanges {
-                        showingUnsavedDeleteConfirmation = true
-                    } else {
-                        showingDeleteConfirmation = true
+                if !preset.wrappedValue.isBuiltIn {
+                    Button("Delete…", role: .destructive) {
+                        if hasChanges {
+                            showingUnsavedDeleteConfirmation = true
+                        } else {
+                            showingDeleteConfirmation = true
+                        }
                     }
                 }
-                .glassActionDestructive()
-                .controlSize(.small)
 
                 Button("Revert") {
                     load()
                 }
-                .glassAction()
-                .controlSize(.small)
                 .disabled(!hasChanges)
 
-                Button("Export...") {
+                Button("Export…") {
                     exportSinglePreset(preset.wrappedValue)
                 }
-                .glassAction()
-                .controlSize(.small)
 
                 Spacer()
+
+                if hasChanges {
+                    Text("Changes are saved when you click Save")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 if savedIndicatorVisible {
                     HStack(spacing: 4) {
@@ -320,14 +320,14 @@ public struct PresetEditorView: View {
                     .transition(.opacity)
                 }
 
-                Button("Save Preset") {
+                Button("Save") {
                     save(preset.wrappedValue)
                 }
-                .glassActionProminent()
-                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
                 .disabled(!hasChanges || !errors.isEmpty)
                 .keyboardShortcut("s", modifiers: .command)
             }
+            .controlSize(.small)
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
             .background(Color(nsColor: .windowBackgroundColor))
@@ -339,32 +339,10 @@ public struct PresetEditorView: View {
 
     private func quickSetupSection(preset: Binding<ConversionPreset>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Quick setup", accessory: "Start here")
+            SettingsSectionHeader("Conversion")
 
             SettingsCard {
                 VStack(spacing: 0) {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "wand.and.stars")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                            .frame(width: 22)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Describe the conversion in two choices")
-                                .font(.body.weight(.medium))
-                            Text("Choose the kind of file you start with and the format you want back. The rest can stay automatic.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-
-                    Divider().padding(.leading, 14)
-
                     SettingsRow(
                         title: "Convert from",
                         subtitle: selectedSourceChoice?.subtitle ?? "Choose a source type"
@@ -411,22 +389,6 @@ public struct PresetEditorView: View {
                         .accessibilityLabel("Output format")
                     }
 
-                    Divider().padding(.leading, 14)
-
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .foregroundStyle(Color.accentColor)
-                        Text("Finder action")
-                            .font(.caption.weight(.medium))
-                        Spacer()
-                        Text("\(selectedSourceChoice?.title ?? "Custom source") → \(destinationFormatDescription(for: preset.wrappedValue))")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
                 }
             }
         }
@@ -1295,7 +1257,7 @@ public struct PresetEditorView: View {
         HStack(spacing: 8) {
             Image(systemName: "info.circle")
                 .foregroundStyle(.secondary)
-            Text("Changes to this built-in preset are saved. Disable it to hide it from menus; Restore returns factory values.")
+            Text("This is a built-in preset. Your changes are kept; turn off “Show in menus” to hide it, or restore its factory settings at any time.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -1314,15 +1276,7 @@ public struct PresetEditorView: View {
     }
 
     private var hasFactoryChanges: Bool {
-        guard let draft, draft.isBuiltIn, let key = draft.builtInKey,
-              let factory = BuiltInPresets.makeDefaultPresets().first(where: { $0.builtInKey == key }) else {
-            return false
-        }
-        var comparableFactory = factory
-        comparableFactory.id = draft.id
-        comparableFactory.isEnabled = draft.isEnabled
-        comparableFactory.sortOrder = draft.sortOrder
-        return draft != comparableFactory
+        draft.map(BuiltInPresetUpgrades.isModifiedFromFactory) ?? false
     }
 
     private func load() {
@@ -1496,7 +1450,7 @@ public struct PresetEditorView: View {
     }
 
     private func destinationLabel(for format: FormatDefinition) -> String {
-        "\(format.name) (.\(format.primaryExtension))"
+        format.primaryExtension.uppercased()
     }
 
     private func destinationFormatDescription(for preset: ConversionPreset) -> String {
@@ -1504,7 +1458,7 @@ public struct PresetEditorView: View {
             let extensionName = preset.destinationFormat.trimmingCharacters(in: CharacterSet(charactersIn: "."))
             return extensionName.isEmpty ? "Choose an output format" : "Unknown (.\(extensionName))"
         }
-        return "\(format.name) (.\(format.primaryExtension))"
+        return format.primaryExtension.uppercased()
     }
 
     private func inferredSourceSelection(for preset: ConversionPreset) -> String {

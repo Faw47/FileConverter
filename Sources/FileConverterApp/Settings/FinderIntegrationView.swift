@@ -20,382 +20,101 @@ public struct FinderIntegrationView: View {
 
     public init() {}
 
-    public var body: some View {
-        ScrollView {
-            LiquidGlassContainer(spacing: 22) {
-                VStack(alignment: .leading, spacing: 22) {
-                    // Header
-                    headerView
-
-                    // Health Dashboard
-                    healthDashboardSection
-
-                    // Setup Guide
-                    setupGuideSection
-
-                    // Troubleshooting & Maintenance
-                    maintenanceSection
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
-            .padding(.bottom, 28)
-            .frame(maxWidth: 720, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear(perform: refresh)
-        .confirmationDialog(
-            "Relaunch Finder?",
-            isPresented: $showingRelaunchConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Relaunch Finder", role: .destructive) {
-                relaunchFinder()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will close open Finder windows across all Spaces and reset any active file copies or transfers.")
-        }
-    }
-
-    // MARK: - Header
-
-    private var headerView: some View {
-        HStack(spacing: 14) {
-            SettingsIconBadge(systemImage: "macwindow", color: .blue, size: .header)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Finder Integration")
-                    .font(.title2.weight(.bold))
-
-                Text("Configure the Finder Sync context menu for one-click file conversions.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding(.bottom, 4)
-    }
-
-    // MARK: - Health Dashboard Section
-
-    private var healthDashboardSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Extension Status", accessory: snapshotAge)
-
-            SettingsCard {
-                VStack(spacing: 14) {
-                    HStack(spacing: 16) {
-                        ZStack {
-                            Circle()
-                                .fill(integrationFilesReady ? Color.green.opacity(0.12) : Color.orange.opacity(0.12))
-                                .frame(width: 46, height: 46)
-
-                            Image(systemName: integrationFilesReady ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
-                                .font(.system(size: 22))
-                                .foregroundStyle(integrationFilesReady ? Color.green : Color.orange)
-                        }
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(statusTitle)
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-
-                            Text(statusDetail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-
-                        Spacer()
-
-                        Button {
-                            testIntegration()
-                        } label: {
-                            HStack(spacing: 6) {
-                                if isTesting {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Image(systemName: "bolt.horizontal.fill")
-                                        .font(.system(size: 11))
-                                }
-                                Text("Check Setup")
-                            }
-                        }
-                        .glassActionProminent()
-                        .controlSize(.regular)
-                        .disabled(isTesting)
-                    }
-
-                    if let testSuccessMessage {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                            Text(testSuccessMessage)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.green)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.green.opacity(0.08))
-                        )
-                    } else if let testErrorMessage {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundStyle(.red)
-                            Text(testErrorMessage)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.red)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.red.opacity(0.08))
-                        )
-                    }
-
-                    Divider()
-
-                    // Sub-components status indicators
-                    HStack(spacing: 20) {
-                        subStatusItem(
-                            label: "Secure IPC Channel",
-                            isReady: channelReady,
-                            readyText: "Active",
-                            unreadyText: "Missing Key"
-                        )
-
-                        Divider().frame(height: 20)
-
-                        subStatusItem(
-                            label: "Finder Extension",
-                            isReady: extensionEnabled == true,
-                            readyText: "Enabled",
-                            unreadyText: extensionEnabled == false ? "Disabled" : "Unknown"
-                        )
-
-                        Divider().frame(height: 20)
-
-                        subStatusItem(
-                            label: "Finder Menu Data",
-                            isReady: snapshotReady,
-                            readyText: "Synchronized",
-                            unreadyText: "Pending Sync"
-                        )
-
-                        Spacer()
-
-                        Button("Refresh") {
-                            refresh()
-                        }
-                        .glassAction()
-                        .controlSize(.small)
-                    }
-                }
-                .padding(14)
-            }
-        }
-    }
-
-    private func subStatusItem(label: String, isReady: Bool, readyText: String, unreadyText: String) -> some View {
-        let statusColor: Color = isReady ? .green : (unreadyText == "Unknown" ? .secondary : .orange)
-        return HStack(spacing: 8) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(label)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                Text(isReady ? readyText : unreadyText)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(isReady ? Color.primary : statusColor)
-            }
-        }
-    }
-
     private var integrationFilesReady: Bool {
         channelReady && snapshotReady && extensionEnabled == true
     }
 
     private var statusTitle: String {
-        if integrationFilesReady { return "Finder Extension Ready" }
-        if extensionEnabled == false { return "Finder Extension Disabled" }
-        if extensionEnabled == nil { return "Finder Extension Status Unknown" }
-        if !channelReady && !snapshotReady { return "Integration Incomplete" }
-        if !channelReady { return "Secure Channel Pending" }
-        return "Menu Snapshot Pending"
+        if integrationFilesReady { return "The File Converter menu is ready in Finder" }
+        if extensionEnabled == false { return "The Finder extension is turned off" }
+        if extensionEnabled == nil { return "Finder extension status unknown" }
+        return "Finder setup is not finished"
     }
 
-    // MARK: - Setup Guide Section
-
-    private var setupGuideSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Setup Instructions", accessory: "macOS System Settings")
-
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    guideStepRow(
-                        step: 1,
-                        title: "Open System Settings Extensions",
-                        description: "Open General > Login Items & Extensions in System Settings.",
-                        actionTitle: "Open Extensions..."
-                    ) {
-                        openSystemExtensions()
+    public var body: some View {
+        Form {
+            Section {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: integrationFilesReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(integrationFilesReady ? .green : .orange)
+                        .font(.title2)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(statusTitle).font(.headline)
+                        Text(statusDetail)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-
-                    Divider().padding(.leading, 36)
-
-                    guideStepRow(
-                        step: 2,
-                        title: "Enable File Converter",
-                        description: "Find Finder extensions and enable File Converter.",
-                        actionTitle: nil,
-                        action: nil
-                    )
-
-                    Divider().padding(.leading, 36)
-
-                    guideStepRow(
-                        step: 3,
-                        title: "Right-Click to Convert",
-                        description: "Select any supported audio, video, image, or document file in Finder to view your custom conversion presets.",
-                        actionTitle: nil,
-                        action: nil
-                    )
+                    Spacer()
+                    if extensionEnabled != true {
+                        Button("Open Login Items & Extensions…") { openSystemExtensions() }
+                    } else {
+                        Button("Check Again") { testIntegration() }
+                            .disabled(isTesting)
+                    }
                 }
-                .padding(14)
-            }
-        }
-    }
-
-    private func guideStepRow(
-        step: Int,
-        title: String,
-        description: String,
-        actionTitle: String?,
-        action: (() -> Void)?
-    ) -> some View {
-        let isComplete = (step == 2 && extensionEnabled == true) || (step == 3 && integrationFilesReady)
-        return HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(isComplete ? Color.green : Color.accentColor)
-                    .frame(width: 24, height: 24)
-
-                if isComplete {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
-                } else {
-                    Text("\(step)")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
+                if let testSuccessMessage {
+                    Text(testSuccessMessage).font(.callout).foregroundStyle(.green)
+                }
+                if let testErrorMessage {
+                    Text(testErrorMessage).font(.callout).foregroundStyle(.red)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.body.weight(.medium))
-
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Section("How to Use") {
+                Text("1. In System Settings, open General › Login Items & Extensions, then turn on File Converter under Finder Extensions.")
+                Text("2. In Finder, right-click one or more files and choose File Converter.")
+                Text("3. Pick a recipe. The converted file appears next to the original, or wherever General settings say.")
             }
+            .font(.callout)
 
-            Spacer()
-
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .glassAction()
-                    .controlSize(.small)
-            } else if step == 2 {
-                Text(extensionEnabled == true ? "Enabled" : "Enable in System Settings")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(extensionEnabled == true ? Color.green : Color.secondary)
-            } else if step == 3 {
-                Text(integrationFilesReady ? "Ready" : "Pending")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(integrationFilesReady ? Color.green : Color.secondary)
-            }
-        }
-    }
-
-    // MARK: - Maintenance Section
-
-    private var maintenanceSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Troubleshooting & Diagnostics")
-
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(
-                        title: "Relaunch Finder",
-                        subtitle: "If newly added presets do not immediately show up in the Finder right-click menu, restart Finder.",
-                        icon: "arrow.counterclockwise.circle",
-                        iconColor: .blue
-                    ) {
-                        Button {
+            Section {
+                DisclosureGroup("Troubleshooting") {
+                    LabeledContent("Menu data") {
+                        Text(snapshotAge ?? "Never written")
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Text("If new presets are missing from the menu, rewrite the menu data.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Rewrite Menu Data") { forceRefreshSnapshot() }
+                    }
+                    HStack {
+                        Text("If the menu does not appear at all, restart Finder. Open Finder windows will close and reopen.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button(finderRelaunched ? "Restarted" : "Restart Finder…") {
                             showingRelaunchConfirmation = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                if finderRelaunched {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 10, weight: .bold))
-                                    Text("Relaunched")
-                                } else {
-                                    Text("Relaunch Finder")
-                                }
-                            }
                         }
-                        .glassAction()
-                        .controlSize(.small)
+                        .disabled(finderRelaunched)
                     }
-
-                    Divider().padding(.leading, 42)
-
-                    SettingsRow(
-                        title: "Force Refresh Snapshot",
-                        subtitle: "Re-exports your active preset list to the shared Finder extension database.",
-                        icon: "arrow.triangle.2.circlepath",
-                        iconColor: .purple
-                    ) {
-                        Button("Sync Snapshot") {
-                            forceRefreshSnapshot()
-                        }
-                        .glassAction()
-                        .controlSize(.small)
-                    }
-
-                    Divider().padding(.leading, 42)
-
-                    SettingsRow(
-                        title: "Reveal Shared Data Directory",
-                        subtitle: "Opens the shared Finder data folder containing the request channel and preset snapshot.",
-                        icon: "folder",
-                        iconColor: .secondary
-                    ) {
-                        Button("Reveal in Finder") {
-                            revealIPCFolder()
-                        }
-                        .glassAction()
-                        .controlSize(.small)
+                    HStack {
+                        Text("Show the folder File Converter shares with Finder.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Show Folder") { revealIPCFolder() }
                     }
                 }
             }
         }
+        .formStyle(.grouped)
+        .onAppear(perform: refresh)
+        .confirmationDialog(
+            "Restart Finder?",
+            isPresented: $showingRelaunchConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Restart Finder", role: .destructive) { relaunchFinder() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Finder windows close and reopen. File copies in progress in Finder may be interrupted.")
+        }
     }
-
-    // MARK: - Actions
 
     private func refresh() {
         testSuccessMessage = nil

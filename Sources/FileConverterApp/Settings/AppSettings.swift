@@ -25,6 +25,7 @@ public final class AppSettings: ObservableObject {
         public static let customOutputFolderPath = ConversionDefaults.Keys.customOutputFolderPath
         public static let openWithBehavior = "fc.openWithBehavior"
         public static let showMenuBarExtra = "fc.showMenuBarExtra"
+        public static let concurrencyIsAutomatic = "fc.concurrencyAutomatic"
     }
 
     /// What happens when files arrive without a preset (Open With, Services,
@@ -113,6 +114,10 @@ public final class AppSettings: ObservableObject {
         didSet { defaults.set(openWithBehavior.rawValue, forKey: Keys.openWithBehavior) }
     }
 
+    @Published public var concurrencyIsAutomatic: Bool {
+        didSet { defaults.set(concurrencyIsAutomatic, forKey: Keys.concurrencyIsAutomatic) }
+    }
+
     @Published public var showMenuBarExtra: Bool {
         didSet { defaults.set(showMenuBarExtra, forKey: Keys.showMenuBarExtra) }
     }
@@ -197,6 +202,7 @@ public final class AppSettings: ObservableObject {
             Keys.defaultOverwritePolicy: OverwritePolicy.appendNumber.rawValue,
             Keys.removeLocationData: true,
             Keys.showMenuBarExtra: true,
+            Keys.concurrencyIsAutomatic: true,
             Keys.enableNotifications: true,
             Keys.revealInFinder: false,
             Keys.maxConcurrentJobs: Self.systemDefaultConcurrency,
@@ -222,8 +228,9 @@ public final class AppSettings: ObservableObject {
         revealInFinder = defaults.bool(forKey: Keys.revealInFinder)
         openWithBehavior = OpenWithBehavior(rawValue: defaults.string(forKey: Keys.openWithBehavior) ?? "") ?? .askWithLastChoice
         showMenuBarExtra = defaults.bool(forKey: Keys.showMenuBarExtra)
+        concurrencyIsAutomatic = defaults.bool(forKey: Keys.concurrencyIsAutomatic)
 
-        let storedConcurrency = defaults.integer(forKey: Keys.maxConcurrentJobs)
+        let storedConcurrency = defaults.bool(forKey: Keys.concurrencyIsAutomatic) ? 0 : defaults.integer(forKey: Keys.maxConcurrentJobs)
         maxConcurrentJobs = storedConcurrency == 0
             ? Self.systemDefaultConcurrency
             : Self.normalizeConcurrency(storedConcurrency)
@@ -275,6 +282,7 @@ public final class AppSettings: ObservableObject {
         revealInFinder = false
         openWithBehavior = .askWithLastChoice
         showMenuBarExtra = true
+        concurrencyIsAutomatic = true
         defaultFilenamePattern = "{name}"
         maxConcurrentJobs = Self.systemDefaultConcurrency
     }

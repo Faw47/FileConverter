@@ -83,6 +83,21 @@ public enum BuiltInPresetUpgrades {
         ),
     ]
 
+    /// True when a stored built-in differs from its factory version in
+    /// anything the user can change (settings or inheritance).
+    public static func isModifiedFromFactory(_ preset: ConversionPreset) -> Bool {
+        guard preset.isBuiltIn, let key = preset.builtInKey, let factory = factoryPresets[key] else { return false }
+        return isUserModified(preset, comparedTo: factory)
+            || preset.resolvedInheritance != factory.resolvedInheritance
+            || preset.videoCodec != factory.videoCodec
+            || preset.crf != factory.crf
+            || preset.framerate != factory.framerate
+            || preset.hardwareAcceleration != factory.hardwareAcceleration
+            || preset.preserveMetadata != factory.preserveMetadata
+            || preset.sourceFormats != factory.sourceFormats
+            || preset.category != factory.category
+    }
+
     /// True when the user changed settings that matter for conversion.
     public static func isUserModified(_ stored: ConversionPreset, comparedTo factory: ConversionPreset) -> Bool {
         stored.name != factory.name
