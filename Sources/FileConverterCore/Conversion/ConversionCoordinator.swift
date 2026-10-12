@@ -106,12 +106,7 @@ public actor ConversionCoordinator {
         AppLogger.conversion.notice(
             "Finder request admitted to conversion queue: id=\(request.id.uuidString, privacy: .public)"
         )
-        postUserNotification(
-            title: "Conversion Started",
-            body: jobs.count == 1
-                ? "Queued \(jobs.first?.sourceURL.lastPathComponent ?? "file") for \(preset.name)."
-                : "Queued \(jobs.count) files for \(preset.name)."
-        )
+        // One notification per batch, sent when it finishes.
     }
 
     /// Presets that never need optional command-line tools.
