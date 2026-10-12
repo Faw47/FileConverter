@@ -55,38 +55,30 @@ public class FileConverterFinderSync: FIFinderSync {
             )
             setupItem.target = self
             subMenu.addItem(setupItem)
-        } else if selectedURLs.count > ConversionRequestLimits.production.maximumSourceCount {
-            let limitItem = NSMenuItem(title: "Maximum \(ConversionRequestLimits.production.maximumSourceCount) Files Supported", action: nil, keyEquivalent: "")
+        } else if selectedURLs.count > ConversionRequestLimits.finderSelectionLimit {
+            let limitItem = NSMenuItem(
+                title: "Select up to \(ConversionRequestLimits.finderSelectionLimit.formatted()) files",
+                action: nil,
+                keyEquivalent: ""
+            )
             limitItem.isEnabled = false
             subMenu.addItem(limitItem)
         } else if sections.isEmpty {
-            let hasOnlyDirectories = selectedURLs.allSatisfy(\.hasDirectoryPath)
-            let title = hasOnlyDirectories
-                ? "Folders Cannot Be Converted"
-                : (FinderMenuCatalog.shared.diagnostic(for: selectedURLs) ?? "No Compatible Formats")
-            let noItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            noItem.isEnabled = false
-            subMenu.addItem(noItem)
+            // Folders and files File Converter cannot convert get no menu,
+            // so the context menu stays uncluttered.
+            return nil
+        } else if sections.count == 1, let only = sections.first {
+            // One group: list its recipes directly under "File Converter".
+            for entry in only.entries {
+                subMenu.addItem(menuItem(for: entry))
+            }
         } else {
             for section in sections {
                 let catItem = NSMenuItem(title: section.title, action: nil, keyEquivalent: "")
                 let catSubMenu = NSMenu(title: section.title)
-
                 for entry in section.entries {
-                    let item = NSMenuItem(
-                        title: entry.title,
-                        action: #selector(conversionPresetSelected(_:)),
-                        keyEquivalent: ""
-                    )
-                    item.target = self
-                    // Finder serializes menu items between menu construction
-                    // and invocation. Keep this value Foundation-bridgeable;
-                    // custom NSObject payloads are discarded by Finder and
-                    // leave the action without a preset identifier.
-                    item.representedObject = entry.id.uuidString
-                    catSubMenu.addItem(item)
+                    catSubMenu.addItem(menuItem(for: entry))
                 }
-
                 catItem.submenu = catSubMenu
                 subMenu.addItem(catItem)
             }
@@ -108,6 +100,21 @@ public class FileConverterFinderSync: FIFinderSync {
         return rootMenu
     }
 
+    private func menuItem(for entry: FinderMenuEntry) -> NSMenuItem {
+        let item = NSMenuItem(
+            title: entry.title,
+            action: #selector(conversionPresetSelected(_:)),
+            keyEquivalent: ""
+        )
+        item.target = self
+        // Finder serializes menu items between menu construction and
+        // invocation. Keep this value Foundation-bridgeable; custom NSObject
+        // payloads are discarded by Finder and leave the action without a
+        // preset identifier.
+        item.representedObject = entry.id.uuidString
+        return item
+    }
+
     // MARK: - Actions
 
     @objc private func conversionPresetSelected(_ sender: NSMenuItem) {
@@ -122,27 +129,39 @@ public class FileConverterFinderSync: FIFinderSync {
             return
         }
 
+        // Only the files this recipe accepts ("3 of 5 files" entries).
+        let compatibleURLs = FinderMenuCatalog.shared.compatibleURLs(for: presetID, among: selectedURLs)
+        let urls = compatibleURLs.isEmpty ? selectedURLs : compatibleURLs
+
         do {
             let configuration = try IPCConfiguration.current()
             finderLogger.notice(
-                "Preparing Finder conversion request: preset=\(presetID.uuidString, privacy: .public), selectedCount=\(selectedURLs.count, privacy: .public)"
+                "Preparing Finder conversion request: preset=\(presetID.uuidString, privacy: .public), selectedCount=\(urls.count, privacy: .public)"
             )
-            let sources = try selectedURLs.map { url in
+            let sources = try urls.map { url in
                 ConversionSourceDescriptor(
                     bookmarkData: try makeBookmarkData(for: url),
                     displayName: url.lastPathComponent,
                     lastKnownPath: url.path
                 )
             }
-            let request = ConversionRequest(
-                edition: configuration.edition,
-                presetID: presetID,
-                sources: sources
-            )
-            try FinderRequestClient.send(request)
-            finderLogger.notice(
-                "Finder conversion request queued: id=\(request.id.uuidString, privacy: .public), preset=\(presetID.uuidString, privacy: .public)"
-            )
+            // Large selections go as several requests the app merges back
+            // into one batch.
+            let chunkSize = ConversionRequestLimits.production.maximumSourceCount
+            let groupID = sources.count > chunkSize ? UUID() : nil
+            for start in stride(from: 0, to: sources.count, by: chunkSize) {
+                let chunk = Array(sources[start..<min(start + chunkSize, sources.count)])
+                let request = ConversionRequest(
+                    edition: configuration.edition,
+                    presetID: presetID,
+                    sources: chunk,
+                    groupID: groupID
+                )
+                try FinderRequestClient.send(request)
+                finderLogger.notice(
+                    "Finder conversion request queued: id=\(request.id.uuidString, privacy: .public), preset=\(presetID.uuidString, privacy: .public), count=\(chunk.count, privacy: .public)"
+                )
+            }
             launchMainApp()
         } catch {
             finderLogger.error(

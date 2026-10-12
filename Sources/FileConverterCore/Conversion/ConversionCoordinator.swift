@@ -101,7 +101,8 @@ public actor ConversionCoordinator {
         }
 
         try validateAdmission(urls: jobs.map(\.sourceURL), preset: preset)
-        await ConversionQueue.shared.addJobs(jobs)
+        PresetUsageStore.record(presetID: preset.id, urls: jobs.map(\.sourceURL))
+        await ConversionQueue.shared.addJobs(jobs, groupID: request.groupID)
         AppLogger.conversion.notice(
             "Finder request admitted to conversion queue: id=\(request.id.uuidString, privacy: .public)"
         )
@@ -157,6 +158,7 @@ public actor ConversionCoordinator {
                 detectionSnapshot: FormatDetector.snapshot(for: url)
             ))
         }
+        PresetUsageStore.record(presetID: preset.id, urls: urls)
         await ConversionQueue.shared.addJobs(jobs)
     }
 

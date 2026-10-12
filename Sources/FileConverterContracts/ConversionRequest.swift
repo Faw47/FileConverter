@@ -29,6 +29,9 @@ public struct ConversionRequest: Identifiable, Codable, Sendable {
     public let sources: [ConversionSourceDescriptor]
     public let requestedAt: Date
     public let expiresAt: Date
+    /// Shared by the requests a large Finder selection was split into, so the
+    /// app can show them as one batch. Optional for older extensions.
+    public let groupID: UUID?
 
     public init(
         id: UUID = UUID(),
@@ -37,7 +40,8 @@ public struct ConversionRequest: Identifiable, Codable, Sendable {
         presetID: UUID,
         sources: [ConversionSourceDescriptor],
         requestedAt: Date = Date(),
-        expiresAt: Date? = nil
+        expiresAt: Date? = nil,
+        groupID: UUID? = nil
     ) {
         self.id = id
         self.protocolVersion = protocolVersion
@@ -46,6 +50,7 @@ public struct ConversionRequest: Identifiable, Codable, Sendable {
         self.sources = sources
         self.requestedAt = requestedAt
         self.expiresAt = expiresAt ?? requestedAt.addingTimeInterval(5 * 60)
+        self.groupID = groupID
     }
 
     public func validate(
@@ -79,6 +84,10 @@ public struct ConversionRequest: Identifiable, Codable, Sendable {
 }
 
 public struct ConversionRequestLimits: Equatable, Sendable {
+    /// Most files one Finder selection may convert. Larger than one request's
+    /// `maximumSourceCount`; the extension sends several requests.
+    public static let finderSelectionLimit = 1_000
+
     public static let production = ConversionRequestLimits(
         maximumSourceCount: 100,
         maximumBookmarkSize: 1_048_576,

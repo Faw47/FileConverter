@@ -13,19 +13,26 @@ public enum FinderMenuSnapshotWriter {
             FinderInputFormatRecord(
                 id: format.id,
                 extensions: Array(Set([format.primaryExtension] + format.extensions)).sorted(),
-                utTypeIdentifiers: Array(Set(format.utTypeIdentifiers)).sorted()
+                utTypeIdentifiers: Array(Set(format.utTypeIdentifiers)).sorted(),
+                category: format.category.rawValue
             )
         }
 
-        let presetRecords = presets.compactMap { preset -> FinderPresetRecord? in
-            guard preset.isEnabled else { return nil }
-            let compatibleFormatIDs = formats.compactMap { format -> String? in
-                guard presetAccepts(format: format, preset: preset),
-                      resolver.canResolve(preset: preset, sourceFormat: format) else {
-                    return nil
-                }
-                return format.id
+        // Per format, the presets worth offering (no identity conversions,
+        // no generic duplicate of a format-specific recipe).
+        let enabled = presets.filter(\.isEnabled)
+        var visibleFormatIDsByPreset: [UUID: [String]] = [:]
+        for format in formats {
+            let candidates = enabled.filter {
+                presetAccepts(format: format, preset: $0) && resolver.canResolve(preset: $0, sourceFormat: format)
             }
+            for preset in PresetVisibility.visible(candidates, for: format) {
+                visibleFormatIDsByPreset[preset.id, default: []].append(format.id)
+            }
+        }
+
+        let presetRecords = enabled.compactMap { preset -> FinderPresetRecord? in
+            let compatibleFormatIDs = visibleFormatIDsByPreset[preset.id] ?? []
             guard !compatibleFormatIDs.isEmpty else { return nil }
 
             return FinderPresetRecord(

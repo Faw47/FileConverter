@@ -483,7 +483,15 @@ public enum PresetValidator {
             }
         }
 
-        return matchingPresets.sorted { $0.sortOrder < $1.sortOrder }
+        // Same rules as the Finder menu: skip identity conversions and
+        // generic duplicates of a format-specific recipe.
+        var visibleIDs = Set(matchingPresets.map(\.id))
+        for format in Set(sourceFormats.map(\.id)).compactMap({ id in sourceFormats.first { $0.id == id } }) {
+            visibleIDs.formIntersection(PresetVisibility.visible(matchingPresets, for: format).map(\.id))
+        }
+        return matchingPresets
+            .filter { visibleIDs.contains($0.id) }
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     public static func groupPresetsByCategory(_ presets: [ConversionPreset]) -> [FormatCategory: [ConversionPreset]] {

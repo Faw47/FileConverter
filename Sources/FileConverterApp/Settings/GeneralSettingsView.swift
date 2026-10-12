@@ -16,6 +16,7 @@ public struct GeneralSettingsView: View {
             fileNameSection
             fileDetailsSection
             afterConvertingSection
+            openingFilesSection
             Section {
                 HStack {
                     Spacer()
@@ -267,6 +268,24 @@ public struct GeneralSettingsView: View {
                 }
             }
             Toggle("Show converted files in Finder", isOn: $settings.revealInFinder)
+            Toggle("Show progress in the menu bar", isOn: $settings.showMenuBarExtra)
+        }
+    }
+
+    // MARK: - Opening files
+
+    private var openingFilesSection: some View {
+        Section {
+            Picker("Files opened without a preset", selection: $settings.openWithBehavior) {
+                ForEach(AppSettings.OpenWithBehavior.allCases) { behavior in
+                    Text(behavior.title).tag(behavior)
+                }
+            }
+            .pickerStyle(.radioGroup)
+        } header: {
+            Text("Opening Files")
+        } footer: {
+            Text("Applies to Open With, Services, and files dropped on the Dock icon. The File Converter menu in Finder always converts right away.")
         }
     }
 }

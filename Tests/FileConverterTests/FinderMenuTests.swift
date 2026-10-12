@@ -42,7 +42,7 @@ final class FinderMenuTests: XCTestCase {
             resolver: extendedResolver()
         )
         XCTAssertTrue(compatible.contains { $0.menuName == "JPEG" })
-        XCTAssertTrue(compatible.contains { $0.menuName == "PNG" })
+        XCTAssertFalse(compatible.contains { $0.menuName == "PNG" }, "PNG → PNG changes nothing")
         XCTAssertTrue(compatible.contains { $0.menuName == "HEIC" })
         XCTAssertTrue(compatible.contains { $0.menuName == "PDF" })
         XCTAssertFalse(compatible.contains { $0.menuName == "MP4" && $0.category == .video })
@@ -120,8 +120,11 @@ final class FinderMenuTests: XCTestCase {
             from: BuiltInPresets.makeDefaultPresets(),
             resolver: extendedResolver()
         )
-        XCTAssertTrue(compatible.contains { $0.menuName == "JPEG" })
-        XCTAssertTrue(compatible.contains { $0.menuName == "PNG" })
+        // Each format's own preset is a no-op for that file, so neither
+        // JPEG nor PNG is offered for a mixed PNG + JPEG selection.
+        XCTAssertFalse(compatible.contains { $0.menuName == "JPEG" })
+        XCTAssertFalse(compatible.contains { $0.menuName == "PNG" })
+        XCTAssertTrue(compatible.contains { $0.menuName == "JPEG – Web" })
         XCTAssertTrue(compatible.contains { $0.menuName == "HEIC" })
         XCTAssertTrue(compatible.contains { $0.menuName == "PDF" })
         XCTAssertFalse(compatible.contains { $0.menuName == "MP4" })

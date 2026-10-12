@@ -216,13 +216,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !fileURLs.isEmpty {
             let fresh = URLDeduplicator.shared.shouldProcessBatch(fileURLs)
             if !fresh.isEmpty {
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("OpenFileConverterPresetPicker"),
-                    object: nil,
-                    userInfo: ["urls": fresh]
-                )
+                AppLogger.finder.notice("Files received via Open With or the Dock: count=\(fresh.count, privacy: .public)")
+                receiveFilesWithoutPreset(fresh)
             }
         }
+    }
+
+    /// Open With, Services, and Dock drops carry no preset. Either convert
+    /// with the last preset used for these file types, or show the picker
+    /// with that preset selected.
+    func receiveFilesWithoutPreset(_ urls: [URL]) {
+        if AppSettings.shared.openWithBehavior == .convertWithLastChoice {
+            let compatible = PresetValidator.compatiblePresets(forURLs: urls)
+            if let preset = PresetUsageStore.lastCompatiblePreset(for: urls, among: compatible) {
+                if preset.isInteractiveWorkflow {
+                    AppState.shared.presentWorkflowDialog(preset: preset, urls: urls)
+                } else {
+                    Task { @MainActor in
+                        do {
+                            try await AppState.shared.convertFilesWhenReady(urls: urls, preset: preset)
+                        } catch {
+                            ConversionQueue.shared.recordRejectedRequest(
+                                sources: urls.map { (displayName: $0.lastPathComponent, path: $0.path) },
+                                preset: preset,
+                                reason: error.localizedDescription
+                            )
+                        }
+                    }
+                }
+                return
+            }
+        }
+        NotificationCenter.default.post(
+            name: NSNotification.Name("OpenFileConverterPresetPicker"),
+            object: nil,
+            userInfo: ["urls": urls]
+        )
     }
 
     @objc func openFilesFromService(_ pboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>?) {
@@ -231,13 +260,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         let fresh = URLDeduplicator.shared.shouldProcessBatch(items)
         guard !fresh.isEmpty else { return }
+        AppLogger.finder.notice("Files received via Services: count=\(fresh.count, privacy: .public)")
         NSApp.activate(ignoringOtherApps: true)
         activateMainWindow()
-        NotificationCenter.default.post(
-            name: NSNotification.Name("OpenFileConverterPresetPicker"),
-            object: nil,
-            userInfo: ["urls": fresh]
-        )
+        receiveFilesWithoutPreset(fresh)
     }
 }
 
@@ -377,11 +403,7 @@ struct FileConverterApp: App {
         } else if url.isFileURL {
             NSApp.activate(ignoringOtherApps: true)
             AppDelegate.shared?.activateMainWindow()
-            NotificationCenter.default.post(
-                name: NSNotification.Name("OpenFileConverterPresetPicker"),
-                object: nil,
-                userInfo: ["urls": [url]]
-            )
+            AppDelegate.shared?.receiveFilesWithoutPreset([url])
         }
     }
 }

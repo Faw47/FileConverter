@@ -29,7 +29,8 @@ public enum BuiltInPresets {
             quality: .high,
             crf: 22,
             hardwareAcceleration: .auto,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "converted"
         ))
 
         add("video.mp4-smaller", ConversionPreset(
@@ -156,7 +157,8 @@ public enum BuiltInPresets {
             videoCodec: .auto,
             audioCodec: .aac,
             quality: .high,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "converted"
         ))
 
         add("video.prores-editing", ConversionPreset(
@@ -185,7 +187,8 @@ public enum BuiltInPresets {
             audioCodec: .opus,
             quality: .high,
             crf: 30,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "converted"
         ))
 
         add("video.matroska", ConversionPreset(
@@ -198,7 +201,8 @@ public enum BuiltInPresets {
             videoCodec: .h264,
             audioCodec: .aac,
             quality: .high,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "converted"
         ))
 
         add("video.animated-gif", ConversionPreset(
@@ -294,7 +298,8 @@ public enum BuiltInPresets {
             audioCodec: .aac,
             quality: .high,
             audioBitrateKbps: 256,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "aac"
         ))
 
         add("audio.alac", ConversionPreset(
@@ -306,7 +311,8 @@ public enum BuiltInPresets {
             backend: .avFoundation,
             audioCodec: .alac,
             quality: .lossless,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "alac"
         ))
 
         add("audio.flac", ConversionPreset(
@@ -383,7 +389,8 @@ public enum BuiltInPresets {
             audioCodec: .auto,
             quality: .high,
             audioBitrateKbps: 192,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "converted"
         ))
 
         add("audio.quicktime-qta", ConversionPreset(
@@ -396,7 +403,8 @@ public enum BuiltInPresets {
             audioCodec: .aac,
             quality: .high,
             audioBitrateKbps: 256,
-            isBuiltIn: true
+            isBuiltIn: true,
+            sameFormatSuffix: "converted"
         ))
 
         add("audio.split-mp3-5min", ConversionPreset(

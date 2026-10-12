@@ -23,6 +23,24 @@ public final class AppSettings: ObservableObject {
         public static let selectedSettingsTab = "fc.selectedSettingsTab"
         public static let customOutputFolderBookmark = ConversionDefaults.Keys.customOutputFolderBookmark
         public static let customOutputFolderPath = ConversionDefaults.Keys.customOutputFolderPath
+        public static let openWithBehavior = "fc.openWithBehavior"
+        public static let showMenuBarExtra = "fc.showMenuBarExtra"
+    }
+
+    /// What happens when files arrive without a preset (Open With, Services,
+    /// the Dock icon).
+    public enum OpenWithBehavior: String, CaseIterable, Identifiable {
+        case askWithLastChoice
+        case convertWithLastChoice
+
+        public var id: String { rawValue }
+
+        public var title: String {
+            switch self {
+            case .askWithLastChoice: return "Ask, with my last choice selected"
+            case .convertWithLastChoice: return "Convert right away with my last choice for that file type"
+            }
+        }
     }
 
     public enum NotificationAuthorizationState: Equatable {
@@ -90,6 +108,14 @@ public final class AppSettings: ObservableObject {
 
     @Published public private(set) var notificationStatusText = "Checking notification access…"
     @Published public private(set) var notificationAuthorizationState: NotificationAuthorizationState = .checking
+
+    @Published public var openWithBehavior: OpenWithBehavior {
+        didSet { defaults.set(openWithBehavior.rawValue, forKey: Keys.openWithBehavior) }
+    }
+
+    @Published public var showMenuBarExtra: Bool {
+        didSet { defaults.set(showMenuBarExtra, forKey: Keys.showMenuBarExtra) }
+    }
 
     @Published public var revealInFinder: Bool {
         didSet { defaults.set(revealInFinder, forKey: Keys.revealInFinder) }
@@ -170,6 +196,7 @@ public final class AppSettings: ObservableObject {
             Keys.defaultOutputPolicy: "sameAsSource",
             Keys.defaultOverwritePolicy: OverwritePolicy.appendNumber.rawValue,
             Keys.removeLocationData: true,
+            Keys.showMenuBarExtra: true,
             Keys.enableNotifications: true,
             Keys.revealInFinder: false,
             Keys.maxConcurrentJobs: Self.systemDefaultConcurrency,
@@ -193,6 +220,8 @@ public final class AppSettings: ObservableObject {
         removeLocationData = conversionDefaults.removeLocationData
         enableNotifications = defaults.bool(forKey: Keys.enableNotifications)
         revealInFinder = defaults.bool(forKey: Keys.revealInFinder)
+        openWithBehavior = OpenWithBehavior(rawValue: defaults.string(forKey: Keys.openWithBehavior) ?? "") ?? .askWithLastChoice
+        showMenuBarExtra = defaults.bool(forKey: Keys.showMenuBarExtra)
 
         let storedConcurrency = defaults.integer(forKey: Keys.maxConcurrentJobs)
         maxConcurrentJobs = storedConcurrency == 0
@@ -244,6 +273,8 @@ public final class AppSettings: ObservableObject {
         removeLocationData = true
         enableNotifications = true
         revealInFinder = false
+        openWithBehavior = .askWithLastChoice
+        showMenuBarExtra = true
         defaultFilenamePattern = "{name}"
         maxConcurrentJobs = Self.systemDefaultConcurrency
     }

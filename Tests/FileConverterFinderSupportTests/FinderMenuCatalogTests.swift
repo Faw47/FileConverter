@@ -204,14 +204,18 @@ final class FinderMenuCatalogTests: XCTestCase {
         XCTAssertNotNil(key)
     }
 
-    func testMixedKnownUnknownFailClosedWithDiagnostic() throws {
+    func testMixedKnownUnknownNeverConvertsTheUnknownFile() throws {
         try writeSnapshot(makeSnapshot())
         let catalog = FinderMenuCatalog(snapshotURL: snapshotURL, expectedEdition: .native)
         let good = URL(fileURLWithPath: "/tmp/photo.png")
         let unknown = URL(fileURLWithPath: "/tmp/mystery.zzzunknown")
-        XCTAssertTrue(catalog.sections(for: [good, unknown]).isEmpty, "mixed selection must stay fail-closed")
-        let diagnostic = catalog.diagnostic(for: [good, unknown])
-        XCTAssertNotNil(diagnostic, "mixed selection must produce an explanatory diagnostic, not silence")
+        // The supported file keeps its recipes ("1 of 2 files"), but the
+        // unsupported file is never part of what gets converted.
+        let titles = catalog.sections(for: [good, unknown]).flatMap(\.entries).map(\.title)
+        XCTAssertTrue(titles.allSatisfy { $0.hasSuffix("(1 of 2 files)") }, "\(titles)")
+        let jpegID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        XCTAssertEqual(catalog.compatibleURLs(for: jpegID, among: [good, unknown]), [good])
+        XCTAssertNotNil(catalog.diagnostic(for: [good, unknown]))
         XCTAssertTrue(catalog.sections(for: [good]).isEmpty == false)
     }
 

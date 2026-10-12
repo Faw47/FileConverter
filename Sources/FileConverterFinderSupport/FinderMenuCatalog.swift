@@ -98,8 +98,8 @@ public final class FinderMenuCatalog: @unchecked Sendable {
     /// surface this string as a disabled menu item instead of silent emptiness.
     public func diagnostic(for urls: [URL]) -> String? {
         guard !urls.isEmpty else { return "No files selected." }
-        if urls.count > ConversionRequestLimits.production.maximumSourceCount {
-            return "Maximum \(ConversionRequestLimits.production.maximumSourceCount) files supported."
+        if urls.count > ConversionRequestLimits.finderSelectionLimit {
+            return "Up to \(ConversionRequestLimits.finderSelectionLimit.formatted()) files at a time."
         }
         guard let snapshot = lock.withLock({ snapshot }) else {
             return "Open File Converter once to finish Finder integration setup."
@@ -129,13 +129,86 @@ public final class FinderMenuCatalog: @unchecked Sendable {
         return "Some selected items are unsupported (\(unknown.prefix(3).joined(separator: ", "))\(unknown.count > 3 ? "…" : "")). These items cannot be converted together."
     }
 
+    /// Menu sections for a selection. Presets that accept every selected
+    /// file are offered; when none does, presets that accept some of the
+    /// files are offered with "(3 of 5 files)" and convert only those.
     public func sections(for urls: [URL]) -> [FinderMenuSection] {
         guard !urls.isEmpty,
-              urls.count <= ConversionRequestLimits.production.maximumSourceCount,
+              urls.count <= ConversionRequestLimits.finderSelectionLimit,
               let snapshot = lock.withLock({ snapshot }) else {
             return []
         }
+        let classifiedIDs = classifiedFormatIDs(for: urls, snapshot: snapshot)
+        let known = classifiedIDs.compactMap { $0 }
+        guard !known.isEmpty else { return [] }
 
+        let categoryByFormat = Dictionary(
+            snapshot.formats.map { ($0.id, $0.category) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let allVideo = known.allSatisfy { categoryByFormat[$0] == "video" }
+
+        func coverage(_ preset: FinderPresetRecord) -> Int {
+            let compatible = Set(preset.compatibleFormatIDs)
+            return classifiedIDs.filter { $0.map(compatible.contains) ?? false }.count
+        }
+        let full = snapshot.presets.filter { coverage($0) == urls.count }
+        let candidates: [(preset: FinderPresetRecord, covered: Int)] = full.isEmpty
+            ? snapshot.presets.map { ($0, coverage($0)) }.filter { $0.covered > 0 }
+            : full.map { ($0, urls.count) }
+
+        struct SectionKey: Hashable {
+            let id: String
+            let title: String
+            let order: Int
+        }
+        let grouped = Dictionary(grouping: candidates) { candidate -> SectionKey in
+            if allVideo && candidate.preset.sectionIdentifier == "audio" {
+                // Audio presets on a video selection pull the soundtrack out.
+                return SectionKey(id: "extract-audio", title: "Extract Audio", order: candidate.preset.sectionOrder + 1_000)
+            }
+            return SectionKey(id: candidate.preset.sectionIdentifier, title: candidate.preset.sectionTitle, order: candidate.preset.sectionOrder)
+        }
+
+        return grouped.map { key, members -> FinderMenuSection in
+            let sorted = members.sorted { lhs, rhs in
+                lhs.preset.sortOrder == rhs.preset.sortOrder
+                    ? lhs.preset.id.uuidString < rhs.preset.id.uuidString
+                    : lhs.preset.sortOrder < rhs.preset.sortOrder
+            }
+            var titleCounts: [String: Int] = [:]
+            for member in sorted { titleCounts[member.preset.title, default: 0] += 1 }
+            var occurrences: [String: Int] = [:]
+            let entries = sorted.map { member -> FinderMenuEntry in
+                let occurrence = occurrences[member.preset.title, default: 0] + 1
+                occurrences[member.preset.title] = occurrence
+                var title = member.preset.title
+                if (titleCounts[title] ?? 0) > 1 && occurrence > 1 {
+                    title += " (\(occurrence))"
+                }
+                if member.covered < urls.count {
+                    title += " (\(member.covered) of \(urls.count) files)"
+                }
+                return FinderMenuEntry(id: member.preset.id, title: title)
+            }
+            return FinderMenuSection(id: key.id, title: key.title, order: key.order, entries: entries)
+        }.sorted { lhs, rhs in
+            lhs.order == rhs.order ? lhs.id < rhs.id : lhs.order < rhs.order
+        }
+    }
+
+    /// The selected files a preset accepts, in selection order.
+    public func compatibleURLs(for presetID: UUID, among urls: [URL]) -> [URL] {
+        guard let snapshot = lock.withLock({ snapshot }),
+              let preset = snapshot.presets.first(where: { $0.id == presetID }) else { return [] }
+        let compatible = Set(preset.compatibleFormatIDs)
+        let classified = classifiedFormatIDs(for: urls, snapshot: snapshot)
+        return zip(urls, classified).compactMap { url, formatID in
+            formatID.map(compatible.contains) == true ? url : nil
+        }
+    }
+
+    private func classifiedFormatIDs(for urls: [URL], snapshot: FinderMenuSnapshot) -> [String?] {
         let formatsByExtension = Dictionary(
             snapshot.formats.flatMap { format in
                 format.extensions.map { ($0.lowercased(), format.id) }
@@ -148,55 +221,8 @@ public final class FinderMenuCatalog: @unchecked Sendable {
             },
             uniquingKeysWith: { first, _ in first }
         )
-
-        var selectedFormatIDs: [String] = []
-        for url in urls {
-            guard let formatID = classify(
-                url: url,
-                formatsByExtension: formatsByExtension,
-                formatsByUTType: formatsByUTType
-            ) else {
-                return []
-            }
-            selectedFormatIDs.append(formatID)
-        }
-
-        let matchingPresets = snapshot.presets.filter { preset in
-            let compatible = Set(preset.compatibleFormatIDs)
-            return selectedFormatIDs.allSatisfy(compatible.contains)
-        }
-        let grouped = Dictionary(grouping: matchingPresets, by: \.sectionIdentifier)
-
-        return grouped.compactMap { identifier, presets in
-            guard let first = presets.first else { return nil }
-            let sortedPresets = presets.sorted { lhs, rhs in
-                lhs.sortOrder == rhs.sortOrder ? lhs.id.uuidString < rhs.id.uuidString : lhs.sortOrder < rhs.sortOrder
-            }
-            var titleCounts: [String: Int] = [:]
-            for preset in sortedPresets {
-                titleCounts[preset.title, default: 0] += 1
-            }
-            var titleOccurrences: [String: Int] = [:]
-            var entries: [FinderMenuEntry] = []
-            for preset in sortedPresets {
-                let occurrence = titleOccurrences[preset.title, default: 0] + 1
-                titleOccurrences[preset.title] = occurrence
-                let displayTitle: String
-                if (titleCounts[preset.title] ?? 0) > 1 && occurrence > 1 {
-                    displayTitle = "\(preset.title) (\(occurrence))"
-                } else {
-                    displayTitle = preset.title
-                }
-                entries.append(FinderMenuEntry(id: preset.id, title: displayTitle))
-            }
-            return FinderMenuSection(
-                id: identifier,
-                title: first.sectionTitle,
-                order: first.sectionOrder,
-                entries: entries
-            )
-        }.sorted { lhs, rhs in
-            lhs.order == rhs.order ? lhs.id < rhs.id : lhs.order < rhs.order
+        return urls.map { url in
+            classify(url: url, formatsByExtension: formatsByExtension, formatsByUTType: formatsByUTType)
         }
     }
 

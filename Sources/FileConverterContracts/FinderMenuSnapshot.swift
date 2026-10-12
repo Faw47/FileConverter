@@ -76,11 +76,15 @@ public struct FinderInputFormatRecord: Codable, Equatable, Sendable {
     public let id: String
     public let extensions: [String]
     public let utTypeIdentifiers: [String]
+    /// "video", "audio", "image", "document". Optional so snapshots written
+    /// by older app builds still decode.
+    public let category: String?
 
-    public init(id: String, extensions: [String], utTypeIdentifiers: [String]) {
+    public init(id: String, extensions: [String], utTypeIdentifiers: [String], category: String? = nil) {
         self.id = id
         self.extensions = extensions
         self.utTypeIdentifiers = utTypeIdentifiers
+        self.category = category
     }
 }
 

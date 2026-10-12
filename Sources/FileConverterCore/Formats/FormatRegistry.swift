@@ -747,7 +747,7 @@ public final class FormatRegistry: @unchecked Sendable {
                 name: "Comma Separated Values",
                 primaryExtension: "csv",
                 extensions: ["csv"],
-                utTypeIdentifiers: ["public.comma-separated-values-text", "text/csv"],
+                utTypeIdentifiers: ["public.comma-separated-values-text"],
                 category: .document,
                 supportedInput: true,
                 supportedOutput: true,

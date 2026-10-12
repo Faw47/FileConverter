@@ -88,12 +88,29 @@ public final class ConversionQueue: ObservableObject {
         processNextJobs()
     }
 
-    public func addJobs(_ newJobs: [ConversionJob]) {
+    /// Batches started by split Finder requests, keyed by request group.
+    private var groupedBatches: [UUID: (batchID: UUID, batchDate: Date)] = [:]
+    static let groupMergeWindow: TimeInterval = 5
+
+    public func addJobs(_ newJobs: [ConversionJob], groupID: UUID? = nil) {
         guard !newJobs.isEmpty else { return }
         // Batch identity is immutable through completion: each submitted batch
-        // gets its own ID; no shared activeBatchID fallback is used.
-        let batchID = UUID()
-        let batchDate = Date()
+        // gets its own ID, except chunks of one Finder selection that arrive
+        // together (same group, within a few seconds).
+        let now = Date()
+        groupedBatches = groupedBatches.filter { now.timeIntervalSince($0.value.batchDate) < Self.groupMergeWindow }
+        let batchID: UUID
+        let batchDate: Date
+        if let groupID, let existing = groupedBatches[groupID] {
+            batchID = existing.batchID
+            batchDate = existing.batchDate
+        } else {
+            batchID = UUID()
+            batchDate = now
+            if let groupID {
+                groupedBatches[groupID] = (batchID, batchDate)
+            }
+        }
         var batchJobs = newJobs
         for index in batchJobs.indices {
             batchJobs[index].batchID = batchID
