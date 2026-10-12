@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import FileConverterExternalBackends
 import SwiftUI
@@ -67,7 +68,34 @@ public enum SnapshotRunner {
             }
         }
 
+        for (modeName, appearanceName) in appearances {
+            let fileName = "help_\(modeName).png"
+            let window = NSWindow(
+                contentRect: NSRect(x: 100, y: 100, width: 620, height: 900),
+                styleMask: [.titled, .closable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.appearance = NSAppearance(named: appearanceName)
+            window.title = "File Converter Help"
+            let hostingView = NSHostingView(rootView: HelpView())
+            hostingView.frame = NSRect(x: 0, y: 0, width: 620, height: 900)
+            window.contentView = hostingView
+            window.makeKeyAndOrderFront(nil)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.35))
+            let targetView = window.contentView?.superview ?? hostingView
+            if let bitmapRep = targetView.bitmapImageRepForCachingDisplay(in: targetView.bounds) {
+                targetView.cacheDisplay(in: targetView.bounds, to: bitmapRep)
+                if let pngData = bitmapRep.representation(using: .png, properties: [:]) {
+                    try? pngData.write(to: outURL.appendingPathComponent(fileName))
+                    print("  [✓] Saved: \(fileName)")
+                }
+            }
+            window.orderOut(nil)
+        }
+
         print("==> Visual Test Snapshots Complete!")
         exit(0)
     }
 }
+#endif

@@ -14,9 +14,9 @@ File Converter is a macOS Swift app with a Finder Sync extension, native convers
 Requirements:
 
 - macOS 14.0 or newer
-- Xcode with a Swift 5.10-compatible toolchain
+- Xcode 16 or newer (Swift 6 toolchain)
 - XcodeGen only when regenerating the project from `project.yml`
-- Homebrew only for optional conversion tools
+- Homebrew only for optional conversion tools; `brew install ffmpeg ghostscript` before running the media tests
 
 Clone the repository and verify the package targets:
 
@@ -26,6 +26,28 @@ cd FileConverter
 swift build
 swift test
 ```
+
+Tests that inspect real media outputs need fixtures. Generate them once (they are git-ignored); tests whose fixture or tool is missing are skipped, not failed:
+
+```bash
+Scripts/make_test_fixtures.sh
+```
+
+### Trying a build in Finder
+
+macOS uses only one registered copy of the app for Open With, Services, and the Finder menu. With several copies on disk (an installed one, Xcode builds, `dist/` backups) Finder may load an old extension. After packaging, make your build the one in use:
+
+```bash
+Scripts/package_app.sh --no-backup Debug
+```
+
+```bash
+Scripts/use_build.sh
+```
+
+`use_build.sh` unregisters every other copy, including one in /Applications; run it with that copy's path to switch back. `package_app.sh` keeps only the most recent previous build in `dist/`; `--no-backup` keeps none.
+
+After changing files in `project.yml` or adding source files, run `xcodegen generate` and commit the project; CI fails when it is out of date.
 
 The package tests cover the core conversion model, format detection, preset behavior, output naming, external-process safety, Finder contracts, and architecture boundaries. Use the Xcode project for the host app and Finder extension.
 

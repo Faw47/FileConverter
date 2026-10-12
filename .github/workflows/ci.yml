@@ -17,7 +17,7 @@ concurrency:
 jobs:
   swift-package:
     name: Swift package
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Check out repository
@@ -26,14 +26,28 @@ jobs:
       - name: Show toolchain
         run: swift --version
 
+      - name: Install test tools
+        run: brew install ffmpeg ghostscript xcodegen
+
+      - name: Generate test fixtures
+        run: Scripts/make_test_fixtures.sh
+
       - name: Build package
         run: swift build
 
       - name: Run tests
         run: swift test --parallel
 
+      - name: Check Xcode project is up to date
+        run: |
+          xcodegen generate
+          git diff --exit-code -- FileConverter.xcodeproj || { echo "Run xcodegen and commit FileConverter.xcodeproj"; exit 1; }
+
       - name: Build Xcode scheme
         run: xcodebuild -project FileConverter.xcodeproj -scheme FileConverter -configuration Debug CODE_SIGNING_ALLOWED=NO build
 
       - name: Validate packaging script
-        run: bash -n Scripts/package_app.sh
+        run: |
+          bash -n Scripts/package_app.sh
+          bash -n Scripts/make_test_fixtures.sh
+          bash -n Scripts/use_build.sh

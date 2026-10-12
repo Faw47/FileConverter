@@ -273,10 +273,12 @@ struct FileConverterApp: App {
     @AppStorage(AppSettings.Keys.showMenuBarExtra) private var showMenuBarExtra = true
 
     init() {
+        #if DEBUG
         if let idx = CommandLine.arguments.firstIndex(of: "--snapshot"), idx + 1 < CommandLine.arguments.count {
             let outDir = CommandLine.arguments[idx + 1]
             SnapshotRunner.run(outputDirectory: outDir)
         }
+        #endif
     }
 
     var body: some Scene {
@@ -304,6 +306,10 @@ struct FileConverterApp: App {
                 : "arrow.triangle.2.circlepath")
                 .accessibilityLabel("File Converter")
         }
+        Window("File Converter Help", id: "help") {
+            HelpView()
+        }
+        .defaultSize(width: 620, height: 640)
         Settings {
             SettingsView()
                 .environmentObject(appState)
@@ -362,8 +368,6 @@ struct FileConverterApp: App {
 
                 Divider()
 
-                Divider()
-
                 Button("Manage Presets...") {
                     appState.openSettings(tab: .presets)
                 }
@@ -375,18 +379,7 @@ struct FileConverterApp: App {
             }
 
             CommandGroup(replacing: .help) {
-                Button("File Converter Documentation") {
-                    let helpURL = Bundle.main.url(forResource: "Help", withExtension: "html")
-                    if let helpURL {
-                        NSWorkspace.shared.open(helpURL)
-                    } else {
-                        let alert = NSAlert()
-                        alert.messageText = "Documentation is unavailable"
-                        alert.informativeText = "The help document was not included in this build."
-                        alert.alertStyle = .informational
-                        alert.runModal()
-                    }
-                }
+                HelpMenuButton()
                 Button("Finder Integration Setup Guide") {
                     appState.openSettings(tab: .finder)
                 }

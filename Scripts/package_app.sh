@@ -3,10 +3,21 @@ set -euo pipefail
 
 # Local artifact builder — creates a locally signed app bundle without
 # publishing, notarizing, or enabling the Finder extension.
-# Usage: ./Scripts/package_app.sh [Debug|Release]
+# Usage: ./Scripts/package_app.sh [--no-backup] [Debug|Release]
+#
+# The app already in dist/ is kept as "*.previous.<date>"; only the most
+# recent backup is kept. --no-backup replaces it without keeping one.
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG="${1:-Release}"
+KEEP_BACKUP=1
+CONFIG="Release"
+for arg in "$@"; do
+  case "${arg}" in
+    --no-backup) KEEP_BACKUP=0 ;;
+    Debug|Release) CONFIG="${arg}" ;;
+    *) echo "Usage: $0 [--no-backup] [Debug|Release]" >&2; exit 64 ;;
+  esac
+done
 DIST_DIR="${PROJECT_DIR}/dist"
 APP_NAME="File Converter"
 BUILD_DIR="$(mktemp -d "/tmp/FileConverterPackageBuild.XXXXXX")"
@@ -55,13 +66,24 @@ trap 'cleanup_staging; cleanup_build' EXIT
 ditto "${SRC_APP}" "${STAGING_DIR}/${APP_NAME}.app"
 ditto "${SRC_DSYM}" "${STAGING_DIR}/${APP_NAME}.app.dSYM"
 
+# Older backups are removed before the current build becomes the backup,
+# so at most one of each is left.
+remove_backups() {
+  local pattern="$1"
+  find "${DIST_DIR}" -maxdepth 1 -name "${pattern}" -exec rm -R {} +
+}
 VERSION_TAG="$(date +%Y%m%d-%H%M%S)"
-if [ -d "${DIST_DIR}/${APP_NAME}.app" ]; then
-  mv "${DIST_DIR}/${APP_NAME}.app" "${DIST_DIR}/${APP_NAME}.app.previous.${VERSION_TAG}"
-fi
-if [ -d "${DIST_DIR}/${APP_NAME}.app.dSYM" ]; then
-  mv "${DIST_DIR}/${APP_NAME}.app.dSYM" "${DIST_DIR}/${APP_NAME}.app.dSYM.previous.${VERSION_TAG}"
-fi
+remove_backups "${APP_NAME}.app.previous.*"
+remove_backups "${APP_NAME}.app.dSYM.previous.*"
+for bundle in "${APP_NAME}.app" "${APP_NAME}.app.dSYM"; do
+  if [ -d "${DIST_DIR}/${bundle}" ]; then
+    if [ "${KEEP_BACKUP}" -eq 1 ]; then
+      mv "${DIST_DIR}/${bundle}" "${DIST_DIR}/${bundle}.previous.${VERSION_TAG}"
+    else
+      rm -R "${DIST_DIR}/${bundle}"
+    fi
+  fi
+done
 mv "${STAGING_DIR}/${APP_NAME}.app" "${DIST_DIR}/${APP_NAME}.app"
 mv "${STAGING_DIR}/${APP_NAME}.app.dSYM" "${DIST_DIR}/${APP_NAME}.app.dSYM"
 
