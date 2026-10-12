@@ -255,7 +255,7 @@ public struct JobRowView: View {
             return "Converting…"
         case .finalizing: return "Saving…"
         case .completed: return "Converted"
-        case .completedWithWarnings(let warnings): return "Converted with \(warnings.count) warning\(warnings.count == 1 ? "" : "s")"
+        case .completedWithWarnings(let warnings): return Inflect.string("Converted with ^[\(warnings.count) warning](inflect: true)")
         case .failed(let error): return error.localizedDescription
         case .skipped(let reason): return "Skipped: \(reason)"
         case .cancelled: return "Cancelled"

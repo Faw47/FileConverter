@@ -143,12 +143,7 @@ public final class AppState: ObservableObject {
     public func openSettings(tab: SettingsTab? = nil) {
         if let tab { selectedTab = tab }
 
-        let settingsWindows = NSApplication.shared.windows.filter { window in
-            let id = window.identifier?.rawValue ?? ""
-            return id.contains("Settings") || id.contains("settings") || window.title.contains("Settings") || window.title.contains("Preferences")
-        }
-
-        if let settingsWindow = settingsWindows.first {
+        if let settingsWindow = NSApplication.shared.windows.first(where: AppDelegate.isSettingsWindow) {
             NSApplication.shared.activate(ignoringOtherApps: true)
             if settingsWindow.isMiniaturized {
                 settingsWindow.deminiaturize(nil)

@@ -120,7 +120,7 @@ struct PresetPickerView: View {
                     .foregroundStyle(.orange)
             }
             if pendingBatches > 0 {
-                Text("\(pendingBatches) more \(pendingBatches == 1 ? "batch is" : "batches are") waiting after this one.")
+                Text(Inflect.string("^[\(pendingBatches) more batch](inflect: true) waiting after this one."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -132,7 +132,7 @@ struct PresetPickerView: View {
         let count = unsupported.count + excludedCount
         let more = count > 3 ? " and \(count - min(3, unsupported.count)) more" : ""
         if names.isEmpty {
-            return "\(excludedCount) item\(excludedCount == 1 ? " was" : "s were") left out (folders, empty or missing files)."
+            return Inflect.string("^[\(excludedCount) item](inflect: true) left out (folders, empty or missing files).")
         }
         return "Not supported, left out: \(names)\(more)."
     }

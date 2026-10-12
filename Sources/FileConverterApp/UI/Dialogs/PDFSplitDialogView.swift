@@ -796,7 +796,7 @@ public struct PDFSplitDialogView: View {
             return "Exceeds safety limit of 1000 outputs (\(totalPlannedOutputs) planned)"
         }
         if batchItems.count == 1 {
-            return "Will create \(totalPlannedOutputs) \(totalPlannedOutputs == 1 ? "file" : "files")"
+            return Inflect.string("Will create ^[\(totalPlannedOutputs) file](inflect: true)")
         } else {
             return "Will create \(totalPlannedOutputs) files across \(batchItems.count) documents"
         }

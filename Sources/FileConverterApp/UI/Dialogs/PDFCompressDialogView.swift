@@ -395,7 +395,7 @@ public struct PDFCompressDialogView: View {
         let size = ByteCountFormatter.string(fromByteCount: cachedTotalSize, countStyle: .file)
         guard let pages = cachedPageCount else { return size }
         if currentURLs.count == 1 {
-            return "\(size) · \(pages) page\(pages == 1 ? "" : "s")"
+            return Inflect.string("\(size) · ^[\(pages) page](inflect: true)")
         }
         return "\(size) total"
     }

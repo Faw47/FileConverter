@@ -658,7 +658,7 @@ public struct PresetsSettingsView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 if candidate.isValid {
-                                    Text("(\(candidate.presetCount) preset\(candidate.presetCount == 1 ? "" : "s"))")
+                                    Text(Inflect.string("(^[\(candidate.presetCount) preset](inflect: true))"))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                     Spacer()
@@ -1116,7 +1116,7 @@ private struct NewPresetWizardView: View {
 
             SettingsCard {
                 HStack(spacing: 10) {
-                    Image(systemName: "arrow.right.circle.fill")
+                    Image(systemName: "arrow.forward.circle.fill")
                         .foregroundStyle(Color.accentColor)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Selected recipe")

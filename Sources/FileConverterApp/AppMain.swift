@@ -83,26 +83,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return .terminateLater
     }
 
+    /// SwiftUI gives the Settings window an identifier containing
+    /// "Settings"; window titles are localized and not used.
+    static func isSettingsWindow(_ window: NSWindow) -> Bool {
+        (window.identifier?.rawValue ?? "").localizedCaseInsensitiveContains("settings")
+    }
+
     private func isSettingsWindow(_ window: NSWindow) -> Bool {
-        let id = window.identifier?.rawValue ?? ""
-        return id.contains("Settings") || id.contains("settings") || window.title.contains("Settings") || window.title.contains("Preferences")
+        Self.isSettingsWindow(window)
     }
 
     private func findMainWindow() -> NSWindow? {
         if let window = MainWindowTracker.shared.mainWindow, window.windowNumber > 0 {
             return window
         }
-        for window in NSApp.windows where !isSettingsWindow(window) {
-            if window.identifier?.rawValue == "FileConverterMainWindow" || window.identifier?.rawValue == "main" {
-                return window
-            }
+        return NSApp.windows.first { window in
+            window.identifier?.rawValue == "FileConverterMainWindow" || window.identifier?.rawValue == "main"
         }
-        for window in NSApp.windows where !isSettingsWindow(window) {
-            if window.canBecomeMain {
-                return window
-            }
-        }
-        return nil
     }
 
     func activateMainWindow() {
