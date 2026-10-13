@@ -45,7 +45,7 @@ Scripts/package_app.sh --no-backup Debug
 Scripts/use_build.sh
 ```
 
-`use_build.sh` unregisters every other copy, including one in /Applications; run it with that copy's path to switch back. `package_app.sh` keeps only the most recent previous build in `dist/`; `--no-backup` keeps none.
+`use_build.sh` unregisters every other copy, including one in /Applications; run it with that copy's path to switch back. `package_app.sh` zips the previous build into `dist/backups/` (only the latest is kept; `--no-backup` keeps none). Backups are zipped because an unzipped copy, whatever its folder name, carries a Finder extension that macOS may pick instead of the new build.
 
 After changing files in `project.yml` or adding source files, run `xcodegen generate` and commit the project; CI fails when it is out of date.
 

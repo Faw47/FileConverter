@@ -5,8 +5,8 @@ set -euo pipefail
 # publishing, notarizing, or enabling the Finder extension.
 # Usage: ./Scripts/package_app.sh [--no-backup] [Debug|Release]
 #
-# The app already in dist/ is kept as "*.previous.<date>"; only the most
-# recent backup is kept. --no-backup replaces it without keeping one.
+# The app already in dist/ is zipped into dist/backups/ (only the most
+# recent zip is kept). --no-backup replaces it without keeping one.
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KEEP_BACKUP=1
@@ -66,22 +66,25 @@ trap 'cleanup_staging; cleanup_build' EXIT
 ditto "${SRC_APP}" "${STAGING_DIR}/${APP_NAME}.app"
 ditto "${SRC_DSYM}" "${STAGING_DIR}/${APP_NAME}.app.dSYM"
 
-# Older backups are removed before the current build becomes the backup,
-# so at most one of each is left.
-remove_backups() {
-  local pattern="$1"
-  find "${DIST_DIR}" -maxdepth 1 -name "${pattern}" -exec rm -R {} +
-}
+# The previous build is kept as a zip, not as an app folder: a backup app
+# (even one named "*.app.previous.*") still carries a Finder extension that
+# macOS can register and choose instead of the new build. Only the most
+# recent zip is kept.
 VERSION_TAG="$(date +%Y%m%d-%H%M%S)"
-remove_backups "${APP_NAME}.app.previous.*"
-remove_backups "${APP_NAME}.app.dSYM.previous.*"
+BACKUP_DIR="${DIST_DIR}/backups"
+if [ -d "${DIST_DIR}/${APP_NAME}.app" ] && [ "${KEEP_BACKUP}" -eq 1 ]; then
+  mkdir -p "${BACKUP_DIR}"
+  find "${BACKUP_DIR}" -maxdepth 1 -name "*.zip" -delete
+  ditto -c -k --keepParent "${DIST_DIR}/${APP_NAME}.app" "${BACKUP_DIR}/${APP_NAME} ${VERSION_TAG}.zip"
+  if [ -d "${DIST_DIR}/${APP_NAME}.app.dSYM" ]; then
+    ditto -c -k --keepParent "${DIST_DIR}/${APP_NAME}.app.dSYM" "${BACKUP_DIR}/${APP_NAME} ${VERSION_TAG}.dSYM.zip"
+  fi
+fi
+# Old-style backup folders from earlier versions of this script.
+find "${DIST_DIR}" -maxdepth 1 -name "${APP_NAME}.app*.previous.*" -exec rm -R {} +
 for bundle in "${APP_NAME}.app" "${APP_NAME}.app.dSYM"; do
   if [ -d "${DIST_DIR}/${bundle}" ]; then
-    if [ "${KEEP_BACKUP}" -eq 1 ]; then
-      mv "${DIST_DIR}/${bundle}" "${DIST_DIR}/${bundle}.previous.${VERSION_TAG}"
-    else
-      rm -R "${DIST_DIR}/${bundle}"
-    fi
+    rm -R "${DIST_DIR}/${bundle}"
   fi
 done
 mv "${STAGING_DIR}/${APP_NAME}.app" "${DIST_DIR}/${APP_NAME}.app"
