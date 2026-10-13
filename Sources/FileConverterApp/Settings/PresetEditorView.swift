@@ -175,7 +175,7 @@ public struct PresetEditorView: View {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: preset.wrappedValue.category.systemImage)
                     .font(.title2)
-                    .foregroundStyle(categoryColor(preset.wrappedValue.category))
+                    .foregroundStyle(.secondary)
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -1119,10 +1119,6 @@ public struct PresetEditorView: View {
         } header: {
             Text("Fix Before Saving")
         }
-    }
-
-    private func categoryColor(_ category: FormatCategory) -> Color {
-        category.color
     }
 
     private var hasChanges: Bool {

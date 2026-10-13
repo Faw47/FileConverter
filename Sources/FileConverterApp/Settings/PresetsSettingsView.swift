@@ -199,23 +199,21 @@ public struct PresetsSettingsView: View {
 
             if let selected = selectedPreset, !filteredPresets.contains(where: { $0.id == selected.id }) {
                 HStack(spacing: 6) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .foregroundStyle(Color.accentColor)
-                    Text("Selected '\(selected.name)' is hidden by filter")
-                        .font(.caption)
+                    Text("“\(selected.menuName)” is hidden by the search")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .truncationMode(.tail)
+                        .truncationMode(.middle)
                     Spacer()
-                    Button("Clear") {
+                    Button("Show All") {
                         searchText = ""
                         categoryFilter = nil
                     }
-                    .controlSize(.mini)
+                    .controlSize(.small)
                     .accessibilityLabel("Clear filter to show selected preset")
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.accentColor.opacity(0.08))
+                .padding(.bottom, 6)
             }
 
             Divider()
@@ -276,7 +274,7 @@ public struct PresetsSettingsView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .help("Create a preset from a common recipe")
+                .help("New preset")
                 .accessibilityLabel("Create preset")
 
                 Button {
@@ -616,101 +614,64 @@ public struct PresetsSettingsView: View {
     @ViewBuilder
     private var recoveryBanner: some View {
         if case .recoveryRequired(let context) = PresetStore.shared.state {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.yellow)
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("“\(context.sourceFileURL.lastPathComponent)” could not be read: \(context.errorDescription). The file is kept unchanged.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Preset Storage Recovery Required")
-                            .font(.headline)
-                        Text("File Converter could not read your presets file (\(context.sourceFileURL.lastPathComponent)): \(context.errorDescription). Your original file has been preserved to prevent data loss.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button("Export Damaged File…") {
-                        exportDamagedFile()
-                    }
-                    .controlSize(.small)
-
-                    Button("Retry Loading") {
-                        PresetStore.shared.loadPresets()
-                        reload()
-                    }
-                    .controlSize(.small)
-                }
-
-                if !context.backupCandidates.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Available Backups:")
-                            .font(.subheadline.weight(.semibold))
-
-                        ForEach(context.backupCandidates) { candidate in
-                            HStack {
-                                Text("Backup \(candidate.backupNumber)")
-                                    .font(.subheadline.weight(.medium))
+                    ForEach(context.backupCandidates) { candidate in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
                                 if let date = candidate.modificationDate {
-                                    Text(date, style: .date)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text(date, style: .time)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                if candidate.isValid {
-                                    Text(Inflect.string("(^[\(candidate.presetCount) preset](inflect: true))"))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Button("Restore Backup \(candidate.backupNumber)") {
-                                        do {
-                                            try PresetStore.shared.restoreFromBackup(url: candidate.url)
-                                            reload()
-                                        } catch {
-                                            mutationErrorMessage = error.localizedDescription
-                                            showingMutationError = true
-                                        }
-                                    }
-                                    .controlSize(.small)
+                                    Text("Backup from \(date.formatted(date: .abbreviated, time: .shortened))")
                                 } else {
-                                    Text("(Damaged or incompatible)")
-                                        .font(.caption)
-                                        .foregroundStyle(.red)
-                                    Spacer()
+                                    Text("Backup \(candidate.backupNumber)")
                                 }
+                                Text(candidate.isValid
+                                     ? Inflect.string("^[\(candidate.presetCount) preset](inflect: true)")
+                                     : "Damaged; can’t be used")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
                             }
-                            .padding(.vertical, 2)
+                            Spacer()
+                            if candidate.isValid {
+                                Button("Restore") {
+                                    do {
+                                        try PresetStore.shared.restoreFromBackup(url: candidate.url)
+                                        reload()
+                                    } catch {
+                                        mutationErrorMessage = error.localizedDescription
+                                        showingMutationError = true
+                                    }
+                                }
+                                .accessibilityLabel("Restore backup \(candidate.backupNumber)")
+                            }
                         }
                     }
-                    .padding(8)
-                    .background(Color.primary.opacity(0.04))
-                    .cornerRadius(6)
-                }
 
-                HStack {
-                    Button("Start Fresh with Defaults…", role: .destructive) {
-                        showingStartFreshConfirmation = true
+                    HStack {
+                        Button("Try Again") {
+                            PresetStore.shared.loadPresets()
+                            reload()
+                        }
+                        Button("Save Damaged File…") {
+                            exportDamagedFile()
+                        }
+                        Spacer()
+                        Button("Start Over with Built-in Presets…", role: .destructive) {
+                            showingStartFreshConfirmation = true
+                        }
                     }
                     .controlSize(.small)
-
-                    Text("This preserves your damaged file under a timestamped recovery name.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
+                .padding(4)
+            } label: {
+                Label("Your presets couldn’t be read", systemImage: "exclamationmark.triangle.fill")
+                    .font(.headline)
             }
-            .padding(16)
-            .background(Color.yellow.opacity(0.12))
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.yellow.opacity(0.3), lineWidth: 1)
-            )
-            .padding(.horizontal, 24)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
         }
     }
 
@@ -745,124 +706,85 @@ private struct PresetConflictResolutionSheet: View {
         self.conflicts = conflicts
         self.onResolve = onResolve
         self.onCancel = onCancel
-        var initial: [UUID: PresetConflictResolution] = [:]
-        for c in conflicts {
-            initial[c.id] = .replace
+        // Keeping both never loses a preset; replacing is a deliberate choice.
+        _resolutions = State(initialValue: Dictionary(uniqueKeysWithValues: conflicts.map { ($0.id, .copy) }))
+    }
+
+    private static func title(_ resolution: PresetConflictResolution) -> String {
+        switch resolution {
+        case .replace: return "Replace mine"
+        case .copy: return "Keep both"
+        case .skip: return "Don’t import"
         }
-        _resolutions = State(initialValue: initial)
+    }
+
+    private static func reason(_ conflict: PresetImportConflict) -> String {
+        switch conflict.conflictReason {
+        case .sameName: return "You already have a preset with this name."
+        case .sameID, .sameIDAndName: return "You already have this preset."
+        }
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.orange)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Preset Conflicts Detected")
-                        .font(.headline)
-                    Text("The imported file contains \(conflicts.count) preset(s) that conflict with existing presets.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-            }
-            .padding(16)
-
-            Divider()
-
-            HStack(spacing: 8) {
-                Text("Apply to All:")
-                    .font(.caption.weight(.medium))
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(conflicts.count == 1
+                     ? "“\(conflicts[0].importedPreset.name)” Is Already in Your Presets"
+                     : Inflect.string("^[\(conflicts.count) preset](inflect: true) Are Already in Your Presets"))
+                    .font(.title3.weight(.semibold))
+                Text("Choose what to do with each one. Other presets in the file are imported as they are.")
                     .foregroundStyle(.secondary)
-
-                Button("Replace All") {
-                    for c in conflicts { resolutions[c.id] = .replace }
-                }
-                .controlSize(.small)
-
-                Button("Import All as Copies") {
-                    for c in conflicts { resolutions[c.id] = .copy }
-                }
-                .controlSize(.small)
-
-                Button("Skip All") {
-                    for c in conflicts { resolutions[c.id] = .skip }
-                }
-                .controlSize(.small)
-
-                Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+            .padding([.horizontal, .top], 20)
+            .padding(.bottom, 8)
 
-            Divider()
-
-            ScrollView {
-                VStack(spacing: 10) {
+            Form {
+                Section {
                     ForEach(conflicts) { conflict in
-                        HStack(alignment: .center, spacing: 12) {
-                            Image(systemName: conflict.importedPreset.category.systemImage)
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 24)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(conflict.importedPreset.name)
-                                    .font(.body.weight(.medium))
-                                Text(conflict.conflictReason.rawValue)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        Picker(selection: Binding(
+                            get: { resolutions[conflict.id] ?? .copy },
+                            set: { resolutions[conflict.id] = $0 }
+                        )) {
+                            ForEach(PresetConflictResolution.allCases, id: \.self) { resolution in
+                                Text(Self.title(resolution)).tag(resolution)
                             }
-
+                        } label: {
+                            Text(conflict.importedPreset.name)
+                            Text(Self.reason(conflict))
+                        }
+                    }
+                } footer: {
+                    if conflicts.count > 1 {
+                        HStack {
                             Spacer()
-
-                            Picker("", selection: Binding(
-                                get: { resolutions[conflict.id] ?? .replace },
-                                set: { resolutions[conflict.id] = $0 }
-                            )) {
-                                ForEach(PresetConflictResolution.allCases, id: \.self) { res in
-                                    Text(res.rawValue).tag(res)
+                            Menu("Set All") {
+                                ForEach(PresetConflictResolution.allCases, id: \.self) { resolution in
+                                    Button(Self.title(resolution)) {
+                                        for conflict in conflicts { resolutions[conflict.id] = resolution }
+                                    }
                                 }
                             }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 150)
+                            .fixedSize()
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color(nsColor: .controlBackgroundColor))
-                        )
                     }
                 }
-                .padding(16)
             }
-            .frame(maxHeight: 320)
+            .formStyle(.grouped)
 
             Divider()
 
             HStack {
-                Button("Cancel", role: .cancel) {
-                    onCancel()
-                }
-                .controlSize(.regular)
-
                 Spacer()
-
-                Button("Import") {
-                    onResolve(resolutions)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
+                Button("Cancel", role: .cancel) { onCancel() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Import") { onResolve(resolutions) }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
             }
             .padding(16)
         }
         .frame(width: 520)
+        .frame(minHeight: 300, maxHeight: 560)
     }
 }
 
@@ -874,13 +796,6 @@ private struct PresetSidebarRow: View {
             Text(preset.menuName)
                 .lineLimit(1)
                 .foregroundStyle(preset.isEnabled ? .primary : .secondary)
-            if !preset.isBuiltIn {
-                Text("Custom")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-                    .background(Capsule().stroke(Color.secondary.opacity(0.4)))
-            }
             Spacer(minLength: 4)
             if !preset.outputDirectoryPolicy.isCustomFolderAuthorized {
                 Image(systemName: "folder.badge.questionmark")
@@ -895,9 +810,11 @@ private struct PresetSidebarRow: View {
                     .foregroundStyle(.orange)
                     .help("Needs a tool that is not installed")
             }
-            Text(preset.destinationFormat.uppercased())
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
+            // The output format, unless the name already says it ("MP4 – 720p").
+            if !preset.menuName.localizedCaseInsensitiveContains(preset.destinationFormat) {
+                Text(preset.destinationFormat.uppercased())
+                    .foregroundStyle(.secondary)
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue(preset.isEnabled ? "" : "Hidden from menus")
@@ -1043,115 +960,61 @@ private enum PresetTemplate: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-private struct NewPresetWizardView: View {
+struct NewPresetWizardView: View {
     let onCreate: (ConversionPreset) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedTemplate: PresetTemplate = .imageToJPEG
+    @State private var selectedTemplate: PresetTemplate? = .imageToJPEG
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("New Preset")
-                        .font(.title2.weight(.semibold))
-                    Text("Start with a recipe. You can fine-tune it after it is created.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("New Preset")
+                    .font(.title3.weight(.semibold))
+                Text("Choose a starting point. You can change every setting afterwards.")
+                    .foregroundStyle(.secondary)
             }
+            .padding([.horizontal, .top], 20)
+            .padding(.bottom, 12)
 
-            Text("What do you usually want to do?")
-                .font(.headline)
-
-            ScrollView {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 220), spacing: 12)],
-                    spacing: 12
-                ) {
-                    ForEach(PresetTemplate.allCases) { template in
-                        Button {
-                            selectedTemplate = template
-                        } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: template.systemImage)
-                                    .font(.title3)
-                                    .foregroundStyle(template == selectedTemplate ? Color.accentColor : .secondary)
-                                    .frame(width: 28)
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(template.title)
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                        .multilineTextAlignment(.leading)
-                                    Text(template.subtitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .multilineTextAlignment(.leading)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-
-                                Spacer(minLength: 0)
-                            }
-                            .padding(12)
-                            .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
-                            .background(
-                                (template == selectedTemplate ? Color.accentColor.opacity(0.1) : Color.clear),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(
-                                        template == selectedTemplate ? Color.accentColor : Color.secondary.opacity(0.25),
-                                        lineWidth: template == selectedTemplate ? 1.5 : 0.75
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(template == selectedTemplate ? .isSelected : [])
-                        .accessibilityLabel("\(template.title). \(template.subtitle)")
-                    }
+            List(PresetTemplate.allCases, selection: $selectedTemplate) { template in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(template.title)
+                    Text(template.subtitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 2)
+                .tag(template)
             }
-            .frame(maxHeight: 330)
+            .listStyle(.inset)
+            .alternatingRowBackgrounds(.disabled)
+            .contextMenu(forSelectionType: PresetTemplate.self) { _ in
+                EmptyView()
+            } primaryAction: { templates in
+                if let template = templates.first { create(template) }
+            }
 
-            SettingsCard {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.forward.circle.fill")
-                        .foregroundStyle(Color.accentColor)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Selected recipe")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text(selectedTemplate.title)
-                            .font(.body.weight(.medium))
-                    }
-                    Spacer()
-                    Text("Editable after creation")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(12)
-            }
+            Divider()
 
             HStack {
+                Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-
-                Spacer()
-
-                Button("Create Preset") {
-                    onCreate(selectedTemplate.makePreset())
-                    dismiss()
+                Button("Create") {
+                    if let selectedTemplate { create(selectedTemplate) }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
+                .disabled(selectedTemplate == nil)
             }
+            .padding(16)
         }
-        .padding(24)
-        .frame(minWidth: 640, idealWidth: 720, minHeight: 520, idealHeight: 620)
+        .frame(minWidth: 420, idealWidth: 460, minHeight: 440, idealHeight: 500)
+    }
+
+    private func create(_ template: PresetTemplate) {
+        onCreate(template.makePreset())
+        dismiss()
     }
 }

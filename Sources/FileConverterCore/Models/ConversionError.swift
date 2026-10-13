@@ -29,89 +29,82 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
     case unknown(message: String)
 
     public var errorDescription: String? {
+        func name(_ path: String) -> String { URL(fileURLWithPath: path).lastPathComponent }
         switch self {
         case .unsupportedInputFormat(let path, let detectedType):
-            let filename = URL(fileURLWithPath: path).lastPathComponent
-            if let detectedType = detectedType {
-                return "The format of '\(filename)' (\(detectedType)) is not supported for conversion."
+            if let detectedType {
+                return "File Converter can’t convert \(detectedType) files like “\(name(path))”."
             }
-            return "The format of '\(filename)' could not be recognized or is not supported."
+            return "File Converter doesn’t recognize the format of “\(name(path))”."
 
         case .unsupportedOutputFormat(let targetFormat):
-            return "Output format '\(targetFormat.uppercased())' is not supported."
+            return "File Converter can’t make \(targetFormat.uppercased()) files."
 
         case .incompatibleConversion(let source, let target):
-            return "Cannot convert from \(source.uppercased()) to \(target.uppercased())."
+            return "\(source.uppercased()) files can’t be converted to \(target.uppercased())."
 
         case .backendUnavailable(let backend):
-            return "The \(backend) backend is not available in this File Converter edition."
+            return "This conversion needs \(backend), which isn’t available."
 
-        case .dependencyMissing(let name, let command):
-            return "Required tool '\(name)' is not installed. You can install it using: \(command)"
+        case .dependencyMissing(let tool, _):
+            return "This conversion needs \(tool), which isn’t installed."
 
         case .permissionDenied(let path):
-            let filename = URL(fileURLWithPath: path).lastPathComponent
-            return "Permission was denied while attempting to access '\(filename)'."
+            return "File Converter isn’t allowed to open “\(name(path))”."
 
-        case .encoderUnavailable(let codec, let reason):
-            return "The '\(codec)' encoder is not available on this system (\(reason))."
+        case .encoderUnavailable(let codec, _):
+            return "This Mac can’t make \(codec) video or audio."
 
-        case .decoderUnavailable(let codec, let reason):
-            return "Could not decode audio/video stream using '\(codec)': \(reason)."
+        case .decoderUnavailable(let codec, _):
+            return "This Mac can’t read the \(codec) video or audio in this file."
 
-        case .malformedSource(let path, let reason):
-            let filename = URL(fileURLWithPath: path).lastPathComponent
-            return "File '\(filename)' is corrupted or malformed: \(reason)."
+        case .malformedSource(let path, _):
+            return "“\(name(path))” is damaged or incomplete."
 
         case .insufficientDiskSpace(let requiredBytes, let availableBytes):
-            let reqStr = ByteCountFormatter.string(fromByteCount: requiredBytes, countStyle: .file)
-            let availStr = ByteCountFormatter.string(fromByteCount: availableBytes, countStyle: .file)
-            return "Insufficient disk space. Required approx. \(reqStr), but only \(availStr) is available."
+            let required = ByteCountFormatter.string(fromByteCount: requiredBytes, countStyle: .file)
+            let available = ByteCountFormatter.string(fromByteCount: availableBytes, countStyle: .file)
+            return "Not enough disk space: about \(required) is needed and \(available) is free."
 
         case .destinationUnavailable(let path):
-            return "Destination directory '\(path)' is read-only or unreachable."
+            return "Can’t save to “\(name(path))”. The folder is read-only or no longer available."
 
-        case .externalToolFailed(let tool, let exitCode, _):
-            return "\(tool) failed with exit code \(exitCode)."
+        case .externalToolFailed(let tool, _, _):
+            return "\(tool) couldn’t convert this file."
 
         case .cancelled:
-            return "Conversion was cancelled."
+            return "Cancelled."
 
         case .outputCollision(let path):
-            let filename = URL(fileURLWithPath: path).lastPathComponent
-            return "'\(filename)' already exists."
+            return "“\(name(path))” already exists."
 
         case .sandboxAccessFailure(let path):
-            let filename = URL(fileURLWithPath: path).lastPathComponent
-            return "Unable to maintain sandbox security-scoped access to '\(filename)'."
+            return "File Converter lost access to “\(name(path))”."
 
         case .fileNotFound(let path):
-            let filename = URL(fileURLWithPath: path).lastPathComponent
-            return "Source file '\(filename)' was not found or was moved."
+            return "“\(name(path))” was moved or deleted."
 
-        case .invalidPreset(let reason):
-            return "Preset configuration is invalid: \(reason)"
+        case .invalidPreset:
+            return "This preset has settings that don’t work together."
 
-        case .backendContractViolation(let message):
-            return "Backend contract violation: \(message)"
+        case .backendContractViolation:
+            return "Something went wrong inside File Converter."
 
-        case .executionDeadlineExceeded(let tool, let duration):
-            return "\(tool) exceeded execution deadline of \(Int(duration))s."
+        case .executionDeadlineExceeded(let tool, _):
+            return "\(tool) stopped responding."
 
         case .destinationChangingTooQuickly(let path):
-            let filename = URL(fileURLWithPath: path).lastPathComponent
-            return "Destination '\(filename)' is changing too quickly to safely complete conversion."
+            return "“\(name(path))” kept changing while File Converter tried to save it."
 
         case .destinationReserved(let path):
-            let filename = URL(fileURLWithPath: path).lastPathComponent
-            return "Another conversion in the queue is already creating '\(filename)'."
+            return "Another conversion in the queue is already making “\(name(path))”."
 
         case .admissionRejected(let reason):
             return reason
 
         case .imageTooLarge(let width, let height, let limit):
             let megapixels = (width * height) / 1_000_000
-            return "This image is \(width)×\(height) (\(megapixels) MP), too large to convert at full size (limit \(limit) MP). Choose a preset with a size limit."
+            return "This image is \(width) × \(height) (\(megapixels) MP), larger than the \(limit) MP that can be converted at full size. Choose a preset with a size limit."
 
         case .unknown(let message):
             return message
@@ -121,17 +114,23 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
     public var recoverySuggestion: String? {
         switch self {
         case .backendUnavailable:
-            return "Choose a supported backend or install the optional tool shown in Settings."
+            return "Install the tool it needs; Settings › External Tools shows what is missing."
         case .dependencyMissing(_, let command):
-            return "Run '\(command)' in Terminal or configure external tools in Settings > External Tools."
+            return "Install it with “\(command)” in Terminal, then try again. Settings › External Tools shows what was found."
         case .insufficientDiskSpace:
-            return "Free up disk space on the target volume and try again."
-        case .permissionDenied:
-            return "Select the file using File Converter's Open dialog or grant read/write access to the enclosing folder."
+            return "Free up space on the disk you’re saving to, then try again."
+        case .permissionDenied, .sandboxAccessFailure:
+            return "Add the file again with Choose Files… or by dropping it on the window."
         case .destinationChangingTooQuickly:
-            return "Wait for other processes to finish writing to the destination folder, then try again."
+            return "Wait until other apps finish writing to that folder, then try again."
         case .executionDeadlineExceeded:
-            return "Increase the tool execution deadline in Settings or try converting a smaller input file."
+            return "Try again, or try a smaller file."
+        case .malformedSource:
+            return "Check that the file opens in another app."
+        case .encoderUnavailable, .decoderUnavailable:
+            return "Installing FFmpeg adds support for more formats."
+        case .backendContractViolation:
+            return "Try again. If it keeps happening, copy the details and report it."
         default:
             return nil
         }
@@ -148,6 +147,20 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
             return "Tool '\(tool)' timed out after \(Int(duration)) seconds."
         case .destinationChangingTooQuickly(let path):
             return "Destination '\(path)' could not be reserved because concurrent changes repeatedly conflicted."
+        case .encoderUnavailable(let codec, let reason):
+            return "Encoder '\(codec)' unavailable: \(reason)"
+        case .decoderUnavailable(let codec, let reason):
+            return "Decoder '\(codec)' failed: \(reason)"
+        case .malformedSource(let path, let reason):
+            return "Malformed source '\(path)': \(reason)"
+        case .invalidPreset(let reason):
+            return "Invalid preset: \(reason)"
+        case .backendContractViolation(let message):
+            return "Backend contract violation: \(message)"
+        case .sandboxAccessFailure(let path):
+            return "Security-scoped access to '\(path)' could not be kept."
+        case .dependencyMissing(let tool, let command):
+            return "Missing dependency: \(tool)\nInstall command: \(command)"
         default:
             return errorDescription ?? "Unknown error"
         }

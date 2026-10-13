@@ -44,7 +44,7 @@ public struct ExternalToolsSettingsView: View {
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("These are optional. Without them, File Converter uses what macOS provides and hides recipes that need a missing tool.")
+                    Text("These are optional. Without them, File Converter uses what macOS provides and hides presets that need a missing tool.")
                     HStack(spacing: 4) {
                         Text("Install them with Homebrew:")
                         Link("brew.sh", destination: URL(string: "https://brew.sh")!)
@@ -120,6 +120,7 @@ public struct ExternalToolsSettingsView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .fixedSize()
                 .accessibilityLabel("Options for \(displayName(tool.name))")
             }

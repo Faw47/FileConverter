@@ -216,10 +216,10 @@ public enum QualitySetting: String, Codable, CaseIterable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .low: return "Smaller File (Lower Quality)"
+        case .low: return "Smaller file"
         case .medium: return "Balanced"
-        case .high: return "High Quality"
-        case .veryHigh: return "Maximum Visual Quality"
+        case .high: return "High"
+        case .veryHigh: return "Highest"
         case .lossless: return "Lossless"
         case .custom: return "Custom"
         }
@@ -236,12 +236,12 @@ public enum ResolutionSetting: Codable, Hashable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .original: return "Original Dimensions"
-        case .uhd4k: return "4K UHD (3840x2160)"
-        case .hd1080p: return "1080p Full HD (1920x1080)"
-        case .hd720p: return "720p HD (1280x720)"
-        case .sd480p: return "480p SD (854x480)"
-        case .custom(let w, let h): return "Custom (\(w)x\(h))"
+        case .original: return "Original size"
+        case .uhd4k: return "4K (3840 × 2160)"
+        case .hd1080p: return "1080p (1920 × 1080)"
+        case .hd720p: return "720p (1280 × 720)"
+        case .sd480p: return "480p (854 × 480)"
+        case .custom(let w, let h): return "Custom (\(w) × \(h))"
         }
     }
 }
@@ -253,9 +253,9 @@ public enum HardwareAccelerationPolicy: String, Codable, CaseIterable, Sendable 
 
     public var displayName: String {
         switch self {
-        case .auto: return "Auto (Hardware If Available)"
-        case .forceAppleHardware: return "Apple Silicon / VideoToolbox Hardware"
-        case .softwareOnly: return "Software Encoder (CPU)"
+        case .auto: return "Automatic"
+        case .forceAppleHardware: return "Hardware only"
+        case .softwareOnly: return "Software only (slower)"
         }
     }
 }
@@ -310,11 +310,11 @@ public enum OverwritePolicy: String, Codable, CaseIterable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .appendNumber: return "Append Number (e.g. video (1).mp4)"
-        case .overwrite: return "Overwrite Existing File"
-        case .skip: return "Skip If File Exists"
-        case .replaceIfNewer: return "Replace Only If Newer"
-        case .ask: return "Ask Before Overwriting"
+        case .appendNumber: return "Add a number"
+        case .overwrite: return "Replace the existing file"
+        case .skip: return "Skip the file"
+        case .replaceIfNewer: return "Replace if the original is newer"
+        case .ask: return "Ask"
         }
     }
 }

@@ -4,11 +4,11 @@ File Converter changes files from one format to another on your Mac. Nothing is 
 
 ## Converting files
 
-- **From Finder:** select one or more files, right-click, and choose **File Converter**, then a recipe. Conversion starts right away; progress shows on the Dock icon and in the menu bar.
+- **From Finder:** select one or more files, right-click, and choose **File Converter**, then a preset. Conversion starts right away; progress shows on the Dock icon and in the menu bar.
 - **From the window:** drop files on the File Converter window or click **Choose Files…**, pick a preset, and click **Convert** (or press Return).
 - **Open With, Services, and the Dock icon:** these show the preset picker with your last choice for that file type selected. In **Settings › General › Opening Files** you can make them convert right away instead.
 
-The Finder menu only lists recipes that fit the selected files. When some of the selected files fit a recipe and others don't, the recipe shows “(3 of 5 files)” and converts only those.
+The Finder menu only lists presets that fit the selected files. When some of the selected files fit a preset and others don't, the preset shows “(3 of 5 files)” and converts only those.
 
 ## Where converted files go
 

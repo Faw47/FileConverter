@@ -18,9 +18,8 @@ public struct JobRowView: View {
 
     public var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: job.preset.category.systemImage)
-                .font(.system(size: 16))
-                .foregroundStyle(job.preset.category.color)
+            Image(nsImage: NSWorkspace.shared.icon(forFile: job.sourceURL.path))
+                .resizable()
                 .frame(width: 24, height: 24)
                 .accessibilityHidden(true)
 

@@ -97,6 +97,30 @@ public enum SnapshotRunner {
                     }
                 }
             }
+            if let photo = urls.first(where: { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }) {
+                snap("picker_single", size: CGSize(width: 720, height: 560), appearances: appearances, to: outURL) {
+                    PresetPickerView(urls: [photo], excludedCount: 0, pendingBatches: 0, onCancel: {}, onConvert: { _ in }, onManagePresets: {})
+                }
+            }
+            if let video = presets.first(where: { $0.destinationFormat == "mp4" }), let source = urls.first {
+                let started = Date().addingTimeInterval(-42)
+                let jobs: [ConversionJob] = [
+                    ConversionJob(sourceURL: source, preset: video, state: .converting,
+                                  progress: ConversionProgress(fractionCompleted: 0.4), startedAt: started),
+                    ConversionJob(sourceURL: source, preset: video, state: .queued),
+                    ConversionJob(sourceURL: source, preset: video, state: .completed, startedAt: started, finishedAt: Date()),
+                    ConversionJob(sourceURL: source, preset: video, state: .completedWithWarnings(["Colors may look different"])),
+                    ConversionJob(sourceURL: source, preset: video, state: .failed(.dependencyMissing(dependencyName: "FFmpeg", installCommand: "brew install ffmpeg"))),
+                    ConversionJob(sourceURL: source, preset: video, state: .skipped("A file with that name exists")),
+                    ConversionJob(sourceURL: source, preset: video, state: .cancelled),
+                ]
+                snap("queue_rows", size: CGSize(width: 640, height: 420), appearances: appearances, to: outURL) {
+                    List(jobs) { JobRowView(job: $0) }.listStyle(.inset)
+                }
+            }
+            snap("new_preset", size: CGSize(width: 640, height: 620), appearances: appearances, to: outURL) {
+                NewPresetWizardView { _ in }
+            }
             if let preset = presets.first(where: { $0.destinationFormat == "mp4" }) ?? presets.first {
                 snap("preset_editor", size: CGSize(width: 640, height: 1500), appearances: appearances, to: outURL) {
                     PresetEditorView(presetID: preset.id, onSaved: {}, onDeleted: {}, onDirtyChange: { _ in })

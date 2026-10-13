@@ -70,10 +70,10 @@ public struct PresetEditorStateController: Sendable {
     public func qualityDisplayName(_ quality: QualitySetting, for preset: ConversionPreset) -> String {
         if isFLACFormat(preset) {
             switch quality {
-            case .low: return "Fast Compression (Level 2)"
-            case .medium: return "Standard Compression (Level 5)"
-            case .high, .lossless: return "High Compression (Level 8 — Default)"
-            case .veryHigh: return "Maximum Compression (Level 12)"
+            case .low: return "Fast (level 2)"
+            case .medium: return "Standard (level 5)"
+            case .high, .lossless: return "Smaller (level 8)"
+            case .veryHigh: return "Smallest (level 12)"
             default: return quality.displayName
             }
         }
@@ -86,10 +86,10 @@ public struct PresetEditorStateController: Sendable {
 
     public func qualitySectionSubtitle(for preset: ConversionPreset) -> String? {
         if isDirectStreamCopy(preset) {
-            return "Preserved from source (stream copy)"
+            return "Copied unchanged from the original"
         }
         if isFLACFormat(preset) {
-            return "All levels produce bit-for-bit lossless audio. Higher levels reduce file size with more CPU encoding effort."
+            return "Every level is lossless. Higher levels make smaller files but take longer."
         }
         return nil
     }

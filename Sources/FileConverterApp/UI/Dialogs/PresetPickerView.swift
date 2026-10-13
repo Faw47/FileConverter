@@ -137,7 +137,14 @@ struct PresetPickerView: View {
         return "Not supported, left out: \(names)\(more)."
     }
 
-    // MARK: - Grid
+    // MARK: - List
+
+    /// The files' own kinds first, so a photo shows image presets before
+    /// Animated GIF (filed under Video).
+    private var categoryOrder: [FormatCategory] {
+        let own = groups.map(\.category)
+        return own + FormatCategory.allCases.filter { !own.contains($0) }
+    }
 
     private var presetGrid: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -148,42 +155,36 @@ struct PresetPickerView: View {
                 .accessibilityLabel("Search compatible presets")
                 .padding(.horizontal, 20)
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    if ordered.isEmpty {
-                        ContentUnavailableView.search(text: searchText)
-                            .frame(maxWidth: .infinity, minHeight: 160)
-                    } else {
-                        VStack(alignment: .leading, spacing: 14) {
-                            if !recent.isEmpty {
-                                section(title: "Recent", systemImage: "clock", presets: recent)
-                            }
-                            let recentIDs = Set(recent.map(\.id))
-                            ForEach(FormatCategory.allCases) { category in
-                                let presets = filtered.filter { $0.category == category && !recentIDs.contains($0.id) }
-                                if !presets.isEmpty {
-                                    section(title: category.displayName, systemImage: category.systemImage, presets: presets)
-                                }
+            if ordered.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(selection: $selectedID) {
+                    if !recent.isEmpty {
+                        Section("Recent") {
+                            ForEach(recent) { row($0) }
+                        }
+                    }
+                    let recentIDs = Set(recent.map(\.id))
+                    ForEach(categoryOrder) { category in
+                        let presets = filtered.filter { $0.category == category && !recentIDs.contains($0.id) }
+                        if !presets.isEmpty {
+                            Section(category.displayName) {
+                                ForEach(presets) { row($0) }
                             }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 12)
                     }
                 }
-                .focusable()
+                .listStyle(.inset)
+                .alternatingRowBackgrounds(.disabled)
                 .focused($focus, equals: .grid)
-                .focusEffectDisabled()
-                .onKeyPress(keys: [.leftArrow, .upArrow]) { _ in
-                    move(-1, proxy: proxy)
-                    return .handled
-                }
-                .onKeyPress(keys: [.rightArrow, .downArrow]) { _ in
-                    move(1, proxy: proxy)
-                    return .handled
-                }
-                .onKeyPress(.return) {
-                    convertSelected()
-                    return .handled
+                .contextMenu(forSelectionType: UUID.self) { _ in
+                    EmptyView()
+                } primaryAction: { ids in
+                    if let id = ids.first {
+                        selectedID = id
+                        convertSelected()
+                    }
                 }
                 .onKeyPress(characters: .alphanumerics) { press in
                     searchText += press.characters
@@ -194,64 +195,28 @@ struct PresetPickerView: View {
         }
     }
 
-    private func section(title: String, systemImage: String, presets: [ConversionPreset]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 8)], spacing: 8) {
-                ForEach(presets) { preset in
-                    tile(preset)
-                }
+    private func row(_ preset: ConversionPreset) -> some View {
+        HStack {
+            Text(preset.menuName)
+            Spacer()
+            if let detail = Self.detail(for: preset) {
+                Text(detail)
+                    .foregroundStyle(.secondary)
             }
         }
+        .tag(preset.id)
     }
 
-    private func tile(_ preset: ConversionPreset) -> some View {
-        let isSelected = preset.id == selectedID
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(preset.menuName)
-                .font(.callout.weight(.medium))
-                .lineLimit(1)
-            Text(preset.name)
-                .font(.caption)
-                .foregroundStyle(isSelected ? Color.white.opacity(0.85) : .secondary)
-                .lineLimit(1)
-        }
-        .foregroundStyle(isSelected ? Color.white : Color.primary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(isSelected ? 0 : 0.2), lineWidth: 1)
-        )
-        .contentShape(Rectangle())
-        .id(preset.id)
-        .onTapGesture(count: 2) {
-            selectedID = preset.id
-            convertSelected()
-        }
-        .onTapGesture {
-            selectedID = preset.id
-            focus = .grid
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { selectedID = preset.id; convertSelected() }
-    }
-
-    private func move(_ step: Int, proxy: ScrollViewProxy) {
-        let list = ordered
-        guard !list.isEmpty else { return }
-        let index = list.firstIndex { $0.id == selectedID } ?? -1
-        let next = list[max(0, min(list.count - 1, index + step))]
-        selectedID = next.id
-        proxy.scrollTo(next.id)
+    /// The long name, only when it says more than the short one: "PNG Image
+    /// (Lossless)" adds "Lossless" to "PNG"; "HEIC Image" adds nothing.
+    static func detail(for preset: ConversionPreset) -> String? {
+        let generic: Set<String> = ["image", "video", "audio", "document", "file", "files", "to", "→", "–", "-"]
+        let shortWords = Set(preset.menuName.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
+        let extra = preset.name.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter { !shortWords.contains($0) && !generic.contains($0) }
+        return extra.isEmpty ? nil : preset.name
     }
 
     // MARK: - Footer
@@ -288,21 +253,11 @@ struct PresetPickerView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let preset = effectivePreset {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("Saves to")
-                        .foregroundStyle(.secondary)
-                    Text(DestinationDescription.folder(for: preset))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    if let name = DestinationDescription.exampleName(for: preset, source: recognized.first) {
-                        Text("as").foregroundStyle(.secondary)
-                        Text(name)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .font(.callout.monospaced())
-                    }
-                }
-                .font(.callout)
+                Text(DestinationDescription.sentence(for: preset, sources: recognized))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
             }
 
             DisclosureGroup("Options for This Conversion", isExpanded: $showingOptions) {
@@ -332,7 +287,6 @@ struct PresetPickerView: View {
 
             HStack {
                 Button("Manage Presets…", action: onManagePresets)
-                    .buttonStyle(.link)
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)

@@ -37,7 +37,7 @@ final class PresetEditorStateTests: XCTestCase {
         XCTAssertFalse(controller.isQualityEnabled(for: preset))
         XCTAssertFalse(controller.isHardwareAccelerationEnabled(for: preset))
         XCTAssertFalse(controller.isTargetFileSizeEnabled(for: preset))
-        XCTAssertEqual(controller.qualitySectionSubtitle(for: preset), "Preserved from source (stream copy)")
+        XCTAssertEqual(controller.qualitySectionSubtitle(for: preset), "Copied unchanged from the original")
     }
 
     func testCodecChangeToPCMExposesBitDepthAndDefaultsTo16Bit() {
@@ -86,10 +86,10 @@ final class PresetEditorStateTests: XCTestCase {
         XCTAssertFalse(controller.shouldShowAudioBitrate(for: preset))
         XCTAssertFalse(controller.shouldShowBitDepth(for: preset))
         XCTAssertEqual(controller.qualitySectionTitle(for: preset), "Compression level")
-        XCTAssertEqual(controller.qualityDisplayName(.low, for: preset), "Fast Compression (Level 2)")
-        XCTAssertEqual(controller.qualityDisplayName(.medium, for: preset), "Standard Compression (Level 5)")
-        XCTAssertEqual(controller.qualityDisplayName(.high, for: preset), "High Compression (Level 8 — Default)")
-        XCTAssertEqual(controller.qualityDisplayName(.veryHigh, for: preset), "Maximum Compression (Level 12)")
+        XCTAssertEqual(controller.qualityDisplayName(.low, for: preset), "Fast (level 2)")
+        XCTAssertEqual(controller.qualityDisplayName(.medium, for: preset), "Standard (level 5)")
+        XCTAssertEqual(controller.qualityDisplayName(.high, for: preset), "Smaller (level 8)")
+        XCTAssertEqual(controller.qualityDisplayName(.veryHigh, for: preset), "Smallest (level 12)")
         XCTAssertFalse(controller.availableQualities(for: preset).contains(.lossless))
     }
 
@@ -321,7 +321,7 @@ final class PresetEditorStateTests: XCTestCase {
         XCTAssertEqual(controller.qualitySectionTitle(for: flacDraft), "Compression level")
         XCTAssertEqual(controller.availableQualities(for: flacDraft), [.low, .medium, .high, .veryHigh])
         XCTAssertFalse(controller.availableQualities(for: flacDraft).contains(.lossless))
-        XCTAssertEqual(controller.qualityDisplayName(.high, for: flacDraft), "High Compression (Level 8 — Default)")
+        XCTAssertEqual(controller.qualityDisplayName(.high, for: flacDraft), "Smaller (level 8)")
 
         // 8. Transition to Direct Stream Copy in UI
         controller.setAudioCodec(.copy, in: &flacDraft)

@@ -1,58 +1,6 @@
 import AppKit
 import SwiftUI
 
-// MARK: - Section Header
-
-public struct SettingsSectionHeader: View {
-    let title: String
-    var accessory: String? = nil
-
-    public init(_ title: String, accessory: String? = nil) {
-        self.title = title
-        self.accessory = accessory
-    }
-
-    public var body: some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            Spacer()
-
-            if let accessory {
-                Text(accessory)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.horizontal, 4)
-        .padding(.bottom, 4)
-    }
-}
-
-// MARK: - Card
-
-public struct SettingsCard<Content: View>: View {
-    private let content: Content
-
-    public init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            content
-        }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.75)
-        )
-    }
-}
-
 // MARK: - Standard Settings Row
 
 public struct SettingsRow<Trailing: View>: View {

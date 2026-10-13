@@ -65,9 +65,8 @@ public struct FinderIntegrationView: View {
             Section("How to Use") {
                 Text("1. In System Settings, open General › Login Items & Extensions, then turn on File Converter under Finder Extensions.")
                 Text("2. In Finder, right-click one or more files and choose File Converter.")
-                Text("3. Pick a recipe. The converted file appears next to the original, or wherever General settings say.")
+                Text("3. Pick a preset. The converted file appears next to the original, or wherever General settings say.")
             }
-            .font(.callout)
 
             Section {
                 DisclosureGroup("Troubleshooting") {

@@ -50,7 +50,6 @@
 		5B39E3370C46239B3CEF8AED /* FileConverterContracts in Frameworks */ = {isa = PBXBuildFile; productRef = B864102BCB5AB05ADA7D9ED7 /* FileConverterContracts */; };
 		5C52023B1272636AC54C62E7 /* FinderMenuRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC8B3AED6B6B42E2D8034CF /* FinderMenuRulesTests.swift */; };
 		5E9539A31A35587F2A3E70EC /* AuditFixesRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDDE34D20912871FC9D20D8A /* AuditFixesRegressionTests.swift */; };
-		6276A0E8F53E05952A47830D /* FormatCategory+Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10B3C837F5427C028519CE9 /* FormatCategory+Color.swift */; };
 		65BEF0B5B9C7C4B756DE1D92 /* NativeAudioOutputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E4D9163498EBFFF54C62363 /* NativeAudioOutputTests.swift */; };
 		6784783383935577E740E124 /* FileConverterNativeBackends in Frameworks */ = {isa = PBXBuildFile; productRef = 599447E9FC4EF0496AEB23EA /* FileConverterNativeBackends */; };
 		6B6AF9694896C44CB83BEE9E /* AudioPresetEndToEndTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 983434FEA3A02A58C48A3EBD /* AudioPresetEndToEndTests.swift */; };
@@ -210,7 +209,6 @@
 		B8D89E5E1FC2B3AF468CE170 /* PresetEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetEditorView.swift; sourceTree = "<group>"; };
 		BACC3A123A245EC05FC9658B /* FormatRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatRegistryTests.swift; sourceTree = "<group>"; };
 		BCF4132E4CBD6EFE78A3539D /* MenuBarStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarStatusView.swift; sourceTree = "<group>"; };
-		C10B3C837F5427C028519CE9 /* FormatCategory+Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FormatCategory+Color.swift"; sourceTree = "<group>"; };
 		C435D3CFEEBC25F8E79567A4 /* ExternalBackendProcessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalBackendProcessTests.swift; sourceTree = "<group>"; };
 		CBF24127A8C6CAD1B2C760E6 /* QueueInteractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueInteractionTests.swift; sourceTree = "<group>"; };
 		D11A33C2083497C1B210C65C /* FileConverterMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileConverterMainView.swift; sourceTree = "<group>"; };
@@ -431,7 +429,6 @@
 				5182D156CF2AFD6C8EAF8307 /* Queue */,
 				94309FE40377B1220421DB97 /* DockProgressController.swift */,
 				D11A33C2083497C1B210C65C /* FileConverterMainView.swift */,
-				C10B3C837F5427C028519CE9 /* FormatCategory+Color.swift */,
 				801990DCDE5BA048BBCE733C /* HelpView.swift */,
 				8E67EDD57AF54B0A8CBC872A /* Inflect.swift */,
 				BCF4132E4CBD6EFE78A3539D /* MenuBarStatusView.swift */,
@@ -735,7 +732,6 @@
 				9A222C49E3CA19334CFFBC30 /* ExternalToolsSettingsView.swift in Sources */,
 				E89D9EC36711FC89F83C7CA0 /* FileConverterMainView.swift in Sources */,
 				39BFFA79B6E23F8637D87B30 /* FinderIntegrationView.swift in Sources */,
-				6276A0E8F53E05952A47830D /* FormatCategory+Color.swift in Sources */,
 				93439141BEF8B359482C8B3A /* GeneralSettingsView.swift in Sources */,
 				3D3EFDAD5B9DDB2834FD8EB1 /* HelpView.swift in Sources */,
 				D6F26BD9753B6682901626B4 /* Inflect.swift in Sources */,

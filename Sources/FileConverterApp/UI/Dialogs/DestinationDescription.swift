@@ -27,4 +27,22 @@ enum DestinationDescription {
             targetExtension: preset.destinationFormat
         )
     }
+
+    /// One sentence for a dialog footer, e.g. "Saves “Report-web.jpg” next
+    /// to the original." With several files the name is an example.
+    static func sentence(for preset: ConversionPreset, sources: [URL]) -> String {
+        let place: String
+        switch EffectivePresetResolver.resolve(preset: preset).outputDirectoryPolicy.value {
+        case .sameAsSource: place = "next to the original"
+        case .downloads: place = "in Downloads"
+        case .sourceSubfolder(let name): place = "in a “\(name)” folder next to the original"
+        case .customFolder(_, let path): place = "in \((path as NSString).abbreviatingWithTildeInPath)"
+        }
+        guard let name = exampleName(for: preset, source: sources.first) else {
+            return "Saves \(place)."
+        }
+        return sources.count > 1
+            ? "Saves files like “\(name)” \(place)."
+            : "Saves “\(name)” \(place)."
+    }
 }
