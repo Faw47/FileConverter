@@ -270,7 +270,7 @@ public struct PresetsSettingsView: View {
 
             Divider()
 
-            HStack(spacing: 6) {
+            HStack(spacing: 2) {
                 Button {
                     request(.add)
                 } label: {
@@ -304,29 +304,33 @@ public struct PresetsSettingsView: View {
                 Spacer()
 
                 Menu {
-                    Button("Import Presets...") {
+                    Button("Import Presets…") {
                         request(.importPresets)
                     }
-                    Button("Export All Presets...") {
+                    Button("Export All Presets…") {
                         exportPresets()
                     }
                     if let selected = selectedPreset {
-                        Button("Export '\(selected.name)'...") {
+                        Button("Export “\(selected.name)”…") {
                             exportSinglePreset(selected)
                         }
                     }
                     Divider()
-                    Button("Reset All Presets...", role: .destructive) {
+                    Button("Reset All Presets…", role: .destructive) {
                         request(.resetAll)
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
                 .help("More preset actions")
                 .accessibilityLabel("More preset actions")
             }
-            .padding(8)
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
     }
 
@@ -628,7 +632,7 @@ public struct PresetsSettingsView: View {
 
                     Spacer()
 
-                    Button("Export Damaged File...") {
+                    Button("Export Damaged File…") {
                         exportDamagedFile()
                     }
                     .controlSize(.small)
@@ -688,7 +692,7 @@ public struct PresetsSettingsView: View {
                 }
 
                 HStack {
-                    Button("Start Fresh with Defaults...", role: .destructive) {
+                    Button("Start Fresh with Defaults…", role: .destructive) {
                         showingStartFreshConfirmation = true
                     }
                     .controlSize(.small)

@@ -145,7 +145,7 @@ public struct PDFCompressDialogView: View {
 
             Form {
                 Section {
-                    Picker("Compression", selection: $profile) {
+                    Picker("Aim for", selection: $profile) {
                         ForEach(CompressionProfile.allCases) { profile in
                             Text(profile.rawValue).tag(profile)
                         }
@@ -184,29 +184,24 @@ public struct PDFCompressDialogView: View {
                             }
                         }
                     }
-                } header: {
-                    Text("Compression")
-                } footer: {
-                    FooterText(compressionFooter)
-                }
-
-                Section("Clean Up") {
-                    Toggle("Remove document details (author, title, keywords)", isOn: $removeMetadata)
-                        .accessibilityLabel("Remove document details")
-                    Toggle("Remove comments and highlights", isOn: $removeAnnotations)
-                        .accessibilityLabel("Remove comments and highlights")
                     if usesGhostscript {
                         Toggle("Optimize for fast web viewing", isOn: $linearize)
                             .accessibilityLabel("Optimize for fast web viewing")
                     }
+                } footer: {
+                    FooterText(compressionFooter)
+                }
+
+                Section("Remove") {
+                    Toggle("Document details (author, title, keywords)", isOn: $removeMetadata)
+                        .accessibilityLabel("Remove document details")
+                    Toggle("Comments and highlights", isOn: $removeAnnotations)
+                        .accessibilityLabel("Remove comments and highlights")
                 }
 
                 Section {
-                    LabeledContent("Name ending") {
-                        TextField("Name ending", text: $nameEnding, prompt: Text("-compressed"))
-                            .frame(maxWidth: 160)
-                            .accessibilityLabel("Filename ending")
-                    }
+                    TextField("Name ending", text: $nameEnding, prompt: Text("-compressed"))
+                        .accessibilityLabel("Filename ending")
                     LabeledContent("Save to") {
                         HStack {
                             Text(customOutputDirectory.map { ($0.path as NSString).abbreviatingWithTildeInPath }

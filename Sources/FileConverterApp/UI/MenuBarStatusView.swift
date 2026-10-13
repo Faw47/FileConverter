@@ -34,8 +34,10 @@ struct MenuBarStatusView: View {
             NSWorkspace.shared.activateFileViewerSelecting(lastOutputs)
         }
         .disabled(lastOutputs.isEmpty)
-        Button(queue.isPaused ? "Resume Queue" : "Pause Queue") {
-            if queue.isPaused { queue.resume() } else { queue.pause() }
+        if queue.isPaused || !activeJobs.isEmpty {
+            Button(queue.isPaused ? "Resume Queue" : "Pause Queue") {
+                if queue.isPaused { queue.resume() } else { queue.pause() }
+            }
         }
         Divider()
         Button("Open File Converter") {

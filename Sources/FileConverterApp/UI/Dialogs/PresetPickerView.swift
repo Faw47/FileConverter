@@ -416,19 +416,21 @@ private struct MixedBatchView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("These files are of different kinds. Choose a preset for each kind.")
+            Text("These files are of different kinds. Choose a preset for each kind, or uncheck a kind to leave it out.")
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 20)
             Form {
                 ForEach(groups, id: \.category) { group in
                     let options = presets(for: group.urls)
+                    let isIncluded = Binding(
+                        get: { included.contains(group.category) },
+                        set: { if $0 { included.insert(group.category) } else { included.remove(group.category) } }
+                    )
                     HStack {
-                        Toggle(isOn: Binding(
-                            get: { included.contains(group.category) },
-                            set: { if $0 { included.insert(group.category) } else { included.remove(group.category) } }
-                        )) {
-                            Label("\(group.category.displayName) (\(group.urls.count))", systemImage: group.category.systemImage)
+                        Toggle(isOn: isIncluded) {
+                            Text(Inflect.string("\(group.category.displayName): ^[\(group.urls.count) file](inflect: true)"))
                         }
+                        .toggleStyle(.checkbox)
                         .disabled(options.isEmpty)
                         Spacer()
                         if options.isEmpty {
@@ -443,7 +445,8 @@ private struct MixedBatchView: View {
                                 }
                             }
                             .labelsHidden()
-                            .frame(width: 220)
+                            .fixedSize()
+                            .disabled(!isIncluded.wrappedValue)
                         }
                     }
                 }

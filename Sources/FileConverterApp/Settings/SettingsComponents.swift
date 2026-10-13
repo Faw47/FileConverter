@@ -102,8 +102,6 @@ public struct SettingsRow<Trailing: View>: View {
 
             trailing
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
 }
 

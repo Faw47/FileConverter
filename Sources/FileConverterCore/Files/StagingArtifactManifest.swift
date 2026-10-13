@@ -60,13 +60,8 @@ public final class StagingArtifactManifest: @unchecked Sendable {
         if let override = storageURLOverride {
             return override
         }
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let appDir = appSupport.appendingPathComponent("FileConverter", isDirectory: true)
-        if !fileManager.fileExists(atPath: appDir.path) {
-            try? fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
-        }
-        return appDir.appendingPathComponent("staging_manifest.json")
+        return AppDataLocation.file("staging_manifest.json")
+            ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("staging_manifest.json")
     }
 
     private func loadManifest() {

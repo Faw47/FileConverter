@@ -78,13 +78,8 @@ public final class ConversionJournal: @unchecked Sendable {
         if let override = storageURLOverride {
             return override
         }
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let appDir = appSupport.appendingPathComponent("FileConverter", isDirectory: true)
-        if !fileManager.fileExists(atPath: appDir.path) {
-            try? fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
-        }
-        return appDir.appendingPathComponent("conversion_journal.json")
+        return AppDataLocation.file("conversion_journal.json")
+            ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("conversion_journal.json")
     }
 
     private func loadJournal() {
@@ -197,5 +192,28 @@ public final class ConversionJournal: @unchecked Sendable {
             entry.updatedAt > cutoff || entry.state == .admitted || entry.state == .running || entry.state == .committing
         }
         saveJournal()
+    }
+}
+
+extension ConversionJournal {
+    /// Interrupted conversions worth offering again: the original still
+    /// exists and the interruption was within the last week. The rest
+    /// cannot be acted on.
+    public static func partitionInterrupted(
+        _ entries: [JournalEntry],
+        now: Date = Date(),
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) -> (actionable: [JournalEntry], stale: [JournalEntry]) {
+        let cutoff = now.addingTimeInterval(-7 * 24 * 3600)
+        var actionable: [JournalEntry] = []
+        var stale: [JournalEntry] = []
+        for entry in entries {
+            if entry.updatedAt >= cutoff && fileExists(entry.sourceURLPath) {
+                actionable.append(entry)
+            } else {
+                stale.append(entry)
+            }
+        }
+        return (actionable, stale)
     }
 }

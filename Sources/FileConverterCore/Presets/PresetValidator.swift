@@ -489,9 +489,17 @@ public enum PresetValidator {
         for format in Set(sourceFormats.map(\.id)).compactMap({ id in sourceFormats.first { $0.id == id } }) {
             visibleIDs.formIntersection(PresetVisibility.visible(matchingPresets, for: format).map(\.id))
         }
+        // Presets of the files' own kind come first, so photos default to an
+        // image preset rather than, say, Animated GIF (filed under Video).
+        let sourceCategories = Set(sourceFormats.map(\.category))
         return matchingPresets
             .filter { visibleIDs.contains($0.id) }
-            .sorted { $0.sortOrder < $1.sortOrder }
+            .sorted { lhs, rhs in
+                let lhsOwn = sourceCategories.contains(lhs.category)
+                let rhsOwn = sourceCategories.contains(rhs.category)
+                if lhsOwn != rhsOwn { return lhsOwn }
+                return lhs.sortOrder < rhs.sortOrder
+            }
     }
 
     public static func groupPresetsByCategory(_ presets: [ConversionPreset]) -> [FormatCategory: [ConversionPreset]] {

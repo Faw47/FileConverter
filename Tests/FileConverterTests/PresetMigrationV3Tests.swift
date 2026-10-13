@@ -145,4 +145,14 @@ final class PresetMigrationV3Tests: XCTestCase {
         XCTAssertEqual(store.presets.first { $0.builtInKey == "audio.mp3-192" }?.menuName, "My MP3")
         XCTAssertEqual(store.presets.first { $0.builtInKey == "audio.mp3-128" }?.menuName, "MP3 – 128 kbps")
     }
+
+    func testRevision4RenamesDefaultMP4OnlyWhenUntouched() throws {
+        var stored = try BackendHarness.builtIn("video.mp4-balanced")
+        stored.factoryRevision = 3
+        stored.name = "MP4 (H.264 - Balanced)"
+        XCTAssertEqual(BuiltInPresetUpgrades.upgrade(stored).name, "MP4 (H.264)")
+
+        stored.name = "My everyday MP4"
+        XCTAssertEqual(BuiltInPresetUpgrades.upgrade(stored).name, "My everyday MP4", "a user's own name is kept")
+    }
 }

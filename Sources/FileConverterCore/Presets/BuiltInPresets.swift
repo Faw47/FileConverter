@@ -18,7 +18,7 @@ public enum BuiltInPresets {
 
         // MARK: - VIDEO PRESETS
         add("video.mp4-balanced", ConversionPreset(
-            name: "MP4 (H.264 - Balanced)",
+            name: "MP4 (H.264)",
             menuName: "MP4",
             category: .video,
             sourceFormats: ["video"],

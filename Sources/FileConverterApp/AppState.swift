@@ -87,9 +87,30 @@ public final class AppState: ObservableObject {
     }
 
     public func checkForUncompletedJournalEntries() {
-        let entries = ConversionJournal.shared.uncompletedEntries()
-        self.uncompletedJournalEntries = entries.filter {
+        let journal = ConversionJournal.shared
+        journal.prune(olderThan: 30 * 24 * 3600)
+        let interrupted = journal.uncompletedEntries().filter {
             $0.state == .running || $0.state == .committing
+        }
+        let (actionable, stale) = ConversionJournal.partitionInterrupted(interrupted)
+        // Nothing can be done about these, so they are not shown.
+        for entry in stale {
+            journal.transitionState(jobID: entry.id, to: .cancelled)
+        }
+        self.uncompletedJournalEntries = actionable
+    }
+
+    /// Converts every interrupted file again with its preset, if both still exist.
+    public func retryInterruptedConversions() {
+        let entries = uncompletedJournalEntries
+        dismissAllJournalRecovery()
+        let byPreset = Dictionary(grouping: entries) { $0.presetID }
+        for (presetID, group) in byPreset {
+            guard let preset = PresetStore.shared.preset(forID: presetID) else { continue }
+            let urls = group.map { URL(fileURLWithPath: $0.sourceURLPath) }
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
+            guard !urls.isEmpty else { continue }
+            Task { try? await convertFilesWhenReady(urls: urls, preset: preset, leases: nil) }
         }
     }
 

@@ -36,10 +36,12 @@ final class AccessibilityAuditTests: XCTestCase {
         let content = sourceFileContents(relativePath: "Sources/FileConverterApp/UI/Dialogs/PDFSplitDialogView.swift")
         XCTAssertFalse(content.isEmpty)
 
-        // Custom range input per-file
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Custom range for \\(item.url.lastPathComponent)\")"))
+        // Native controls are announced by their titles: the per-file page
+        // field is titled with the file name, the mode is a titled picker.
+        XCTAssertTrue(content.contains("\"Pages for \\(item.url.lastPathComponent)\""))
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Remove \\(item.url.lastPathComponent)\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(mode.rawValue)"))
+        XCTAssertTrue(content.contains("Picker(\"Split into\""))
+        XCTAssertFalse(content.contains("Picker(\"\""), "every picker needs a title")
     }
 
     func testCollisionResolutionHasAccessibilityAndKeyShortcuts() {

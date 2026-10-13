@@ -9,7 +9,7 @@ import SwiftUI
 public struct FinderIntegrationView: View {
     @State private var channelReady = false
     @State private var snapshotReady = false
-    @State private var statusDetail = "Checking integration files..."
+    @State private var statusDetail = "Checking integration files…"
     @State private var snapshotAge: String?
     @State private var isTesting = false
     @State private var testSuccessMessage: String?

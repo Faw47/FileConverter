@@ -773,6 +773,9 @@ public final class PresetStore: @unchecked Sendable {
         if let storageURLOverride {
             return storageURLOverride
         }
+        if AppDataLocation.isRunningTests, let directory = AppDataLocation.directory {
+            return directory.appendingPathComponent(Self.presetsFileName)
+        }
 
         if let configuration = try? IPCConfiguration.current() {
             guard let container = configuration.sharedContainerURL() else {

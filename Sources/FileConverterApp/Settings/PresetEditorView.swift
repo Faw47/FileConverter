@@ -22,7 +22,6 @@ public struct PresetEditorView: View {
     @State private var savedIndicatorVisible = false
     @State private var savedIndicatorTask: Task<Void, Never>?
     @State private var sourceSelection = "category:image"
-    @State private var advancedOptionsExpanded = false
     @State private var partLengthText = "00:05:00.00"
     @State private var partLengthValidationError: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -183,7 +182,7 @@ public struct PresetEditorView: View {
                     Text(preset.wrappedValue.name.isEmpty ? "Untitled Preset" : preset.wrappedValue.name)
                         .font(.headline)
                         .lineLimit(1)
-                    Text(preset.wrappedValue.isBuiltIn ? "Built-in preset" : "Custom preset")
+                    Text(preset.wrappedValue.isBuiltIn ? "Built-in preset · your changes are kept" : "Your preset")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -215,66 +214,35 @@ public struct PresetEditorView: View {
 
             Divider()
 
-            // Scrollable Inspector Form
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    quickSetupSection(preset: preset)
-                    identitySection(preset: preset)
-                    outputSection(preset: preset)
-
-                    if !errors.isEmpty {
-                        needsAttentionSection(errors: errors)
-                    }
-
-                    DisclosureGroup(isExpanded: $advancedOptionsExpanded) {
-                        VStack(alignment: .leading, spacing: 18) {
-                            nameAndMatchingSection(preset: preset)
-                            conversionEngineSection(preset: preset)
-
-                            if preset.wrappedValue.category == .document,
-                               (preset.wrappedValue.splitPDFIntoPages
-                                   || PresetValidator.canSplitPDFPages(preset.wrappedValue)) {
-                                documentToolsSection(preset: preset)
-                            }
-
-                            if preset.wrappedValue.category == .video {
-                                videoSection(preset: preset)
-                            }
-
-                            if preset.wrappedValue.category == .image {
-                                imageSection(preset: preset)
-                            }
-
-                            if preset.wrappedValue.category == .audio || preset.wrappedValue.category == .video {
-                                audioSection(preset: preset)
-                            }
-
-                            metadataSection(preset: preset)
-                        }
-                        .padding(.top, 8)
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "slider.horizontal.3")
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Advanced options")
-                                    .font(.body.weight(.medium))
-                                Text("Matching rules, engines, codecs, metadata, and special workflows")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 4)
-
-                    if preset.wrappedValue.isBuiltIn {
-                        builtInNoteSection
-                    }
+            Form {
+                if !errors.isEmpty {
+                    needsAttentionSection(errors: errors)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+
+                quickSetupSection(preset: preset)
+
+                if preset.wrappedValue.category == .document,
+                   (preset.wrappedValue.splitPDFIntoPages
+                       || PresetValidator.canSplitPDFPages(preset.wrappedValue)) {
+                    documentToolsSection(preset: preset)
+                }
+                if preset.wrappedValue.category == .video {
+                    videoSection(preset: preset)
+                }
+                if preset.wrappedValue.category == .image {
+                    imageSection(preset: preset)
+                }
+                if preset.wrappedValue.category == .audio || preset.wrappedValue.category == .video {
+                    audioSection(preset: preset)
+                }
+
+                outputSection(preset: preset)
+                metadataSection(preset: preset)
+                identitySection(preset: preset)
+                nameAndMatchingSection(preset: preset)
+                conversionEngineSection(preset: preset)
             }
-            .scrollIndicators(.visible)
+            .formStyle(.grouped)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
@@ -338,418 +306,352 @@ public struct PresetEditorView: View {
     // MARK: - Sections
 
     private func quickSetupSection(preset: Binding<ConversionPreset>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Conversion")
-
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(
-                        title: "Convert from",
-                        subtitle: selectedSourceChoice?.subtitle ?? "Choose a source type"
-                    ) {
-                        Picker("Source file type", selection: sourceSelectionBinding(for: preset)) {
-                            Section("Common file groups") {
-                                ForEach(commonSourceChoices) { choice in
-                                    Text(choice.title).tag(choice.id)
-                                }
-                            }
-
-                            Section("Specific formats") {
-                                ForEach(specificSourceChoices) { choice in
-                                    Text(choice.title).tag(choice.id)
-                                }
-                            }
-
-                            Text("Custom matching rule").tag("custom")
+        Section("Conversion") {
+            SettingsRow(
+                title: "Convert from",
+                subtitle: selectedSourceChoice?.subtitle ?? "Choose a source type"
+            ) {
+                Picker("Source file type", selection: sourceSelectionBinding(for: preset)) {
+                    Section("Common file groups") {
+                        ForEach(commonSourceChoices) { choice in
+                            Text(choice.title).tag(choice.id)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 260)
-                        .accessibilityLabel("Source file type")
                     }
 
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(
-                        title: "Convert to",
-                        subtitle: destinationFormatDescription(for: preset.wrappedValue)
-                    ) {
-                        Picker("Output format", selection: destinationSelectionBinding(for: preset)) {
-                            ForEach(destinationCategories) { category in
-                                Section(category.displayName) {
-                                    ForEach(destinationFormats.filter { $0.category == category }) { format in
-                                        Text(destinationLabel(for: format)).tag(format.primaryExtension)
-                                    }
-                                }
-                            }
+                    Section("Specific formats") {
+                        ForEach(specificSourceChoices) { choice in
+                            Text(choice.title).tag(choice.id)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 260)
-                        .accessibilityLabel("Output format")
                     }
 
+                    Text("Custom matching rule").tag("custom")
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .accessibilityLabel("Source file type")
+            }
+
+            SettingsRow(
+                title: "Convert to",
+                subtitle: resolvedFormat(for: preset.wrappedValue) == nil ? destinationFormatDescription(for: preset.wrappedValue) : nil
+            ) {
+                Picker("Output format", selection: destinationSelectionBinding(for: preset)) {
+                    ForEach(destinationCategories) { category in
+                        Section(category.displayName) {
+                            ForEach(destinationFormats.filter { $0.category == category }) { format in
+                                Text(destinationLabel(for: format)).tag(format.primaryExtension)
+                            }
+                        }
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .accessibilityLabel("Output format")
+            }
+
+                            SettingsRow(
+                title: stateController.qualitySectionTitle(for: preset.wrappedValue),
+                subtitle: stateController.qualitySectionSubtitle(for: preset.wrappedValue)
+            ) {
+                Picker("", selection: preset.quality) {
+                    ForEach(stateController.availableQualities(for: preset.wrappedValue), id: \.self) { quality in
+                        Text(stateController.qualityDisplayName(quality, for: preset.wrappedValue)).tag(quality)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .disabled(!stateController.isQualityEnabled(for: preset.wrappedValue))
             }
         }
     }
 
     private func identitySection(preset: Binding<ConversionPreset>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Name this preset")
+        Section("Name") {
+            SettingsRow(title: "Preset name", subtitle: "Shown in Settings and the preset picker") {
+                TextField("e.g. HEIC photos to JPEG", text: preset.name)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 250)
+            }
 
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(title: "Preset name", subtitle: "A descriptive name for this recipe in File Converter") {
-                        TextField("e.g. HEIC photos to JPEG", text: preset.name)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 250)
+            SettingsRow(title: "Finder menu name", subtitle: "Shown when you right-click a file") {
+                TextField("e.g. HEIC → JPEG", text: preset.menuName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 170)
+            }
+
+            SettingsRow(
+                title: "Finder menu group"
+            ) {
+                Picker("Finder section", selection: preset.category) {
+                    ForEach(FormatCategory.allCases) { category in
+                        Text(category.displayName).tag(category)
                     }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(title: "Finder menu title", subtitle: "The short action label shown after right-clicking a file") {
-                        TextField("e.g. HEIC → JPEG", text: preset.menuName)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 170)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .onChange(of: preset.wrappedValue.category) { _, newCategory in
+                    guard sourceScope == .category else { return }
+                    if newCategory == .custom {
+                        sourceSelection = "custom"
+                        return
                     }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(
-                        title: "Finder section",
-                        subtitle: "Where this action is grouped in the context menu"
-                    ) {
-                        Picker("Finder section", selection: preset.category) {
-                            ForEach(FormatCategory.allCases) { category in
-                                Text(category.displayName).tag(category)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 170)
-                        .onChange(of: preset.wrappedValue.category) { _, newCategory in
-                            guard sourceScope == .category else { return }
-                            if newCategory == .custom {
-                                sourceSelection = "custom"
-                                return
-                            }
-                            sourceSelection = "category:\(newCategory.rawValue.lowercased())"
-                            preset.wrappedValue.sourceFormats = [newCategory.rawValue.lowercased()]
-                        }
-                    }
+                    sourceSelection = "category:\(newCategory.rawValue.lowercased())"
+                    preset.wrappedValue.sourceFormats = [newCategory.rawValue.lowercased()]
                 }
             }
         }
     }
 
     private func nameAndMatchingSection(preset: Binding<ConversionPreset>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Advanced matching")
-
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(title: "Show for", subtitle: sourceScope.helpText) {
-                        Picker("", selection: $sourceScope) {
-                            ForEach(SourceScope.allCases, id: \.self) { scope in
-                                Text(scope.rawValue).tag(scope)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 160)
-                        .onChange(of: sourceScope) { _, newScope in
-                            applySourceScope(newScope, to: preset)
-                        }
+        Section("Matching") {
+            SettingsRow(title: "Show for", subtitle: sourceScope.helpText) {
+                Picker("", selection: $sourceScope) {
+                    ForEach(SourceScope.allCases, id: \.self) { scope in
+                        Text(scope.rawValue).tag(scope)
                     }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .onChange(of: sourceScope) { _, newScope in
+                    applySourceScope(newScope, to: preset)
+                }
+            }
 
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(title: "Output extension", subtitle: "Target format extension without leading dot") {
-                        TextField("mp3", text: preset.destinationFormat)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(width: 100)
-                            .onChange(of: preset.wrappedValue.destinationFormat) { _, newValue in
-                                let normalized = newValue
-                                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                                    .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                                    .lowercased()
-                                if normalized != newValue {
-                                    preset.wrappedValue.destinationFormat = normalized
-                                }
-                            }
-                    }
-
-                    if let format = resolvedFormat(for: preset.wrappedValue) {
-                        Divider().padding(.leading, 14)
-
-                        SettingsRow(title: "Detected format") {
-                            Text("\(format.name), \(format.category.displayName)")
-                                .font(.system(.callout, design: .monospaced))
-                                .foregroundStyle(.secondary)
+            SettingsRow(title: "File extension") {
+                TextField("mp3", text: preset.destinationFormat)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 100)
+                    .onChange(of: preset.wrappedValue.destinationFormat) { _, newValue in
+                        let normalized = newValue
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                            .lowercased()
+                        if normalized != newValue {
+                            preset.wrappedValue.destinationFormat = normalized
                         }
                     }
+            }
+
+            if let format = resolvedFormat(for: preset.wrappedValue) {
+                SettingsRow(title: "Detected format") {
+                    Text("\(format.name), \(format.category.displayName)")
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
     }
 
     private func conversionEngineSection(preset: Binding<ConversionPreset>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Conversion Engine")
-
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(title: "Engine", subtitle: "Auto chooses the optimal backend unless specified") {
-                        Picker("", selection: preset.backend) {
-                            ForEach(BackendResolver.shared.registeredBackendTypes, id: \.self) { backend in
-                                Text(backend.displayName).tag(backend)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 200)
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(
-                        title: stateController.qualitySectionTitle(for: preset.wrappedValue),
-                        subtitle: stateController.qualitySectionSubtitle(for: preset.wrappedValue)
-                    ) {
-                        Picker("", selection: preset.quality) {
-                            ForEach(stateController.availableQualities(for: preset.wrappedValue), id: \.self) { quality in
-                                Text(stateController.qualityDisplayName(quality, for: preset.wrappedValue)).tag(quality)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 180)
-                        .disabled(!stateController.isQualityEnabled(for: preset.wrappedValue))
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(
-                        title: "Hardware acceleration",
-                        subtitle: (preset.wrappedValue.audioCodec == .copy || preset.wrappedValue.category == .audio)
-                            ? "Not applicable for this preset"
-                            : nil
-                    ) {
-                        Picker("", selection: preset.hardwareAcceleration) {
-                            ForEach(HardwareAccelerationPolicy.allCases, id: \.self) { policy in
-                                Text(policy.displayName).tag(policy)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 220)
-                        .disabled(preset.wrappedValue.audioCodec == .copy || preset.wrappedValue.category == .audio)
-                    }
-
-                    if !BackendResolver.shared.supportsAnySource(for: preset.wrappedValue) {
-                        Divider().padding(.leading, 14)
-
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 13))
-                                .foregroundStyle(.orange)
-                            Text("No installed backend can run this preset. Check External Tools for missing dependencies.")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                            Spacer()
-                            Button("Open External Tools…") {
-                                appState.openSettings(tab: .externalTools)
-                            }
-                            .controlSize(.small)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+        Section("Engine") {
+            SettingsRow(title: "Converter", subtitle: "Automatic picks the best one installed") {
+                Picker("", selection: preset.backend) {
+                    ForEach(BackendResolver.shared.registeredBackendTypes, id: \.self) { backend in
+                        Text(backend.displayName).tag(backend)
                     }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+
+            SettingsRow(
+                title: "Hardware acceleration",
+                subtitle: (preset.wrappedValue.audioCodec == .copy || preset.wrappedValue.category == .audio)
+                    ? "Not applicable for this preset"
+                    : nil
+            ) {
+                Picker("", selection: preset.hardwareAcceleration) {
+                    ForEach(HardwareAccelerationPolicy.allCases, id: \.self) { policy in
+                        Text(policy.displayName).tag(policy)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .disabled(preset.wrappedValue.audioCodec == .copy || preset.wrappedValue.category == .audio)
+            }
+
+            if !BackendResolver.shared.supportsAnySource(for: preset.wrappedValue) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.orange)
+                    Text("No installed backend can run this preset. Check External Tools for missing dependencies.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("Open External Tools…") {
+                        appState.openSettings(tab: .externalTools)
+                    }
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
             }
         }
     }
 
     private func documentToolsSection(preset: Binding<ConversionPreset>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("PDF Tools")
-
-            SettingsCard {
-                SettingsRow(
-                    title: "Split PDF into individual pages",
-                    subtitle: "Creates one PDF per page and names each output clearly."
-                ) {
-                    Toggle("", isOn: Binding(
-                        get: { preset.wrappedValue.splitPDFIntoPages },
-                        set: { enabled in
-                            preset.wrappedValue.splitPDFIntoPages = enabled
-                            guard enabled else { return }
-                            preset.wrappedValue.sourceFormats = ["pdf"]
-                            preset.wrappedValue.destinationFormat = "pdf"
-                            preset.wrappedValue.backend = .pdfKit
-                            sourceScope = .category
-                        }
-                    ))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                }
+        Section("PDF") {
+            SettingsRow(
+                title: "Split PDF into individual pages",
+                subtitle: "One PDF per page"
+            ) {
+                Toggle("", isOn: Binding(
+                    get: { preset.wrappedValue.splitPDFIntoPages },
+                    set: { enabled in
+                        preset.wrappedValue.splitPDFIntoPages = enabled
+                        guard enabled else { return }
+                        preset.wrappedValue.sourceFormats = ["pdf"]
+                        preset.wrappedValue.destinationFormat = "pdf"
+                        preset.wrappedValue.backend = .pdfKit
+                        sourceScope = .category
+                    }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
             }
         }
     }
 
     private func videoSection(preset: Binding<ConversionPreset>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Video")
-
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(title: "Video codec") {
-                        Picker("", selection: preset.videoCodec) {
-                            ForEach(VideoCodecType.allCases, id: \.self) { codec in
-                                Text(codec.displayName).tag(codec)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 180)
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(
-                        title: "Video bitrate",
-                        subtitle: withIgnoredNote(
-                            preset.wrappedValue.videoBitrateKbps != nil
-                                ? "\(preset.wrappedValue.videoBitrateKbps ?? 4500) kbps"
-                                : "Automatic, based on picture size and quality",
-                            key: .videoBitrate,
-                            preset: preset.wrappedValue
-                        )
-                    ) {
-                        if preset.wrappedValue.videoBitrateKbps != nil {
-                            HStack(spacing: 8) {
-                                Stepper(
-                                    "",
-                                    value: Binding(
-                                        get: { preset.wrappedValue.videoBitrateKbps ?? 4500 },
-                                        set: { preset.wrappedValue.videoBitrateKbps = $0 }
-                                    ),
-                                    in: 500...50_000,
-                                    step: 500
-                                )
-                                .labelsHidden()
-
-                                Button("Clear") {
-                                    preset.wrappedValue.videoBitrateKbps = nil
-                                }
-                                .controlSize(.small)
-                            }
-                        } else {
-                            Button("Set Custom Bitrate") {
-                                preset.wrappedValue.videoBitrateKbps = 4500
-                            }
-                            .controlSize(.small)
-                        }
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(
-                        title: "CRF target",
-                        subtitle: withIgnoredNote(
-                            preset.wrappedValue.crf != nil
-                                ? "Value: \(preset.wrappedValue.crf ?? 23) (lower is higher quality)"
-                                : "Automatic, based on quality",
-                            key: .crf,
-                            preset: preset.wrappedValue
-                        )
-                    ) {
-                        if preset.wrappedValue.crf != nil {
-                            HStack(spacing: 8) {
-                                Stepper(
-                                    "",
-                                    value: Binding(
-                                        get: { preset.wrappedValue.crf ?? 23 },
-                                        set: { preset.wrappedValue.crf = $0 }
-                                    ),
-                                    in: 0...51
-                                )
-                                .labelsHidden()
-
-                                Button("Clear") {
-                                    preset.wrappedValue.crf = nil
-                                }
-                                .controlSize(.small)
-                            }
-                        } else {
-                            Button("Set CRF Target") {
-                                preset.wrappedValue.crf = 23
-                            }
-                            .controlSize(.small)
-                        }
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(title: "Picture size", subtitle: "Never larger than the original") {
-                        resolutionPicker(preset: preset, originalLabel: "Original size")
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(title: "Frame rate") {
-                        Picker("Frame rate", selection: Binding<Double?>(
-                            get: { preset.wrappedValue.framerate },
-                            set: { preset.wrappedValue.framerate = $0 }
-                        )) {
-                            Text("Same as original").tag(Double?.none)
-                            Divider()
-                            ForEach([15.0, 24, 25, 30, 50, 60], id: \.self) { rate in
-                                Text("\(Int(rate)) fps").tag(Double?.some(rate))
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 180)
+        Section("Video") {
+            SettingsRow(title: "Video codec") {
+                Picker("", selection: preset.videoCodec) {
+                    ForEach(VideoCodecType.allCases, id: \.self) { codec in
+                        Text(codec.displayName).tag(codec)
                     }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+
+            SettingsRow(
+                title: "Video bitrate",
+                subtitle: withIgnoredNote(
+                    preset.wrappedValue.videoBitrateKbps != nil
+                        ? "Higher numbers look better and make bigger files"
+                        : "Automatic, based on picture size and quality",
+                    key: .videoBitrate,
+                    preset: preset.wrappedValue
+                )
+            ) {
+                if preset.wrappedValue.videoBitrateKbps != nil {
+                    HStack(spacing: 6) {
+                        numberField(
+                            "Video bitrate in kilobits per second",
+                            value: Binding(
+                                get: { preset.wrappedValue.videoBitrateKbps ?? 4500 },
+                                set: { preset.wrappedValue.videoBitrateKbps = $0 }
+                            ),
+                            in: 500...50_000,
+                            step: 500,
+                            unit: "kbps"
+                        )
+
+                        Button("Automatic") {
+                            preset.wrappedValue.videoBitrateKbps = nil
+                        }
+                        .controlSize(.small)
+                    }
+                } else {
+                    Button("Set Bitrate") {
+                        preset.wrappedValue.videoBitrateKbps = 4500
+                    }
+                    .controlSize(.small)
+                }
+            }
+
+            SettingsRow(
+                title: "Constant quality (CRF)",
+                subtitle: withIgnoredNote(
+                    preset.wrappedValue.crf != nil
+                        ? "Lower numbers look better and make bigger files"
+                        : "Automatic, based on quality",
+                    key: .crf,
+                    preset: preset.wrappedValue
+                )
+            ) {
+                if preset.wrappedValue.crf != nil {
+                    HStack(spacing: 6) {
+                        numberField(
+                            "Constant quality value",
+                            value: Binding(
+                                get: { preset.wrappedValue.crf ?? 23 },
+                                set: { preset.wrappedValue.crf = $0 }
+                            ),
+                            in: 0...51,
+                            step: 1,
+                            unit: nil
+                        )
+
+                        Button("Automatic") {
+                            preset.wrappedValue.crf = nil
+                        }
+                        .controlSize(.small)
+                    }
+                } else {
+                    Button("Set Value") {
+                        preset.wrappedValue.crf = 23
+                    }
+                    .controlSize(.small)
+                }
+            }
+
+            SettingsRow(title: "Picture size", subtitle: "Never larger than the original") {
+                resolutionPicker(preset: preset, originalLabel: "Original size")
+            }
+
+            SettingsRow(title: "Frame rate") {
+                Picker("Frame rate", selection: Binding<Double?>(
+                    get: { preset.wrappedValue.framerate },
+                    set: { preset.wrappedValue.framerate = $0 }
+                )) {
+                    Text("Same as original").tag(Double?.none)
+                    Divider()
+                    ForEach([15.0, 24, 25, 30, 50, 60], id: \.self) { rate in
+                        Text("\(Int(rate)) fps").tag(Double?.some(rate))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
             }
         }
     }
 
     private func imageSection(preset: Binding<ConversionPreset>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Image")
-
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(title: "Maximum size", subtitle: "Longest side; images are never enlarged") {
-                        resolutionPicker(preset: preset, originalLabel: "Original size")
-                    }
-                    if preset.wrappedValue.sourceFormats.contains("pdf") {
-                        Divider().padding(.leading, 14)
-                        SettingsRow(title: "Page resolution", subtitle: "Dots per inch when rendering PDF pages") {
-                            Picker("Page resolution", selection: Binding<Int?>(
-                                get: { preset.wrappedValue.processingOptions?.pdfDPI },
-                                set: { newValue in
-                                    var options = preset.wrappedValue.processingOptions ?? ConversionProcessingOptions()
-                                    options.pdfDPI = newValue
-                                    preset.wrappedValue.processingOptions = options.isEmpty ? nil : options
-                                }
-                            )) {
-                                Text("Automatic").tag(Int?.none)
-                                Divider()
-                                ForEach([72, 150, 200, 300, 600], id: \.self) { dpi in
-                                    Text("\(dpi) dpi").tag(Int?.some(dpi))
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 180)
+        Section("Image") {
+            SettingsRow(title: "Maximum size", subtitle: "Longest side; images are never enlarged") {
+                resolutionPicker(preset: preset, originalLabel: "Original size")
+            }
+            if preset.wrappedValue.sourceFormats.contains("pdf") {
+                SettingsRow(title: "Page resolution", subtitle: "Dots per inch when rendering PDF pages") {
+                    Picker("Page resolution", selection: Binding<Int?>(
+                        get: { preset.wrappedValue.processingOptions?.pdfDPI },
+                        set: { newValue in
+                            var options = preset.wrappedValue.processingOptions ?? ConversionProcessingOptions()
+                            options.pdfDPI = newValue
+                            preset.wrappedValue.processingOptions = options.isEmpty ? nil : options
+                        }
+                    )) {
+                        Text("Automatic").tag(Int?.none)
+                        Divider()
+                        ForEach([72, 150, 200, 300, 600], id: \.self) { dpi in
+                            Text("\(dpi) dpi").tag(Int?.some(dpi))
                         }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
                 }
             }
         }
@@ -799,7 +701,7 @@ public struct PresetEditorView: View {
             }
             .labelsHidden()
             .pickerStyle(.menu)
-            .frame(width: 180)
+            .fixedSize()
 
             if case .custom(let width, let height) = preset.wrappedValue.resolution {
                 TextField("Width", value: Binding(
@@ -819,15 +721,42 @@ public struct PresetEditorView: View {
         }
     }
 
-    /// Adds "Not used for MP4, MOV (Apple encoder)" when some sources would
+    /// Adds "Ignored when the original is MP4 or MOV…" when some sources would
     /// run on a backend that ignores this setting.
+    /// A number field with a stepper, clamped to `range`.
+    private func numberField(
+        _ accessibilityLabel: String,
+        value: Binding<Int>,
+        in range: ClosedRange<Int>,
+        step: Int,
+        unit: String?
+    ) -> some View {
+        let clamped = Binding(
+            get: { value.wrappedValue },
+            set: { value.wrappedValue = min(max($0, range.lowerBound), range.upperBound) }
+        )
+        return HStack(spacing: 4) {
+            TextField(accessibilityLabel, value: clamped, format: .number)
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 64)
+            Stepper(accessibilityLabel, value: clamped, in: range, step: step)
+                .labelsHidden()
+            if let unit {
+                Text(unit).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private func withIgnoredNote(_ text: String, key: PresetSettingKey, preset: ConversionPreset) -> String {
         let affected = BackendResolver.shared.ignoredSettings(for: preset).filter { $0.keys.contains(key) }
         guard !affected.isEmpty else { return text }
-        let formats = affected.map { $0.format.primaryExtension.uppercased() }.sorted()
-        let shown = formats.prefix(4).joined(separator: ", ") + (formats.count > 4 ? ", …" : "")
-        let engines = Set(affected.map { $0.backend == .avFoundation ? "Apple encoder" : $0.backend.displayName })
-        return "\(text) · Not used for \(shown) (\(engines.sorted().joined(separator: ", ")))"
+        let formats = Array(Set(affected.map { $0.format.primaryExtension.uppercased() })).sorted()
+        var shown = Array(formats.prefix(3))
+        if formats.count > 3 { shown.append("\(formats.count - 3) more") }
+        let list = ListFormatter.localizedString(byJoining: shown)
+        return "\(text). Ignored when the original is \(list), because a different converter handles those."
     }
 
     private func audioSection(preset: Binding<ConversionPreset>) -> some View {
@@ -836,11 +765,7 @@ public struct PresetEditorView: View {
         let isTranscodingDisabled = isCopy || isNone
         let isPCM = isPCMFormat(preset.wrappedValue)
 
-        return VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Audio")
-
-            SettingsCard {
-                VStack(spacing: 0) {
+        return Section("Audio") {
                     SettingsRow(title: "Audio codec") {
                         Picker("", selection: preset.audioCodec) {
                             ForEach(AudioCodecType.allCases, id: \.self) { codec in
@@ -849,16 +774,14 @@ public struct PresetEditorView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .frame(width: 180)
+                        .fixedSize()
                         .onChange(of: preset.wrappedValue.audioCodec) { _, newCodec in
                             handleAudioCodecChange(to: newCodec, preset: preset)
                         }
                     }
 
                     if isPCM && !isTranscodingDisabled {
-                        Divider().padding(.leading, 14)
-
-                        SettingsRow(title: "Bit depth", subtitle: "Linear PCM sample resolution") {
+                        SettingsRow(title: "Bit depth") {
                             Picker("", selection: Binding(
                                 get: { preset.wrappedValue.audioBitDepth ?? .bit16 },
                                 set: { preset.wrappedValue.audioBitDepth = $0 }
@@ -869,39 +792,37 @@ public struct PresetEditorView: View {
                             }
                             .labelsHidden()
                             .pickerStyle(.menu)
-                            .frame(width: 180)
+                            .fixedSize()
                         }
                     }
 
                     if shouldShowAudioBitrate(for: preset.wrappedValue) {
-                        Divider().padding(.leading, 14)
-
                         SettingsRow(
                             title: "Audio bitrate",
                             subtitle: preset.wrappedValue.audioBitrateKbps != nil
-                                ? "\(preset.wrappedValue.audioBitrateKbps ?? 256) kbps"
-                                : "Default rate"
+                                ? "Higher numbers sound better and make bigger files"
+                                : "Automatic"
                         ) {
                             if preset.wrappedValue.audioBitrateKbps != nil {
-                                HStack(spacing: 8) {
-                                    Stepper(
-                                        "",
+                                HStack(spacing: 6) {
+                                    numberField(
+                                        "Audio bitrate in kilobits per second",
                                         value: Binding(
                                             get: { preset.wrappedValue.audioBitrateKbps ?? 256 },
                                             set: { preset.wrappedValue.audioBitrateKbps = $0 }
                                         ),
                                         in: 32...512,
-                                        step: 32
+                                        step: 32,
+                                        unit: "kbps"
                                     )
-                                    .labelsHidden()
 
-                                    Button("Clear") {
+                                    Button("Automatic") {
                                         preset.wrappedValue.audioBitrateKbps = nil
                                     }
                                     .controlSize(.small)
                                 }
                             } else {
-                                Button("Set Audio Bitrate") {
+                                Button("Set Bitrate") {
                                     preset.wrappedValue.audioBitrateKbps = 256
                                 }
                                 .controlSize(.small)
@@ -910,14 +831,12 @@ public struct PresetEditorView: View {
                         .disabled(isTranscodingDisabled)
                     }
 
-                    Divider().padding(.leading, 14)
-
                     SettingsRow(
                         title: "Sample rate",
-                        subtitle: isCopy ? "Preserved from source (stream copy)" : "Audio sample frequency"
+                        subtitle: isCopy ? "Copied unchanged from the original" : nil
                     ) {
                         Picker("", selection: preset.audioSampleRate) {
-                            Text("Auto / Preserve Source").tag(nil as Int?)
+                            Text("Same as original").tag(nil as Int?)
                             Text("8 kHz").tag(8_000 as Int?)
                             Text("16 kHz").tag(16_000 as Int?)
                             Text("22.05 kHz").tag(22_050 as Int?)
@@ -927,34 +846,30 @@ public struct PresetEditorView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .frame(width: 180)
+                        .fixedSize()
                         .disabled(isTranscodingDisabled)
                     }
 
-                    Divider().padding(.leading, 14)
-
                     SettingsRow(
                         title: "Channels",
-                        subtitle: isCopy ? "Preserved from source (stream copy)" : "Channel layout"
+                        subtitle: isCopy ? "Copied unchanged from the original" : nil
                     ) {
                         Picker("", selection: preset.audioChannels) {
-                            Text("Auto / Preserve Source").tag(nil as Int?)
-                            Text("Mono (1 ch)").tag(1 as Int?)
-                            Text("Stereo (2 ch)").tag(2 as Int?)
-                            Text("5.1 Surround (6 ch)").tag(6 as Int?)
+                            Text("Same as original").tag(nil as Int?)
+                            Text("Mono").tag(1 as Int?)
+                            Text("Stereo").tag(2 as Int?)
+                            Text("5.1 surround").tag(6 as Int?)
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .frame(width: 180)
+                        .fixedSize()
                         .disabled(isTranscodingDisabled)
                     }
 
                     if preset.wrappedValue.category == .audio {
-                        Divider().padding(.leading, 14)
-
                         SettingsRow(
                             title: "Split into parts",
-                            subtitle: "Creates separately named audio files at a friendly interval. Requires the FFmpeg toolset."
+                            subtitle: "Starts a new file at a set length. Needs FFmpeg."
                         ) {
                             Picker("", selection: audioSplitChoice(for: preset)) {
                                 ForEach(AudioSplitChoice.allCases, id: \.self) { choice in
@@ -963,11 +878,10 @@ public struct PresetEditorView: View {
                             }
                             .labelsHidden()
                             .pickerStyle(.menu)
-                            .frame(width: 180)
+                            .fixedSize()
                         }
 
                         if audioSplitChoice(for: preset).wrappedValue == .custom {
-                            Divider().padding(.leading, 14)
                             SettingsRow(
                                 title: "Part length",
                                 subtitle: partLengthValidationError ?? "Format: HH:MM:SS.ss (e.g. 00:05:00.00)"
@@ -992,11 +906,9 @@ public struct PresetEditorView: View {
                         }
 
                         if !isCopy && !isPCM {
-                            Divider().padding(.leading, 14)
-
                             SettingsRow(
                                 title: "Fit within a file size",
-                                subtitle: "Chooses an audio bitrate automatically to fit one shared file. Requires the FFmpeg toolset."
+                                subtitle: "Picks the bitrate so the file fits. Needs FFmpeg."
                             ) {
                                 Picker("", selection: audioSizeChoice(for: preset)) {
                                     ForEach(AudioSizeChoice.allCases, id: \.self) { choice in
@@ -1005,263 +917,208 @@ public struct PresetEditorView: View {
                                 }
                                 .labelsHidden()
                                 .pickerStyle(.menu)
-                                .frame(width: 180)
+                                .fixedSize()
                             }
 
                             if audioSizeChoice(for: preset).wrappedValue == .custom {
-                                Divider().padding(.leading, 14)
                                 SettingsRow(
-                                    title: "Target size",
-                                    subtitle: ByteCountFormatter.string(
-                                        fromByteCount: Int64(preset.wrappedValue.audioTargetFileSizeBytes ?? 5_000_000),
-                                        countStyle: .file
-                                    )
+                                    title: "Target size"
                                 ) {
-                                    Stepper(
-                                        "",
+                                    numberField(
+                                        "Target size in megabytes",
                                         value: Binding(
                                             get: { max(1, (preset.wrappedValue.audioTargetFileSizeBytes ?? 5_000_000) / 1_000_000) },
                                             set: { preset.wrappedValue.audioTargetFileSizeBytes = $0 * 1_000_000 }
                                         ),
                                         in: 1...500,
-                                        step: 1
+                                        step: 1,
+                                        unit: "MB"
                                     )
-                                    .labelsHidden()
                                 }
                             }
                         }
                     }
                 }
-            }
-        }
     }
 
     private func outputSection(preset: Binding<ConversionPreset>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Output Location & Naming")
+        Section("Saving") {
+            SettingsRow(title: "Save converted files to") {
+                Picker("", selection: outputPolicySelection(for: preset)) {
+                    Text("Use General setting (\(Self.describe(generalDefaults.outputDirectoryPolicy)))").tag(OutputChoice.useGeneral)
+                    Divider()
+                    Text("Same folder as the original").tag(OutputChoice.sameAsSource)
+                    Text("Downloads").tag(OutputChoice.downloads)
+                    Text("A subfolder next to the original").tag(OutputChoice.subfolder)
+                    Text("A folder I choose…").tag(OutputChoice.custom)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
 
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(title: "Save converted files to") {
-                        Picker("", selection: outputPolicySelection(for: preset)) {
-                            Text("Use General setting (\(Self.describe(generalDefaults.outputDirectoryPolicy)))").tag(OutputChoice.useGeneral)
-                            Divider()
-                            Text("Same folder as source").tag(OutputChoice.sameAsSource)
-                            Text("Downloads folder").tag(OutputChoice.downloads)
-                            Text("Named subfolder").tag(OutputChoice.subfolder)
-                            Text("Chosen folder...").tag(OutputChoice.custom)
+            if !preset.wrappedValue.resolvedInheritance.outputLocation,
+               case .sourceSubfolder = preset.wrappedValue.outputDirectoryPolicy {
+                SettingsRow(title: "Subfolder name") {
+                    TextField("Converted", text: $subfolderName)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(width: 160)
+                        .onChange(of: subfolderName) { _, newName in
+                            preset.wrappedValue.outputDirectoryPolicy = .sourceSubfolder(subfolderName: newName)
+                            onDirtyChange(true)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 260)
+                }
+            }
+
+            if !preset.wrappedValue.resolvedInheritance.outputLocation,
+               case .customFolder(_, let displayPath) = preset.wrappedValue.outputDirectoryPolicy {
+                let isAuthorized = preset.wrappedValue.outputDirectoryPolicy.isCustomFolderAuthorized
+
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: isAuthorized ? "folder.fill" : "folder.badge.gearshape")
+                            .foregroundStyle(isAuthorized ? Color.accentColor : Color.orange)
+                        Text(displayPath)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(isAuthorized ? Color.secondary : Color.orange)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
                     }
 
-                    if !preset.wrappedValue.resolvedInheritance.outputLocation,
-                       case .sourceSubfolder = preset.wrappedValue.outputDirectoryPolicy {
-                        Divider().padding(.leading, 14)
-
-                        SettingsRow(title: "Subfolder name", subtitle: "Single directory name without slashes") {
-                            TextField("Converted", text: $subfolderName)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(.body, design: .monospaced))
-                                .frame(width: 160)
-                                .onChange(of: subfolderName) { _, newName in
-                                    preset.wrappedValue.outputDirectoryPolicy = .sourceSubfolder(subfolderName: newName)
-                                    onDirtyChange(true)
-                                }
-                        }
-                    }
-
-                    if !preset.wrappedValue.resolvedInheritance.outputLocation,
-                       case .customFolder(_, let displayPath) = preset.wrappedValue.outputDirectoryPolicy {
-                        let isAuthorized = preset.wrappedValue.outputDirectoryPolicy.isCustomFolderAuthorized
-                        Divider().padding(.leading, 14)
-
-                        VStack(spacing: 8) {
-                            HStack(spacing: 8) {
-                                Image(systemName: isAuthorized ? "folder.fill" : "folder.badge.gearshape")
-                                    .foregroundStyle(isAuthorized ? Color.accentColor : Color.orange)
-                                Text(displayPath)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(isAuthorized ? Color.secondary : Color.orange)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Spacer()
-                            }
-
-                            if !isAuthorized {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundStyle(.orange)
-                                    Text("Folder access not authorized on this Mac. Please select or re-authorize the folder.")
-                                        .font(.caption)
-                                        .foregroundStyle(.orange)
-                                    Spacer()
-                                }
-                            }
-
-                            HStack(spacing: 8) {
-                                Button(isAuthorized ? "Choose Another Folder..." : "Select / Re-authorize Folder...") {
-                                    chooseCustomFolder(for: preset)
-                                }
-                                .controlSize(.small)
-
-                                Button("Use General Setting") {
-                                    var inheritance = preset.wrappedValue.resolvedInheritance
-                                    inheritance.outputLocation = true
-                                    preset.wrappedValue.inheritance = inheritance
-                                    onDirtyChange(true)
-                                }
-                                .controlSize(.small)
-
-                                Spacer()
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(
-                        title: "Filename",
-                        subtitle: inheritanceBinding(\.filenamePattern, of: preset).wrappedValue
-                            ? "Uses the General pattern \(generalDefaults.filenamePattern)"
-                            : "Tokens: {name}, {preset}, {date}, {time}"
-                    ) {
-                        HStack(spacing: 8) {
-                            Toggle("Use General pattern", isOn: inheritanceBinding(\.filenamePattern, of: preset))
-                                .toggleStyle(.checkbox)
-                            if !inheritanceBinding(\.filenamePattern, of: preset).wrappedValue {
-                                TextField("{name}", text: preset.filenamePattern)
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(.system(.body, design: .monospaced))
-                                    .frame(width: 160)
-                            }
+                    if !isAuthorized {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text("Folder access not authorized on this Mac. Please select or re-authorize the folder.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                            Spacer()
                         }
                     }
 
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(title: "Live preview") {
-                        Text(filenamePreview(for: preset.wrappedValue))
-                            .font(.system(.caption, design: .monospaced).weight(.semibold))
-                            .foregroundStyle(Color.accentColor)
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(title: "If the file already exists") {
-                        Picker("", selection: collisionSelection(for: preset)) {
-                            Text("Use General setting (\(generalDefaults.overwritePolicy.displayName))").tag(OverwritePolicy?.none)
-                            Divider()
-                            ForEach(OverwritePolicy.allCases, id: \.self) { policy in
-                                Text(policy.displayName).tag(OverwritePolicy?.some(policy))
-                            }
+                    HStack(spacing: 8) {
+                        Button(isAuthorized ? "Choose Another Folder…" : "Select / Re-authorize Folder…") {
+                            chooseCustomFolder(for: preset)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 260)
+                        .controlSize(.small)
+
+                        Button("Use General Setting") {
+                            var inheritance = preset.wrappedValue.resolvedInheritance
+                            inheritance.outputLocation = true
+                            preset.wrappedValue.inheritance = inheritance
+                            onDirtyChange(true)
+                        }
+                        .controlSize(.small)
+
+                        Spacer()
                     }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+            }
+
+            SettingsRow(
+                title: "Filename",
+                subtitle: inheritanceBinding(\.filenamePattern, of: preset).wrappedValue
+                    ? "Uses the General pattern \(generalDefaults.filenamePattern)"
+                    : "Tokens: {name}, {preset}, {date}, {time}"
+            ) {
+                HStack(spacing: 8) {
+                    Toggle("Use General pattern", isOn: inheritanceBinding(\.filenamePattern, of: preset))
+                        .toggleStyle(.checkbox)
+                    if !inheritanceBinding(\.filenamePattern, of: preset).wrappedValue {
+                        TextField("{name}", text: preset.filenamePattern)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(width: 160)
+                    }
+                }
+            }
+
+            SettingsRow(title: "Example") {
+                Text(filenamePreview(for: preset.wrappedValue))
+                    .font(.system(.caption, design: .monospaced).weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+
+            SettingsRow(title: "If the file already exists") {
+                Picker("", selection: collisionSelection(for: preset)) {
+                    Text("Use General setting (\(generalDefaults.overwritePolicy.displayName))").tag(OverwritePolicy?.none)
+                    Divider()
+                    ForEach(OverwritePolicy.allCases, id: \.self) { policy in
+                        Text(policy.displayName).tag(OverwritePolicy?.some(policy))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
             }
         }
     }
 
     private func metadataSection(preset: Binding<ConversionPreset>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Metadata & Timestamps")
+        Section("File Details") {
+            SettingsRow(
+                title: "Preserve metadata and tags",
+                subtitle: "Camera details, song tags, and author"
+            ) {
+                Toggle("", isOn: preset.preserveMetadata)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
 
-            SettingsCard {
-                VStack(spacing: 0) {
-                    SettingsRow(
-                        title: "Preserve metadata and tags",
-                        subtitle: "Retains EXIF tags, ID3 audio tags, and creator metadata"
-                    ) {
-                        Toggle("", isOn: preset.preserveMetadata)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
+            SettingsRow(title: "Keep original creation date") {
+                inheritedBoolPicker(
+                    \.creationDate,
+                    general: generalDefaults.preserveCreationDate,
+                    value: preset.preserveCreationDate,
+                    of: preset
+                )
+            }
 
-                    Divider().padding(.leading, 14)
+            SettingsRow(
+                title: "Keep original modification date",
+                subtitle: "Off: new files show today's date and sort first in Finder"
+            ) {
+                inheritedBoolPicker(
+                    \.modificationDate,
+                    general: generalDefaults.preserveModificationDate,
+                    value: Binding(
+                        get: { preset.wrappedValue.preserveModificationDate ?? false },
+                        set: { preset.wrappedValue.preserveModificationDate = $0 }
+                    ),
+                    of: preset
+                )
+            }
 
-                    SettingsRow(title: "Keep original creation date") {
-                        inheritedBoolPicker(
-                            \.creationDate,
-                            general: generalDefaults.preserveCreationDate,
-                            value: preset.preserveCreationDate,
-                            of: preset
-                        )
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(
-                        title: "Keep original modification date",
-                        subtitle: "Off: new files show today's date and sort first in Finder"
-                    ) {
-                        inheritedBoolPicker(
-                            \.modificationDate,
-                            general: generalDefaults.preserveModificationDate,
-                            value: Binding(
-                                get: { preset.wrappedValue.preserveModificationDate ?? false },
-                                set: { preset.wrappedValue.preserveModificationDate = $0 }
-                            ),
-                            of: preset
-                        )
-                    }
-
-                    Divider().padding(.leading, 14)
-
-                    SettingsRow(
-                        title: "Remove location",
-                        subtitle: "Strips GPS coordinates from photos and videos"
-                    ) {
-                        inheritedBoolPicker(
-                            \.locationData,
-                            general: generalDefaults.removeLocationData,
-                            value: Binding(
-                                get: { preset.wrappedValue.removeLocationData ?? true },
-                                set: { preset.wrappedValue.removeLocationData = $0 }
-                            ),
-                            of: preset
-                        )
-                    }
-                }
+            SettingsRow(
+                title: "Remove location",
+                subtitle: "Removes GPS coordinates from photos and videos"
+            ) {
+                inheritedBoolPicker(
+                    \.locationData,
+                    general: generalDefaults.removeLocationData,
+                    value: Binding(
+                        get: { preset.wrappedValue.removeLocationData ?? true },
+                        set: { preset.wrappedValue.removeLocationData = $0 }
+                    ),
+                    of: preset
+                )
             }
         }
     }
 
     private func needsAttentionSection(errors: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsSectionHeader("Needs Attention")
-
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(errors, id: \.self) { error in
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundStyle(.red)
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                    }
-                }
-                .padding(14)
+        Section {
+            ForEach(errors, id: \.self) { error in
+                Label(error, systemImage: "exclamationmark.circle.fill")
+                    .foregroundStyle(.red)
             }
+        } header: {
+            Text("Fix Before Saving")
         }
-    }
-
-    private var builtInNoteSection: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "info.circle")
-                .foregroundStyle(.secondary)
-            Text("This is a built-in preset. Your changes are kept; turn off “Show in menus” to hide it, or restore its factory settings at any time.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 4)
     }
 
     private func categoryColor(_ category: FormatCategory) -> Color {
@@ -1361,7 +1218,7 @@ public struct PresetEditorView: View {
                 SourceChoice(
                     id: "format:\(format.id)",
                     title: "\(format.name) (.\(format.primaryExtension))",
-                    subtitle: "Only .\(format.primaryExtension) / \(format.name) files",
+                    subtitle: "Only .\(format.primaryExtension) files",
                     sourceFormats: [format.id]
                 )
             }
@@ -1378,7 +1235,7 @@ public struct PresetEditorView: View {
             return SourceChoice(
                 id: "custom",
                 title: "Custom matching rule",
-                subtitle: "Use the advanced matching controls below",
+                subtitle: "Set under Matching below",
                 sourceFormats: []
             )
         }
@@ -1677,7 +1534,7 @@ public struct PresetEditorView: View {
         }
         .labelsHidden()
         .pickerStyle(.menu)
-        .frame(width: 220)
+        .fixedSize()
     }
 
     private func collisionSelection(for preset: Binding<ConversionPreset>) -> Binding<OverwritePolicy?> {

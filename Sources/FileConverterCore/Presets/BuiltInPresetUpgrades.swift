@@ -4,7 +4,7 @@ import Foundation
 /// disk. Stored built-ins keep user edits, so each upgrade changes a field
 /// only when it still holds the value the previous factory version shipped.
 public enum BuiltInPresetUpgrades {
-    public static let currentRevision = 3
+    public static let currentRevision = 4
 
     private struct Upgrade: Sendable {
         let revision: Int
@@ -20,7 +20,6 @@ public enum BuiltInPresetUpgrades {
         // Revision 3: video bitrate follows the output resolution instead of
         // a fixed factory number; GIF uses a sensible size; HEVC may use the
         // software encoder on Macs without a hardware HEVC encoder.
-        "video.mp4-balanced": [Upgrade(revision: 3) { replace(\.videoBitrateKbps, from: 4500, to: nil, in: &$0) }],
         "video.mp4-smaller": [Upgrade(revision: 3) { replace(\.videoBitrateKbps, from: 2000, to: nil, in: &$0) }],
         "video.mp4-high-quality": [Upgrade(revision: 3) { replace(\.videoBitrateKbps, from: 9000, to: nil, in: &$0) }],
         "video.mp4-1080p": [Upgrade(revision: 3) { replace(\.videoBitrateKbps, from: 6000, to: nil, in: &$0) }],
@@ -35,6 +34,12 @@ public enum BuiltInPresetUpgrades {
         "video.animated-gif": [Upgrade(revision: 3) {
             replace(\.resolution, from: .custom(width: 640, height: 360), to: .custom(width: 480, height: 480), in: &$0)
         }],
+        // Revision 4: the default MP4 preset uses High quality, so calling it
+        // "Balanced" (the Medium level) contradicted its own setting.
+        "video.mp4-balanced": [
+            Upgrade(revision: 3) { replace(\.videoBitrateKbps, from: 4500, to: nil, in: &$0) },
+            Upgrade(revision: 4) { replace(\.name, from: "MP4 (H.264 - Balanced)", to: "MP4 (H.264)", in: &$0) },
+        ],
     ]
 
     /// Revision 3 renames: one naming convention for every built-in

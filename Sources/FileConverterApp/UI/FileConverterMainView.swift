@@ -58,14 +58,13 @@ public struct FileConverterMainView: View {
 
             if queue.jobs.isEmpty {
                 DropZoneView(onSelectFiles: openFilesDialog, isDropTargeted: $dropTargeted)
-                    .padding(20)
             } else {
                 ConversionQueueView()
                     .environmentObject(appState)
             }
         }
         .overlay {
-            if dropTargeted && !queue.jobs.isEmpty {
+            if dropTargeted {
                 RoundedRectangle(cornerRadius: 10)
                     .stroke(Color.accentColor, lineWidth: 3)
                     .background(Color.accentColor.opacity(0.06))
@@ -102,12 +101,6 @@ public struct FileConverterMainView: View {
                 }
                 .help(coordinator.isPresenting ? "Finish the open dialog first; your files will be added next" : "Choose files to convert (⌘O)")
                 .accessibilityLabel("Add Files to Convert")
-
-                SettingsLink {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .help("Settings (⌘,)")
-                .accessibilityLabel("Open Settings")
             }
         }
         .sheet(item: Binding(
@@ -340,59 +333,39 @@ public struct FileConverterMainView: View {
 
     // MARK: - Interrupted conversions
 
+    /// One line, like a Finder or Mail info bar: what happened and the two
+    /// things the user can do about it.
     private var interruptedRecoveryBanner: some View {
         let entries = appState.uncompletedJournalEntries
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label(
-                    entries.count == 1 ? "A conversion was interrupted" : "\(entries.count) conversions were interrupted",
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(.orange)
-                Spacer()
-                Button("Dismiss All") { appState.dismissAllJournalRecovery() }
-                    .accessibilityLabel("Dismiss interrupted conversion alerts")
-            }
-            Text("File Converter quit while these were converting. No unfinished files were saved.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            ForEach(entries.prefix(5)) { entry in
-                let source = URL(fileURLWithPath: entry.sourceURLPath)
-                HStack(spacing: 8) {
-                    Text(source.lastPathComponent)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text("· \(entry.presetName)")
+        let names = entries.prefix(2).map { URL(fileURLWithPath: $0.sourceURLPath).lastPathComponent }
+        let detail = entries.count > 2
+            ? "\(names.joined(separator: ", ")) and \(entries.count - 2) more"
+            : names.joined(separator: " and ")
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(Inflect.string("^[\(entries.count) conversion](inflect: true) stopped when File Converter quit"))
+                        .font(.callout.weight(.medium))
+                    Text(detail)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    Spacer()
-                    Button("Show Original") {
-                        NSWorkspace.shared.activateFileViewerSelecting([source])
-                    }
-                    .disabled(!FileManager.default.fileExists(atPath: source.path))
-                    Button("Convert Again") {
-                        if let preset = PresetStore.shared.preset(forID: entry.presetID) {
-                            startConversion(urls: [source], preset: preset, leases: nil)
-                        }
-                        appState.dismissJournalRecovery(entryID: entry.id)
-                    }
-                    .disabled(PresetStore.shared.preset(forID: entry.presetID) == nil
-                        || !FileManager.default.fileExists(atPath: source.path))
-                    Button("Dismiss") { appState.dismissJournalRecovery(entryID: entry.id) }
+                        .truncationMode(.middle)
                 }
-                .font(.caption)
+                Spacer()
+                Button("Convert Again") { appState.retryInterruptedConversions() }
+                Button("Dismiss") { appState.dismissAllJournalRecovery() }
+                    .accessibilityLabel("Dismiss interrupted conversion alerts")
             }
-            if entries.count > 5 {
-                Text("and \(entries.count - 5) more")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            .controlSize(.small)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            Divider()
         }
-        .controlSize(.small)
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.1)))
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
+        .background(.bar)
+        .accessibilityElement(children: .contain)
     }
 }

@@ -51,13 +51,14 @@ public struct PDFSplitDialogView: View {
 
         public var id: String { rawValue }
 
-        public var icon: String {
+        /// Menu title in the "Split into" picker.
+        public var title: String {
             switch self {
-            case .all: return "doc.on.doc"
-            case .ranges: return "slider.horizontal.below.rectangle"
-            case .chunks: return "square.grid.2x2"
-            case .evenOdd: return "arrow.left.arrow.right"
-            case .selected: return "hand.tap"
+            case .all: return "One file per page"
+            case .ranges: return "Page ranges"
+            case .chunks: return "Equal parts"
+            case .evenOdd: return "Odd and even pages"
+            case .selected: return "Pages I pick"
             }
         }
     }
@@ -71,9 +72,9 @@ public struct PDFSplitDialogView: View {
 
         public var displayName: String {
             switch self {
-            case .none: return "1, 2, 3..."
-            case .twoDigits: return "01, 02, 03..."
-            case .threeDigits: return "001, 002, 003..."
+            case .none: return "1, 2, 3…"
+            case .twoDigits: return "01, 02, 03…"
+            case .threeDigits: return "001, 002, 003…"
             }
         }
     }
@@ -226,40 +227,28 @@ public struct PDFSplitDialogView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Header
             headerView
-                .padding(.horizontal, 24)
-                .padding(.top, 20)
-                .padding(.bottom, 16)
-                .background(Color(NSColor.controlBackgroundColor))
-
-            Divider()
-
-            // Content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if batchItems.count > 1 {
-                        batchFilesSection
-                    }
-
-                    modePickerSection
-
-                    modeConfigSection
-
-                    namingAndFolderSection
-                }
-                .padding(24)
-            }
-
-            Divider()
-
-            // Footer
-            footerView
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 20)
                 .padding(.vertical, 14)
-                .background(Color(NSColor.windowBackgroundColor))
+
+            Divider()
+
+            Form {
+                if batchItems.count > 1 {
+                    batchFilesSection
+                }
+                modeSection
+                namingAndFolderSection
+            }
+            .formStyle(.grouped)
+
+            Divider()
+
+            footerView
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
         }
-        .frame(minWidth: 560, idealWidth: 620, minHeight: 480, maxHeight: 680)
+        .frame(minWidth: 540, idealWidth: 600, minHeight: 480, idealHeight: 620)
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
         }
@@ -384,390 +373,222 @@ public struct PDFSplitDialogView: View {
 
     // MARK: - Header
     private var headerView: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.blue.opacity(0.12))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "doc.on.doc.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.blue)
-            }
+        HStack(spacing: 12) {
+            Image(systemName: "doc.on.doc")
+                .font(.system(size: 26))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(batchItems.count <= 1 ? (firstURL?.lastPathComponent ?? "PDF Document") : "\(batchItems.count) PDF Documents")
                     .font(.headline)
                     .lineLimit(1)
-
-                HStack(spacing: 8) {
-                    if isLoadingStats {
-                        Text("Reading PDF…")
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                            .fontWeight(.medium)
-                    } else if batchItems.count <= 1 {
-                        Text("\(totalPages) Pages")
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                            .fontWeight(.medium)
-                    } else {
-                        let sumPages = batchItems.reduce(0) { $0 + $1.pageCount }
-                        Text("\(sumPages) Pages Total across \(batchItems.count) files")
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                            .fontWeight(.medium)
-                    }
-
-                    Text("•")
-                        .foregroundColor(.secondary)
-
-                    Text(ByteCountFormatter.string(fromByteCount: totalOriginalSize, countStyle: .file))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
+                    .truncationMode(.middle)
+                Text(statsText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             if isDropTargeted {
                 Label("Drop to add PDFs", systemImage: "plus.circle.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.accentColor)
-                    .clipShape(Capsule())
+                    .foregroundStyle(Color.accentColor)
             }
         }
     }
 
-    // MARK: - Batch Files List
+    private var statsText: String {
+        if isLoadingStats { return "Reading PDF…" }
+        let size = ByteCountFormatter.string(fromByteCount: totalOriginalSize, countStyle: .file)
+        if batchItems.count <= 1 {
+            return Inflect.string("\(size) · ^[\(totalPages) page](inflect: true)")
+        }
+        let pages = batchItems.reduce(0) { $0 + $1.pageCount }
+        return Inflect.string("\(size) · ^[\(pages) page](inflect: true) in all")
+    }
+
+    // MARK: - Documents
     private var batchFilesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Documents in Batch (\(batchItems.count))")
-                    .font(.headline)
-                Spacer()
-                Text("Remove accidental files before splitting")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            VStack(spacing: 6) {
-                ForEach(batchItems) { item in
-                    HStack(spacing: 10) {
-                        Image(systemName: "doc.text.fill")
-                            .foregroundColor(item.isValid && !item.isLocked ? .blue : .red)
-                            .font(.system(size: 16))
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.url.lastPathComponent)
-                                .font(.system(size: 12, weight: .medium))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-
-                            HStack(spacing: 6) {
-                                if item.isValid && !item.isLocked {
-                                    Text("\(item.pageCount) pages")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                    Text("•")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                    Text(ByteCountFormatter.string(fromByteCount: item.fileSize, countStyle: .file))
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                    if selectedMode == .ranges {
-                                        HStack(spacing: 4) {
-                                            Text("Range:")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                            TextField(
-                                                rangeString,
-                                                text: Binding(
-                                                    get: { item.customRangeString ?? "" },
-                                                    set: { val in
-                                                        if let idx = batchItems.firstIndex(where: { $0.id == item.id }) {
-                                                            batchItems[idx].customRangeString = val.trimmingCharacters(in: .whitespaces).isEmpty ? nil : val
-                                                        }
-                                                    }
-                                                )
-                                            )
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 70)
-                                            .font(.caption2)
-                                            .accessibilityLabel("Custom range for \(item.url.lastPathComponent)")
-                                        }
-                                        if let err = validateRange(for: item).error {
-                                            Text("• \(err)")
-                                                .font(.caption2)
-                                                .foregroundColor(.red)
-                                        }
-                                    }
-                                } else {
-                                    Text(item.validationError ?? "Cannot process document")
-                                        .font(.caption2)
-                                        .foregroundColor(.red)
-                                }
-                            }
-                        }
-
-                        Spacer()
-
-                        Button(action: { removeItem(item) }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Remove \(item.url.lastPathComponent) from this batch")
-                        .accessibilityLabel("Remove \(item.url.lastPathComponent)")
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(NSColor.controlBackgroundColor)))
-                }
-            }
-        }
-    }
-
-    // MARK: - Mode Picker
-    private var modePickerSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Splitting Method")
-                .font(.headline)
-
-            HStack(spacing: 8) {
-                ForEach(SplitMode.allCases) { mode in
-                    Button(action: {
-                        selectedMode = mode
-                    }) {
-                        VStack(spacing: 6) {
-                            Image(systemName: mode.icon)
-                                .font(.system(size: 16, weight: .semibold))
-                            Text(mode.rawValue)
-                                .font(.system(size: 11, weight: .medium))
-                                .lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(selectedMode == mode ? Color.accentColor.opacity(0.15) : Color(NSColor.controlBackgroundColor))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(selectedMode == mode ? Color.accentColor : Color.gray.opacity(0.2), lineWidth: selectedMode == mode ? 1.5 : 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selectedMode == mode ? .isSelected : [])
-                    .accessibilityLabel(mode.rawValue)
-                    .accessibilityValue(selectedMode == mode ? "Selected" : "Not selected")
-                }
-            }
-        }
-    }
-
-    // MARK: - Mode Config
-    @ViewBuilder
-    private var modeConfigSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Configuration")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 14) {
-                switch selectedMode {
-                case .all:
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Extract Every Page")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Text("Every page in this document will be saved into its own separate single-page PDF file.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                case .ranges:
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Specify Page Ranges")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-
-                        HStack {
-                            TextField("e.g. 1-3, 5, 7-10", text: $rangeString)
-                                .textFieldStyle(.roundedBorder)
-
-                            Text("Total: \(totalPages) pages")
+        Section {
+            ForEach(batchItems) { item in
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.url.lastPathComponent)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if item.isValid && !item.isLocked {
+                            Text(Inflect.string("^[\(item.pageCount) page](inflect: true) · \(ByteCountFormatter.string(fromByteCount: item.fileSize, countStyle: .file))"))
                                 .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        let parsed = strictRangeResult
-                        if parsed.validRanges.isEmpty {
-                            Text(parsed.errorMessage ?? "Please enter valid page numbers (1 to \(totalPages)).")
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        } else {
-                            let totalExtracted = parsed.validRanges.reduce(0) { $0 + $1.count }
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Valid: \(parsed.validRanges.map { $0.count == 1 ? "\($0.lowerBound)" : "\($0.lowerBound)-\($0.upperBound)" }.joined(separator: ", ")) (\(totalExtracted) pages total)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                if let warning = parsed.errorMessage {
-                                    ScrollView {
-                                        Text(warning)
-                                            .font(.caption)
-                                            .foregroundColor(.orange)
-                                    }
-                                    .frame(maxHeight: 60)
-                                }
-                            }
-                        }
-
-                        Toggle("Merge extracted ranges into a single new PDF document", isOn: $mergeOutputs)
-                            .font(.subheadline)
-                    }
-
-                case .chunks:
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Fixed Chunks")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-
-                        HStack(spacing: 12) {
-                            Text("Split every:")
-                                .frame(width: 80, alignment: .leading)
-                            Stepper("\(chunkSize) pages", value: $chunkSize, in: 1...max(1, totalPages))
-                                .frame(width: 160)
-                        }
-
-                        let partsCount = (totalPages + chunkSize - 1) / chunkSize
-                        Text("A \(totalPages)-page document will be divided into \(partsCount) files of up to \(chunkSize) pages each.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                case .evenOdd:
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Split Even and Odd Pages")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-
-                        let oddCount = (totalPages + 1) / 2
-                        let evenCount = totalPages / 2
-
-                        Text("Creates two files:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("• Document_odd.pdf (\(oddCount) pages: 1, 3, 5...)")
-                            Text("• Document_even.pdf (\(evenCount) pages: 2, 4, 6...)")
-                        }
-                        .font(.caption)
-                        .foregroundColor(.primary)
-                    }
-
-                case .selected:
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("Select Pages to Extract (\(selectedPages.count) selected)")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Spacer()
-                            Button("Select All") {
-                                selectedPages = Set(1...totalPages)
-                                selectedPagesText = Self.rangeText(for: selectedPages)
-                            }
-                                .font(.caption)
-                            Button("Clear") {
-                                selectedPages.removeAll()
-                                selectedPagesText = ""
-                            }
-                                .font(.caption)
-                        }
-
-                        HStack {
-                            Text("Pages")
                                 .foregroundStyle(.secondary)
-                            TextField("e.g. 1-3, 5", text: $selectedPagesText)
-                                .textFieldStyle(.roundedBorder)
-                                .onSubmit { applySelectedPagesText() }
-                                .accessibilityLabel("Selected pages")
+                            if selectedMode == .ranges, let error = validateRange(for: item).error {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                            }
+                        } else {
+                            Text(item.validationError ?? "Cannot read this PDF")
+                                .font(.caption)
+                                .foregroundStyle(.red)
                         }
-                        Text("Click a page to select it. Shift-click selects a range.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        ScrollView {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 10)], spacing: 10) {
-                                ForEach(1...totalPages, id: \.self) { page in
-                                    PageThumbnailCell(
-                                        documentURL: firstURL,
-                                        pageNumber: page,
-                                        isSelected: selectedPages.contains(page)
-                                    ) {
-                                        togglePage(page, extendingRange: NSEvent.modifierFlags.contains(.shift))
+                    }
+                    Spacer()
+                    if selectedMode == .ranges && item.isValid && !item.isLocked {
+                        TextField(
+                            "Pages for \(item.url.lastPathComponent)",
+                            text: Binding(
+                                get: { item.customRangeString ?? "" },
+                                set: { value in
+                                    if let index = batchItems.firstIndex(where: { $0.id == item.id }) {
+                                        batchItems[index].customRangeString = value.trimmingCharacters(in: .whitespaces).isEmpty ? nil : value
                                     }
                                 }
-                            }
-                            .padding(2)
-                        }
-                        .frame(minHeight: 160, maxHeight: 300)
-
-                        Toggle("Merge selected pages into a single new PDF document", isOn: $mergeOutputs)
-                            .font(.subheadline)
+                            ),
+                            prompt: Text(rangeString)
+                        )
+                        .labelsHidden()
+                        .frame(width: 100)
                     }
+                    Button {
+                        removeItem(item)
+                    } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Leave \(item.url.lastPathComponent) out")
+                    .accessibilityLabel("Remove \(item.url.lastPathComponent)")
                 }
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+        } header: {
+            Text("Documents")
+        } footer: {
+            if selectedMode == .ranges {
+                FooterText("A document with no pages of its own uses the page ranges below.")
+            }
         }
     }
 
-    // MARK: - Naming & Folder
-    private var namingAndFolderSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Naming & Destination")
-                .font(.headline)
+    // MARK: - Mode
+    private var modeSection: some View {
+        Section {
+            Picker("Split into", selection: $selectedMode) {
+                ForEach(SplitMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Page Numbering:")
-                        .frame(width: 140, alignment: .leading)
-                    Picker("", selection: $zeroPadDigits) {
-                        ForEach(NumberingPadding.allCases) { pad in
-                            Text(pad.displayName).tag(pad)
-                        }
+            switch selectedMode {
+            case .all, .evenOdd:
+                EmptyView()
+
+            case .ranges:
+                TextField("Pages", text: $rangeString, prompt: Text("1-3, 5, 7-10"))
+                Toggle("Combine into one PDF", isOn: $mergeOutputs)
+
+            case .chunks:
+                Stepper(value: $chunkSize, in: 1...max(1, totalPages)) {
+                    LabeledContent("Pages per file") {
+                        Text("\(chunkSize)").monospacedDigit()
                     }
-                    .labelsHidden()
                 }
 
-                Toggle("Save into a dedicated subfolder", isOn: $createSubfolder)
-                    .font(.subheadline)
+            case .selected:
+                TextField("Pages", text: $selectedPagesText, prompt: Text("1-3, 5"))
+                    .onSubmit { applySelectedPagesText() }
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("\(selectedPages.count) of \(totalPages) selected")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                        Spacer()
+                        Button("Select All") {
+                            selectedPages = Set(1...max(1, totalPages))
+                            selectedPagesText = Self.rangeText(for: selectedPages)
+                        }
+                        Button("Clear") {
+                            selectedPages.removeAll()
+                            selectedPagesText = ""
+                        }
+                        .disabled(selectedPages.isEmpty)
+                    }
+                    .controlSize(.small)
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 10)], spacing: 10) {
+                            ForEach(1...max(1, totalPages), id: \.self) { page in
+                                PageThumbnailCell(
+                                    documentURL: firstURL,
+                                    pageNumber: page,
+                                    isSelected: selectedPages.contains(page)
+                                ) {
+                                    togglePage(page, extendingRange: NSEvent.modifierFlags.contains(.shift))
+                                }
+                            }
+                        }
+                        .padding(2)
+                    }
+                    .frame(minHeight: 160, maxHeight: 300)
+                }
+                Toggle("Combine into one PDF", isOn: $mergeOutputs)
+            }
+        } footer: {
+            modeFooter
+        }
+    }
 
-                HStack {
-                    Text("Save to:")
-                        .frame(width: 140, alignment: .leading)
-                    if let dir = customOutputDirectory {
-                        Text(dir.path)
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(dir.path)
-                        Button("Change…") { chooseOutputDirectory() }
-                        Button("Use Default") { customOutputDirectory = nil }
-                    } else {
-                        Text(createSubfolder ? "A “{name} - Pages” folder next to the original" : DestinationDescription.folder(for: initialPreset))
-                            .foregroundColor(.secondary)
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Button("Choose Folder…") { chooseOutputDirectory() }
+    @ViewBuilder
+    private var modeFooter: some View {
+        switch selectedMode {
+        case .all:
+            FooterText("Each page becomes its own PDF.")
+        case .ranges:
+            let parsed = strictRangeResult
+            if parsed.validRanges.isEmpty {
+                Text(parsed.errorMessage ?? "Enter page numbers from 1 to \(totalPages).")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                let count = parsed.validRanges.reduce(0) { $0 + $1.count }
+                VStack(alignment: .leading, spacing: 2) {
+                    FooterText(Inflect.string("^[\(count) page](inflect: true) out of \(totalPages).") + " " + (mergeOutputs ? "They are saved as one PDF." : "Each range becomes its own PDF."))
+                    if let warning = parsed.errorMessage {
+                        Text(warning)
+                            .font(.callout)
+                            .foregroundStyle(.orange)
                     }
                 }
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+        case .chunks:
+            let parts = (totalPages + chunkSize - 1) / max(1, chunkSize)
+            FooterText(Inflect.string("^[\(parts) file](inflect: true) of up to \(chunkSize) pages each."))
+        case .evenOdd:
+            FooterText("Two files: one with pages 1, 3, 5… (\((totalPages + 1) / 2)) and one with pages 2, 4, 6… (\(totalPages / 2)).")
+        case .selected:
+            FooterText("Click a page to select it; Shift-click selects a range. " + (mergeOutputs ? "Selected pages are saved as one PDF." : "Each selected page becomes its own PDF."))
+        }
+    }
+
+    // MARK: - Saving
+    private var namingAndFolderSection: some View {
+        Section("Saving") {
+            Picker("Page numbers", selection: $zeroPadDigits) {
+                ForEach(NumberingPadding.allCases) { pad in
+                    Text(pad.displayName).tag(pad)
+                }
+            }
+            Toggle("Put the files in a new folder", isOn: $createSubfolder)
+            LabeledContent("Save to") {
+                HStack {
+                    Text(customOutputDirectory.map { ($0.path as NSString).abbreviatingWithTildeInPath }
+                        ?? (createSubfolder ? "A “\(firstURL?.deletingPathExtension().lastPathComponent ?? "name") - Pages” folder next to the original" : DestinationDescription.folder(for: initialPreset)))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                    Button("Change…") { chooseOutputDirectory() }
+                    if customOutputDirectory != nil {
+                        Button("Use Default") { customOutputDirectory = nil }
+                    }
+                }
+            }
         }
     }
 
@@ -779,7 +600,7 @@ public struct PDFSplitDialogView: View {
 
     private var footerStatusText: String {
         if isLoadingStats { return "Reading PDF…" }
-        if batchItems.isEmpty { return "No documents in batch" }
+        if batchItems.isEmpty { return "No PDFs left" }
         if let locked = batchItems.first(where: { $0.isLocked }) {
             return "\(locked.url.lastPathComponent) is password-protected"
         }
@@ -793,7 +614,7 @@ public struct PDFSplitDialogView: View {
             return "Enter a valid page selection"
         }
         if totalPlannedOutputs > 1000 {
-            return "Exceeds safety limit of 1000 outputs (\(totalPlannedOutputs) planned)"
+            return "That would make \(totalPlannedOutputs) files; the limit is 1,000"
         }
         if batchItems.count == 1 {
             return Inflect.string("Will create ^[\(totalPlannedOutputs) file](inflect: true)")
@@ -805,15 +626,10 @@ public struct PDFSplitDialogView: View {
     private var footerView: some View {
         VStack(spacing: 8) {
             if isDocumentLocked {
-                HStack(spacing: 8) {
-                    Image(systemName: "lock.fill")
-                        .foregroundColor(.red)
-                    Text("One or more PDFs are password-protected or locked. Encrypted documents cannot be split.")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                    Spacer()
-                }
-                .padding(.horizontal, 4)
+                Label("A password-protected PDF cannot be split.", systemImage: "lock.fill")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             HStack {
@@ -823,8 +639,8 @@ public struct PDFSplitDialogView: View {
                 Spacer()
 
                 Text(footerStatusText)
-                    .font(.subheadline)
-                    .foregroundColor(isFooterStatusError ? .red : .secondary)
+                    .font(.callout)
+                    .foregroundStyle(isFooterStatusError ? .red : .secondary)
 
                 Button("Split PDF") {
                     startSplitting()

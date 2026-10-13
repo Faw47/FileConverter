@@ -67,7 +67,9 @@
 		839225C39784EB65CD1EF317 /* FinderHostResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B203B8F93ED765AE2190AECC /* FinderHostResolverTests.swift */; };
 		85FBD19AA9B1C95C6701DB85 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44DF1CBD8B458ED3F956354F /* AppSettings.swift */; };
 		888A04B44684B32DEBDB9744 /* FFmpegOutputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A07DACFBCCEF3827438A3C /* FFmpegOutputTests.swift */; };
+		8941A77DB5C68841F00FF945 /* InterruptedConversionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEDA343FAA5F7EAC10E19381 /* InterruptedConversionTests.swift */; };
 		89F868817057644138AE08A1 /* OutputNamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11222B579A59ED7204A7EA06 /* OutputNamingTests.swift */; };
+		8A24F3504D4740BC5DEF8873 /* AppDataIsolationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EE212909B350A09AECEEEFB /* AppDataIsolationTests.swift */; };
 		8ABE3C736D8779A2F278D967 /* PDFCompressDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71F0E9C215A4ED0323A34865 /* PDFCompressDialogView.swift */; };
 		8D0E895A6A5D124B6B2CA921 /* FileConverterFinderSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 612D6F8CB6251D64D505EA4D /* FileConverterFinderSync.swift */; };
 		8E0C3B9BAB4CECB314266C1F /* ArchitectureBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BB54F7C4738B6BABA5BEC7 /* ArchitectureBoundaryTests.swift */; };
@@ -150,6 +152,7 @@
 		291E38F0721E59A5E9AA1F00 /* MediaAssertions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaAssertions.swift; sourceTree = "<group>"; };
 		2A185352B72B877A1BF14308 /* ConversionBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionBackendTests.swift; sourceTree = "<group>"; };
 		2A4D6AFE9DC7F28B4351FF5B /* ColdStartAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdStartAdmissionTests.swift; sourceTree = "<group>"; };
+		2EE212909B350A09AECEEEFB /* AppDataIsolationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataIsolationTests.swift; sourceTree = "<group>"; };
 		34075D7C7DBF0D24B56DB09F /* QTAFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QTAFormatTests.swift; sourceTree = "<group>"; };
 		371BB29A7BD8D7C20B27D475 /* AppMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMain.swift; sourceTree = "<group>"; };
 		3D884AF4939A8770573CB7C2 /* NotificationPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPolicyTests.swift; sourceTree = "<group>"; };
@@ -217,6 +220,7 @@
 		D6B1D1F4E0FA3B196BD5C795 /* TestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestFixtures.swift; sourceTree = "<group>"; };
 		D83ED4C8897EDC5EDBA04FE5 /* PDFRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFRenderTests.swift; sourceTree = "<group>"; };
 		DDDE34D20912871FC9D20D8A /* AuditFixesRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuditFixesRegressionTests.swift; sourceTree = "<group>"; };
+		DEDA343FAA5F7EAC10E19381 /* InterruptedConversionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterruptedConversionTests.swift; sourceTree = "<group>"; };
 		E1BA703A45B352F7F7987CC4 /* AccessibilityAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityAuditTests.swift; sourceTree = "<group>"; };
 		EB4B98618E617B383B9D6A1F /* FinderMenuTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderMenuTests.swift; sourceTree = "<group>"; };
 		F15A65C5BF8AC675B87F75AB /* CorrectnessRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectnessRegressionTests.swift; sourceTree = "<group>"; };
@@ -321,6 +325,7 @@
 			children = (
 				307314EF31D3E78242636C87 /* Support */,
 				E1BA703A45B352F7F7987CC4 /* AccessibilityAuditTests.swift */,
+				2EE212909B350A09AECEEEFB /* AppDataIsolationTests.swift */,
 				B3BB54F7C4738B6BABA5BEC7 /* ArchitectureBoundaryTests.swift */,
 				983434FEA3A02A58C48A3EBD /* AudioPresetEndToEndTests.swift */,
 				257D25ACC2A3B457D8EA3A19 /* AudioPresetFormatAwarenessTests.swift */,
@@ -346,6 +351,7 @@
 				5D63128181B04BEBFBD3B590 /* HelpContentTests.swift */,
 				4762CF21693B5232C8D55E30 /* IgnoredSettingsTests.swift */,
 				B2206E064BFA5AE06B8AA03A /* ImageOutputTests.swift */,
+				DEDA343FAA5F7EAC10E19381 /* InterruptedConversionTests.swift */,
 				7BDB1FB89978A20793C34D4F /* LocalizationTests.swift */,
 				58C5E538E163754B967089EC /* NamingPreviewParityTests.swift */,
 				5E4D9163498EBFFF54C62363 /* NativeAudioOutputTests.swift */,
@@ -647,6 +653,7 @@
 			files = (
 				1DDA6DA6EB10DD335E00E067 /* AVFoundationPCMSettingsTests.swift in Sources */,
 				D268BBA5C2B041BAB7DF00D1 /* AccessibilityAuditTests.swift in Sources */,
+				8A24F3504D4740BC5DEF8873 /* AppDataIsolationTests.swift in Sources */,
 				8E0C3B9BAB4CECB314266C1F /* ArchitectureBoundaryTests.swift in Sources */,
 				6B6AF9694896C44CB83BEE9E /* AudioPresetEndToEndTests.swift in Sources */,
 				D6657934747CFAC11432C8C0 /* AudioPresetFormatAwarenessTests.swift in Sources */,
@@ -672,6 +679,7 @@
 				1140F6590DFA9B93E84A8AE5 /* HelpContentTests.swift in Sources */,
 				19D9D70086433C994E61DAF8 /* IgnoredSettingsTests.swift in Sources */,
 				6BB7DFF53425C5BCC9A01F9D /* ImageOutputTests.swift in Sources */,
+				8941A77DB5C68841F00FF945 /* InterruptedConversionTests.swift in Sources */,
 				7531E0AF1A2780117E137F52 /* LocalizationTests.swift in Sources */,
 				5731ADE53D92435B435F491D /* MediaAssertions.swift in Sources */,
 				FD21B1A800B6C9A9A3A8B154 /* NamingPreviewParityTests.swift in Sources */,

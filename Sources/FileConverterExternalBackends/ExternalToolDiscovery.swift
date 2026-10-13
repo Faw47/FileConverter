@@ -54,9 +54,7 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
     }
 
     public static var defaultCapabilitiesCacheURL: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("FileConverter", isDirectory: true)
-            .appendingPathComponent("ffmpeg-capabilities.json")
+        AppDataLocation.directory?.appendingPathComponent("ffmpeg-capabilities.json")
     }
 
     // MARK: - Custom tool locations

@@ -26,9 +26,7 @@ public enum QueueHistoryStore {
     }
 
     public static var defaultURL: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("FileConverter", isDirectory: true)
-            .appendingPathComponent("history.json")
+        AppDataLocation.directory?.appendingPathComponent("history.json")
     }
 
     static func record(for job: ConversionJob) -> Record? {

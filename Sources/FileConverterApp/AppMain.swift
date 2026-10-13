@@ -324,7 +324,7 @@ struct FileConverterApp: App {
             }
 
             CommandGroup(replacing: .newItem) {
-                Button("Open Files to Convert...") {
+                Button("Open…") {
                     NotificationCenter.default.post(name: NSNotification.Name("OpenFileConverterOpenPanel"), object: nil)
                 }
                 .keyboardShortcut("o", modifiers: .command)
@@ -368,12 +368,12 @@ struct FileConverterApp: App {
 
                 Divider()
 
-                Button("Manage Presets...") {
+                Button("Manage Presets…") {
                     appState.openSettings(tab: .presets)
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
 
-                Button("External Tools Diagnostics...") {
+                Button("External Tools…") {
                     appState.openSettings(tab: .externalTools)
                 }
             }

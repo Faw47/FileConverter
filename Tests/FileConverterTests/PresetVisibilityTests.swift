@@ -1,5 +1,6 @@
 import XCTest
 @testable import FileConverterCore
+import FileConverterNativeBackends
 
 final class PresetVisibilityTests: XCTestCase {
     private func format(_ id: String) throws -> FormatDefinition {
@@ -59,5 +60,16 @@ final class PresetVisibilityTests: XCTestCase {
         XCTAssertNotEqual(batches[1], batches[2])
         XCTAssertNotEqual(batches[2], batches[3])
         queue.cancelAll()
+    }
+
+    func testPhotosListImagePresetsBeforeOtherKinds() throws {
+        let photo = try TestFixtures.url("gps.jpg")
+        let presets = PresetValidator.compatiblePresets(
+            forURLs: [photo],
+            from: [try BackendHarness.builtIn("video.animated-gif"), try BackendHarness.builtIn("image.png")],
+            resolver: BackendResolver(backends: NativeBackendCatalog.makeBackends())
+        )
+        XCTAssertEqual(presets.count, 2)
+        XCTAssertEqual(presets.first?.builtInKey, "image.png", "a photo should not default to Animated GIF")
     }
 }
