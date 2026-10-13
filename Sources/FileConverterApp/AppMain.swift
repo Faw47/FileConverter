@@ -68,6 +68,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Conservative startup cleanup of prior session staging artifacts (TASK-028 / SEC-004)
         StagingArtifactManifest.shared.sweepOrphanedArtifacts()
         DockProgressController.shared.start()
+
+        #if DEBUG
+        // Visual check of the real Settings scene (not a hosted copy):
+        // --capture-settings <dir> saves every tab in light and dark, then quits.
+        if let index = CommandLine.arguments.firstIndex(of: "--capture-settings"),
+           CommandLine.arguments.indices.contains(index + 1) {
+            SettingsSceneCapture.run(outputDirectory: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+        }
+        #endif
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -270,7 +279,19 @@ struct FileConverterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
     @StateObject private var conversionQueue = ConversionQueue.shared
-    @AppStorage(AppSettings.Keys.showMenuBarExtra) private var showMenuBarExtra = true
+    @StateObject private var settings = AppSettings.shared
+
+    /// MenuBarExtra writes `isInserted` back on every update; binding it
+    /// straight to @AppStorage made each write trigger another update and
+    /// kept a CPU core at 100%. Only real changes are stored.
+    private var menuBarExtraInserted: Binding<Bool> {
+        Binding(
+            get: { settings.showMenuBarExtra },
+            set: { newValue in
+                if settings.showMenuBarExtra != newValue { settings.showMenuBarExtra = newValue }
+            }
+        )
+    }
 
     init() {
         #if DEBUG
@@ -298,7 +319,7 @@ struct FileConverterApp: App {
         }
         .handlesExternalEvents(matching: Set(["*"]))
         .defaultSize(width: 640, height: 500)
-        MenuBarExtra(isInserted: $showMenuBarExtra) {
+        MenuBarExtra(isInserted: menuBarExtraInserted) {
             MenuBarStatusView(queue: conversionQueue)
         } label: {
             Image(systemName: conversionQueue.activeCount + conversionQueue.queuedCount > 0

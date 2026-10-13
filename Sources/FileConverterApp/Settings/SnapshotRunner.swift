@@ -166,3 +166,58 @@ public enum SnapshotRunner {
     }
 }
 #endif
+
+#if DEBUG
+/// Captures the Settings window the app actually shows, which the hosted
+/// snapshots above cannot reproduce (toolbar tabs, window chrome).
+@MainActor
+enum SettingsSceneCapture {
+    /// CGWindowListCreateImage is unavailable to Swift in current SDKs but
+    /// still works for an app's own windows; looked up at run time.
+    private static func composited(windowNumber: Int) -> CGImage? {
+        typealias Create = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return nil }
+        let create = unsafeBitCast(symbol, to: Create.self)
+        // .null rect = the window's bounds; option 8 = including window;
+        // image options: bestResolution (8) | boundsIgnoreFraming (1).
+        return create(.null, 8, UInt32(windowNumber), 8 | 1)?.takeRetainedValue()
+    }
+
+    static func run(outputDirectory: URL) {
+        try? FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            // The app menu's "Settings…" item, as a user would choose it.
+            if let appMenu = NSApp.mainMenu?.items.first?.submenu,
+               let index = appMenu.items.firstIndex(where: { $0.keyEquivalent == "," }) {
+                appMenu.performActionForItem(at: index)
+            }
+            try? await Task.sleep(for: .seconds(1.5))
+            for window in NSApp.windows {
+                print("[capture] window \(type(of: window)) id=\(window.identifier?.rawValue ?? "-") visible=\(window.isVisible) frame=\(window.frame)")
+            }
+            guard let window = NSApp.windows.first(where: AppDelegate.isSettingsWindow) else {
+                print("[capture] no Settings window; windows: \(NSApp.windows.map { $0.identifier?.rawValue ?? "?" })")
+                exit(1)
+            }
+            for (mode, name) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                NSApp.appearance = NSAppearance(named: name)
+                for tab in AppState.SettingsTab.allCases {
+                    AppState.shared.selectedTab = tab
+                    try? await Task.sleep(for: .seconds(0.8))
+                    let file = outputDirectory.appendingPathComponent("scene_\(tab.rawValue.replacingOccurrences(of: " ", with: "_").lowercased())_\(mode).png")
+                    // What the window server shows, including translucent
+                    // toolbar materials that cacheDisplay does not draw.
+                    if let image = composited(windowNumber: window.windowNumber) {
+                        try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: file)
+                        print("[capture] \(file.lastPathComponent) \(image.width)x\(image.height) (window server)")
+                    } else {
+                        print("[capture] window server image unavailable")
+                    }
+                }
+            }
+            exit(0)
+        }
+    }
+}
+#endif

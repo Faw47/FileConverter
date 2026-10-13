@@ -371,13 +371,15 @@ public struct PresetEditorView: View {
     private func identitySection(preset: Binding<ConversionPreset>) -> some View {
         Section("Name") {
             SettingsRow(title: "Preset name", subtitle: "Shown in Settings and the preset picker") {
-                TextField("e.g. HEIC photos to JPEG", text: preset.name)
+                TextField("Preset name", text: preset.name, prompt: Text("HEIC photos to JPEG"))
+                    .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 250)
             }
 
             SettingsRow(title: "Finder menu name", subtitle: "Shown when you right-click a file") {
-                TextField("e.g. HEIC → JPEG", text: preset.menuName)
+                TextField("Finder menu name", text: preset.menuName, prompt: Text("HEIC → JPEG"))
+                    .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 170)
             }
@@ -423,7 +425,8 @@ public struct PresetEditorView: View {
             }
 
             SettingsRow(title: "File extension") {
-                TextField("mp3", text: preset.destinationFormat)
+                TextField("File extension", text: preset.destinationFormat, prompt: Text("mp3"))
+                    .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
                     .frame(width: 100)
@@ -708,6 +711,8 @@ public struct PresetEditorView: View {
                     get: { width },
                     set: { preset.wrappedValue.resolution = .custom(width: max(16, $0), height: height) }
                 ), format: .number)
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
                 .frame(width: 60)
                 .accessibilityLabel("Custom width")
                 Text("×")
@@ -715,6 +720,8 @@ public struct PresetEditorView: View {
                     get: { height },
                     set: { preset.wrappedValue.resolution = .custom(width: width, height: max(16, $0)) }
                 ), format: .number)
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
                 .frame(width: 60)
                 .accessibilityLabel("Custom height")
             }
@@ -884,10 +891,11 @@ public struct PresetEditorView: View {
                         if audioSplitChoice(for: preset).wrappedValue == .custom {
                             SettingsRow(
                                 title: "Part length",
-                                subtitle: partLengthValidationError ?? "Format: HH:MM:SS.ss (e.g. 00:05:00.00)"
+                                subtitle: "Hours, minutes, and seconds, like 00:05:00"
                             ) {
                                 VStack(alignment: .trailing, spacing: 4) {
-                                    TextField("00:05:00.00", text: $partLengthText)
+                                    TextField("Part length", text: $partLengthText, prompt: Text("00:05:00"))
+                                        .labelsHidden()
                                         .textFieldStyle(.roundedBorder)
                                         .font(.system(.body, design: .monospaced))
                                         .frame(width: 140)
@@ -960,7 +968,8 @@ public struct PresetEditorView: View {
             if !preset.wrappedValue.resolvedInheritance.outputLocation,
                case .sourceSubfolder = preset.wrappedValue.outputDirectoryPolicy {
                 SettingsRow(title: "Subfolder name") {
-                    TextField("Converted", text: $subfolderName)
+                    TextField("Subfolder name", text: $subfolderName, prompt: Text("Converted"))
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
                         .frame(width: 160)
@@ -1029,7 +1038,8 @@ public struct PresetEditorView: View {
                     Toggle("Use General pattern", isOn: inheritanceBinding(\.filenamePattern, of: preset))
                         .toggleStyle(.checkbox)
                     if !inheritanceBinding(\.filenamePattern, of: preset).wrappedValue {
-                        TextField("{name}", text: preset.filenamePattern)
+                        TextField("File name pattern", text: preset.filenamePattern, prompt: Text("{name}"))
+                            .labelsHidden()
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
                             .frame(width: 160)
