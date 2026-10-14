@@ -335,7 +335,7 @@ struct FileConverterApp: App {
             SettingsView()
                 .environmentObject(appState)
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 SettingsLink {
@@ -419,7 +419,7 @@ struct FileConverterApp: App {
                     let query = tabName.lowercased()
                     if query.contains("preset") { return .presets }
                     if query.contains("tool") || query.contains("external") || query.contains("ffmpeg") { return .externalTools }
-                    if query.contains("perform") || query.contains("thermal") || query.contains("cpu") { return .performance }
+                    if query.contains("perform") || query.contains("thermal") || query.contains("cpu") { return .general }
                     if query.contains("finder") || query.contains("menu") || query.contains("extension") { return .finder }
                     if query.contains("general") || query.contains("output") || query.contains("default") { return .general }
                     return AppState.SettingsTab.allCases.first {

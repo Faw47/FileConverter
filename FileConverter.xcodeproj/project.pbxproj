@@ -24,6 +24,7 @@
 		1DE0354C3F743CC42C16F7FE /* AppMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 371BB29A7BD8D7C20B27D475 /* AppMain.swift */; };
 		1F81C0F0E9E8575EAC6530B3 /* BackendIsolationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F627544065B9FC2789727837 /* BackendIsolationTests.swift */; };
 		20AEF33D0FA5789C8417365C /* PresetEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F01292AFFBEFF2ED4AE4D21 /* PresetEngineTests.swift */; };
+		28AF02AE7FCB897DD82C29CF /* ConversionSpeedSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2CB21F6F5342A5B90DE57D /* ConversionSpeedSection.swift */; };
 		2A0B911DBE54E3D9D8937515 /* FileConverterContracts in Frameworks */ = {isa = PBXBuildFile; productRef = E06F7CDA203132520065D844 /* FileConverterContracts */; };
 		2CCB29315AFF4A4FCE96AA32 /* FileConverterCore in Frameworks */ = {isa = PBXBuildFile; productRef = 28BB1713308BBE35B4E783BB /* FileConverterCore */; };
 		2D60603DD67D97E403453288 /* DropZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1CBC6F9AC4E2EC7F2C25AA /* DropZoneView.swift */; };
@@ -102,7 +103,6 @@
 		D68F3DE6E393ECE823DBBA7B /* DestinationDescription.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D9EB5CD6D065FF4774641F /* DestinationDescription.swift */; };
 		D6F26BD9753B6682901626B4 /* Inflect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E67EDD57AF54B0A8CBC872A /* Inflect.swift */; };
 		D88958E3D4CF4A31EE1F7B33 /* NotificationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D884AF4939A8770573CB7C2 /* NotificationPolicyTests.swift */; };
-		E1F333C33F3674F044E2D944 /* PerformanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69896909738BEFDE61018475 /* PerformanceSettingsView.swift */; };
 		E7634C9768FA57CF5835B386 /* DropURLCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 876AF88FCD648511C0E59E58 /* DropURLCollector.swift */; };
 		E89D9EC36711FC89F83C7CA0 /* FileConverterMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11A33C2083497C1B210C65C /* FileConverterMainView.swift */; };
 		EA10C14BE96506ED37E876CB /* FileConverterExternalBackends in Frameworks */ = {isa = PBXBuildFile; productRef = 21D8214F8C6F5BD453CF14F6 /* FileConverterExternalBackends */; };
@@ -172,7 +172,6 @@
 		67870F98F858B99D4B725468 /* SourceFingerprintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceFingerprintTests.swift; sourceTree = "<group>"; };
 		67E69FFF0E4E67E45C299E9F /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		697B9C7D9530433245C4CA55 /* QoLBugsRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QoLBugsRegressionTests.swift; sourceTree = "<group>"; };
-		69896909738BEFDE61018475 /* PerformanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSettingsView.swift; sourceTree = "<group>"; };
 		6A1CBC6F9AC4E2EC7F2C25AA /* DropZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropZoneView.swift; sourceTree = "<group>"; };
 		6AEABD70E4F177405FB0DFBB /* FinderIntegrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderIntegrationView.swift; sourceTree = "<group>"; };
 		71F0E9C215A4ED0323A34865 /* PDFCompressDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFCompressDialogView.swift; sourceTree = "<group>"; };
@@ -212,6 +211,7 @@
 		BCF4132E4CBD6EFE78A3539D /* MenuBarStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarStatusView.swift; sourceTree = "<group>"; };
 		C435D3CFEEBC25F8E79567A4 /* ExternalBackendProcessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalBackendProcessTests.swift; sourceTree = "<group>"; };
 		CBF24127A8C6CAD1B2C760E6 /* QueueInteractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueInteractionTests.swift; sourceTree = "<group>"; };
+		CD2CB21F6F5342A5B90DE57D /* ConversionSpeedSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionSpeedSection.swift; sourceTree = "<group>"; };
 		D11A33C2083497C1B210C65C /* FileConverterMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileConverterMainView.swift; sourceTree = "<group>"; };
 		D1A59ABB9BE480AAA6056771 /* WebPEncodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPEncodingTests.swift; sourceTree = "<group>"; };
 		D2BAA3AA4EAE3A0C9B4A037B /* PresetPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetPickerView.swift; sourceTree = "<group>"; };
@@ -468,11 +468,11 @@
 			isa = PBXGroup;
 			children = (
 				44DF1CBD8B458ED3F956354F /* AppSettings.swift */,
+				CD2CB21F6F5342A5B90DE57D /* ConversionSpeedSection.swift */,
 				1B980366D20EC1D96E42D0C1 /* ExternalToolsSettingsView.swift */,
 				6AEABD70E4F177405FB0DFBB /* FinderIntegrationView.swift */,
 				F9FF2DEF52502896869616BE /* GeneralSettingsView.swift */,
 				A12944A72330BB24A20E7D07 /* PatternTextField.swift */,
-				69896909738BEFDE61018475 /* PerformanceSettingsView.swift */,
 				B8D89E5E1FC2B3AF468CE170 /* PresetEditorView.swift */,
 				AA89DE4948E258B0218F5929 /* PresetsSettingsView.swift */,
 				9483C4AB840BC823C3814801 /* SettingsComponents.swift */,
@@ -729,6 +729,7 @@
 				F0D1A0FCA0DF32FD7BE3E29E /* AppState.swift in Sources */,
 				150C827932AC443A54679C28 /* CollisionResolutionView.swift in Sources */,
 				352E928F537FB2E5E653E2AF /* ConversionQueueView.swift in Sources */,
+				28AF02AE7FCB897DD82C29CF /* ConversionSpeedSection.swift in Sources */,
 				D68F3DE6E393ECE823DBBA7B /* DestinationDescription.swift in Sources */,
 				74C4F4E92992E061784664C8 /* DockProgressController.swift in Sources */,
 				E7634C9768FA57CF5835B386 /* DropURLCollector.swift in Sources */,
@@ -744,7 +745,6 @@
 				8ABE3C736D8779A2F278D967 /* PDFCompressDialogView.swift in Sources */,
 				7CCDE03ED7147EF85936B592 /* PDFSplitDialogView.swift in Sources */,
 				0D31F27F3026EBAA2755CE9A /* PatternTextField.swift in Sources */,
-				E1F333C33F3674F044E2D944 /* PerformanceSettingsView.swift in Sources */,
 				329F8326FE9EA3FC3D6437FD /* PresetEditorView.swift in Sources */,
 				474C3C1DD1537EB6AE514515 /* PresetPickerView.swift in Sources */,
 				FD512A377F75D4D3334D69D9 /* PresetsSettingsView.swift in Sources */,

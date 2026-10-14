@@ -24,7 +24,6 @@ public final class AppState: ObservableObject {
         case general = "General"
         case presets = "Presets"
         case externalTools = "External Tools"
-        case performance = "Performance"
         case finder = "Finder Integration"
 
         public var id: String { rawValue }
@@ -34,7 +33,6 @@ public final class AppState: ObservableObject {
             case .general: return "gearshape"
             case .presets: return "slider.horizontal.3"
             case .externalTools: return "terminal"
-            case .performance: return "bolt"
             case .finder: return "macwindow"
             }
         }
@@ -44,7 +42,6 @@ public final class AppState: ObservableObject {
             case .general: return "Outputs, conflicts, notifications"
             case .presets: return "Formats, backends, quality"
             case .externalTools: return "FFmpeg, documents, diagnostics"
-            case .performance: return "Concurrency, thermals"
             case .finder: return "Context menu, status"
             }
         }

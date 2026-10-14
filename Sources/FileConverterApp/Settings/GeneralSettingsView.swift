@@ -15,6 +15,7 @@ public struct GeneralSettingsView: View {
             savingSection
             fileNameSection
             fileDetailsSection
+            ConversionSpeedSection()
             afterConvertingSection
             openingFilesSection
             Section {
