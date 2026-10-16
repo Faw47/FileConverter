@@ -49,7 +49,8 @@ final class AccessibilityAuditTests: XCTestCase {
         XCTAssertFalse(content.isEmpty)
 
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Conflict for \\(conflict.sourceFilename)\")"))
-        XCTAssertTrue(content.contains(".accessibilityLabel(\"Cancel collision resolution\")"))
+        // The button's own title says what it does; VoiceOver reads it as is.
+        XCTAssertTrue(content.contains("\"Cancel Conversion\" : \"Cancel Conversions\""))
         XCTAssertTrue(content.contains(".keyboardShortcut(.cancelAction)"))
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Skip \\(conflict.sourceFilename)\")"))
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Keep both files for \\(conflict.sourceFilename)\")"))

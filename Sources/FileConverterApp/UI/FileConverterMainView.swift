@@ -61,6 +61,7 @@ public struct FileConverterMainView: View {
             } else {
                 ConversionQueueView()
                     .environmentObject(appState)
+                dropHintBar
             }
         }
         .overlay {
@@ -329,6 +330,26 @@ public struct FileConverterMainView: View {
                 }
             }
         }
+    }
+
+    /// Once the list has rows the empty-state drop target is gone; this
+    /// status bar keeps saying the window still takes files.
+    private var dropHintBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack {
+                Text("Drop files anywhere in this window to convert them.")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                Button("Choose Files…", action: openFilesDialog)
+            }
+            .font(.callout)
+            .controlSize(.small)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+        }
+        .background(.bar)
     }
 
     // MARK: - Interrupted conversions

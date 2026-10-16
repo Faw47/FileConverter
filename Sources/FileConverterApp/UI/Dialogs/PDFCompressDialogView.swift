@@ -121,7 +121,8 @@ public struct PDFCompressDialogView: View {
 
     @State private var cachedTotalSize: Int64 = 0
     @State private var cachedPageCount: Int?
-    @State private var isDocumentLocked = false
+    /// Files that cannot be compressed, with the reason, in batch order.
+    @State private var problemFiles: [(url: URL, reason: String)] = []
     @State private var isLoadingStats = true
     @State private var dropErrorMessage: String?
 
@@ -344,16 +345,26 @@ public struct PDFCompressDialogView: View {
                     let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
                     return total + Int64(fileSize)
                 }
-                let documents = files.compactMap { PDFDocument(url: $0) }
-                let firstPageCount = documents.first?.pageCount
-                let anyLocked = documents.contains(where: { $0.isLocked }) || documents.count != files.count
-                return (size, firstPageCount, anyLocked)
+                var firstPageCount: Int?
+                var problems: [(url: URL, reason: String)] = []
+                for url in files {
+                    guard let document = PDFDocument(url: url) else {
+                        problems.append((url, "can’t be opened"))
+                        continue
+                    }
+                    if document.isLocked {
+                        problems.append((url, "is password-protected"))
+                    } else if firstPageCount == nil {
+                        firstPageCount = document.pageCount
+                    }
+                }
+                return (size, firstPageCount, problems)
             }.value
             await MainActor.run {
                 guard self.currentURLs == files else { return }
                 self.cachedTotalSize = stats.0
                 self.cachedPageCount = stats.1
-                self.isDocumentLocked = stats.2
+                self.problemFiles = stats.2
                 self.isLoadingStats = false
             }
         }
@@ -398,11 +409,22 @@ public struct PDFCompressDialogView: View {
     // MARK: - Footer
     private var footerView: some View {
         VStack(spacing: 8) {
-            if isDocumentLocked {
-                Label("This PDF is password-protected. Locked documents cannot be compressed.", systemImage: "lock.fill")
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if !problemFiles.isEmpty {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(problemSummary)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    if problemFiles.count < currentURLs.count {
+                        Button(problemFiles.count == 1 ? "Leave It Out" : "Leave Them Out") {
+                            let left = Set(problemFiles.map(\.url))
+                            currentURLs.removeAll { left.contains($0) }
+                            recalculateStats()
+                        }
+                        .controlSize(.small)
+                    }
+                }
             }
 
             HStack {
@@ -417,10 +439,21 @@ public struct PDFCompressDialogView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(isLoadingStats || cachedPageCount == nil || isDocumentLocked)
+                .disabled(isLoadingStats || cachedPageCount == nil || !problemFiles.isEmpty)
                 .accessibilityLabel("Start PDF compression")
             }
         }
+    }
+
+    /// "This PDF is password-protected and can't be compressed." or, for a
+    /// batch, which files and why.
+    private var problemSummary: String {
+        if currentURLs.count == 1, let only = problemFiles.first {
+            return "This PDF \(only.reason) and can’t be compressed."
+        }
+        let listed = problemFiles.prefix(3).map { "“\($0.url.lastPathComponent)” \($0.reason)" }
+        let more = problemFiles.count > 3 ? Inflect.string(", and ^[\(problemFiles.count - 3) more PDF](inflect: true) can’t be used") : ""
+        return listed.joined(separator: "; ") + more + "."
     }
 
     private func chooseOutputDirectory() {

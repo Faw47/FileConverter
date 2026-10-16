@@ -253,10 +253,11 @@ struct PresetPickerView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let preset = effectivePreset {
-                Text(DestinationDescription.sentence(for: preset, sources: recognized))
+                Text([DestinationDescription.sentence(for: preset, sources: recognized),
+                      DestinationDescription.metadataNote(for: preset)].compactMap { $0 }.joined(separator: " "))
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(3)
                     .truncationMode(.middle)
             }
 
@@ -368,6 +369,20 @@ private struct MixedBatchView: View {
         PresetValidator.compatiblePresets(forURLs: urls)
     }
 
+    /// The chosen presets' photo and video notes, without repeats.
+    private var metadataNote: String? {
+        var notes: [String] = []
+        for group in groups where included.contains(group.category) {
+            let options = presets(for: group.urls)
+            let id = choices[group.category] ?? options.first?.id
+            guard let preset = options.first(where: { $0.id == id }),
+                  let note = DestinationDescription.metadataNote(for: preset),
+                  !notes.contains(note) else { continue }
+            notes.append(note)
+        }
+        return notes.isEmpty ? nil : notes.joined(separator: " ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("These files are of different kinds. Choose a preset for each kind, or uncheck a kind to leave it out.")
@@ -406,6 +421,13 @@ private struct MixedBatchView: View {
                 }
             }
             .formStyle(.grouped)
+            if let note = metadataNote {
+                Text(note)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
+            }
             Divider()
             HStack {
                 Spacer()

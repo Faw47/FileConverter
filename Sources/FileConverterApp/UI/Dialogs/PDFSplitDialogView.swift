@@ -495,6 +495,12 @@ public struct PDFSplitDialogView: View {
                 TextField("Pages", text: $selectedPagesText, prompt: Text("1-3, 5"))
                     .onSubmit { applySelectedPagesText() }
                 VStack(alignment: .leading, spacing: 8) {
+                    if batchItems.count > 1, let firstURL {
+                        Text("These are the pages of “\(firstURL.lastPathComponent)”. The same page numbers are taken from every PDF; a PDF without some of them gives only the pages it has.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     HStack {
                         Text("\(selectedPages.count) of \(totalPages) selected")
                             .foregroundStyle(.secondary)

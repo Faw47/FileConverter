@@ -129,6 +129,14 @@ public enum SnapshotRunner {
                 snap("queue_rows", size: CGSize(width: 640, height: 560), appearances: appearances, to: outURL) {
                     List(jobs) { JobRowView(job: $0) }.listStyle(.inset)
                 }
+                // The main window with rows (finished ones only, so nothing
+                // runs and nothing is saved); the queue is put back after.
+                let realJobs = ConversionQueue.shared.jobs
+                ConversionQueue.shared.setJobsForTesting(jobs.filter(\.state.isTerminal))
+                snap("main_queue", size: CGSize(width: 640, height: 500), appearances: appearances, to: outURL) {
+                    FileConverterMainView().environmentObject(AppState.shared)
+                }
+                ConversionQueue.shared.setJobsForTesting(realJobs)
             }
             snap("new_preset", size: CGSize(width: 640, height: 620), appearances: appearances, to: outURL) {
                 NewPresetWizardView { _ in }

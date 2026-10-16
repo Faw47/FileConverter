@@ -28,6 +28,20 @@ enum DestinationDescription {
         )
     }
 
+    /// What happens to camera and location details, for photos and videos,
+    /// so removing them is never a surprise. Nil when nothing is removed.
+    static func metadataNote(for preset: ConversionPreset) -> String? {
+        guard preset.category == .image || preset.category == .video else { return nil }
+        let settings = EffectivePresetResolver.resolve(preset: preset)
+        if !settings.preserveMetadata {
+            return "Camera details and location are removed."
+        }
+        guard settings.removeLocationData.value else { return nil }
+        return settings.removeLocationData.provenance == .presetOverride
+            ? "Location is removed, as this preset says."
+            : "Location is removed. You can keep it in General settings."
+    }
+
     /// One sentence for a dialog footer, e.g. "Saves “Report-web.jpg” next
     /// to the original." With several files the name is an example.
     static func sentence(for preset: ConversionPreset, sources: [URL]) -> String {

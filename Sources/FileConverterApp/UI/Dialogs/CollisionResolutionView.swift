@@ -32,15 +32,16 @@ struct CollisionResolutionView: View {
             .frame(minHeight: 160)
 
             HStack {
-                Button("Cancel") {
+                // Says what it does: these conversions stop. Nothing on disk
+                // changes either way.
+                Button(conflicts.count == 1 ? "Cancel Conversion" : "Cancel Conversions") {
                     for conflict in conflicts {
                         queue.cancelJob(id: conflict.jobID)
                     }
                     onFinished()
                 }
                 .keyboardShortcut(.cancelAction)
-                .accessibilityLabel("Cancel collision resolution")
-                .help("Cancel these conversions")
+                .help("Stop converting these files; existing files are left as they are")
 
                 Spacer()
 
