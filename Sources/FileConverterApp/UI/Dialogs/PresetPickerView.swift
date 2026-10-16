@@ -91,7 +91,14 @@ struct PresetPickerView: View {
             } else if recognized.isEmpty {
                 unsupportedOnly
             } else if isMixed {
-                MixedBatchView(groups: groups, onCancel: onCancel, onConvert: onConvert)
+                MixedBatchView(
+                    groups: groups,
+                    options: AnyView(optionPickers(showQuality: true)),
+                    applyingOverrides: applyingOverrides,
+                    onCancel: onCancel,
+                    onConvert: onConvert,
+                    onManagePresets: onManagePresets
+                )
             } else if compatible.isEmpty {
                 noPresets
             } else {
@@ -222,7 +229,12 @@ struct PresetPickerView: View {
     // MARK: - Footer
 
     private var effectivePreset: ConversionPreset? {
-        guard var preset = selectedPreset else { return nil }
+        selectedPreset.map(applyingOverrides)
+    }
+
+    /// This conversion's own choices from "Options for This Conversion".
+    private func applyingOverrides(_ original: ConversionPreset) -> ConversionPreset {
+        var preset = original
         var inheritance = preset.resolvedInheritance
         switch locationOverride {
         case .preset: break
@@ -241,6 +253,7 @@ struct PresetPickerView: View {
             }
         }
         preset.inheritance = inheritance
+        guard Self.takesQualityOverride(preset) else { return preset }
         switch qualityOverride {
         case .preset: break
         case .smaller: preset.quality = .low
@@ -248,6 +261,32 @@ struct PresetPickerView: View {
         case .higher: preset.quality = .veryHigh
         }
         return preset
+    }
+
+    static func takesQualityOverride(_ preset: ConversionPreset) -> Bool {
+        !preset.isInteractiveWorkflow && preset.category != .document
+    }
+
+    /// "Save to" and "Quality", shared by single-kind and mixed batches.
+    @ViewBuilder
+    private func optionPickers(showQuality: Bool) -> some View {
+        Picker("Save to", selection: $locationOverride) {
+            Text("As the preset says").tag(LocationOverride.preset)
+            Text("Same folder as the original").tag(LocationOverride.sameFolder)
+            Text("Downloads").tag(LocationOverride.downloads)
+            Text(customFolder.map { "“\($0.lastPathComponent)”" } ?? "Choose a Folder…").tag(LocationOverride.chosen)
+        }
+        .onChange(of: locationOverride) { _, newValue in
+            if newValue == .chosen && customFolder == nil { chooseFolder() }
+        }
+        if showQuality {
+            Picker("Quality", selection: $qualityOverride) {
+                Text("As the preset says").tag(QualityOverride.preset)
+                Text("Smaller file").tag(QualityOverride.smaller)
+                Text("Balanced").tag(QualityOverride.balanced)
+                Text("Higher quality").tag(QualityOverride.higher)
+            }
+        }
     }
 
     private var footer: some View {
@@ -263,23 +302,7 @@ struct PresetPickerView: View {
 
             DisclosureGroup("Options for This Conversion", isExpanded: $showingOptions) {
                 Form {
-                    Picker("Save to", selection: $locationOverride) {
-                        Text("As the preset says").tag(LocationOverride.preset)
-                        Text("Same folder as the original").tag(LocationOverride.sameFolder)
-                        Text("Downloads").tag(LocationOverride.downloads)
-                        Text(customFolder.map { "“\($0.lastPathComponent)”" } ?? "Choose a Folder…").tag(LocationOverride.chosen)
-                    }
-                    .onChange(of: locationOverride) { _, newValue in
-                        if newValue == .chosen && customFolder == nil { chooseFolder() }
-                    }
-                    if !(selectedPreset?.isInteractiveWorkflow ?? false), selectedPreset?.category != .document {
-                        Picker("Quality", selection: $qualityOverride) {
-                            Text("As the preset says").tag(QualityOverride.preset)
-                            Text("Smaller file").tag(QualityOverride.smaller)
-                            Text("Balanced").tag(QualityOverride.balanced)
-                            Text("Higher quality").tag(QualityOverride.higher)
-                        }
-                    }
+                    optionPickers(showQuality: selectedPreset.map(Self.takesQualityOverride) ?? false)
                 }
                 .formStyle(.columns)
                 .padding(.top, 6)
@@ -359,14 +382,23 @@ struct PresetPickerView: View {
 /// Convert button.
 private struct MixedBatchView: View {
     let groups: [(category: FormatCategory, urls: [URL])]
+    let options: AnyView
+    let applyingOverrides: (ConversionPreset) -> ConversionPreset
     let onCancel: () -> Void
     let onConvert: ([(urls: [URL], preset: ConversionPreset)]) -> Void
+    let onManagePresets: () -> Void
 
     @State private var choices: [FormatCategory: UUID] = [:]
     @State private var included: Set<FormatCategory> = []
 
     private func presets(for urls: [URL]) -> [ConversionPreset] {
         PresetValidator.compatiblePresets(forURLs: urls)
+    }
+
+    /// "Clip.mov", "a.jpg, b.jpg", or "a.jpg, b.jpg, and 3 more".
+    static func names(_ urls: [URL]) -> String {
+        let shown = urls.prefix(2).map(\.lastPathComponent).joined(separator: ", ")
+        return urls.count > 2 ? "\(shown), and \(urls.count - 2) more" : shown
     }
 
     /// The chosen presets' photo and video notes, without repeats.
@@ -376,7 +408,7 @@ private struct MixedBatchView: View {
             let options = presets(for: group.urls)
             let id = choices[group.category] ?? options.first?.id
             guard let preset = options.first(where: { $0.id == id }),
-                  let note = DestinationDescription.metadataNote(for: preset),
+                  let note = DestinationDescription.metadataNote(for: applyingOverrides(preset)),
                   !notes.contains(note) else { continue }
             notes.append(note)
         }
@@ -397,7 +429,14 @@ private struct MixedBatchView: View {
                     )
                     HStack {
                         Toggle(isOn: isIncluded) {
-                            Text(Inflect.string("\(group.category.displayName): ^[\(group.urls.count) file](inflect: true)"))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(Inflect.string("\(group.category.displayName): ^[\(group.urls.count) file](inflect: true)"))
+                                Text(Self.names(group.urls))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
                         }
                         .toggleStyle(.checkbox)
                         .disabled(options.isEmpty)
@@ -419,6 +458,9 @@ private struct MixedBatchView: View {
                         }
                     }
                 }
+                Section("Options for This Conversion") {
+                    options
+                }
             }
             .formStyle(.grouped)
             if let note = metadataNote {
@@ -430,6 +472,7 @@ private struct MixedBatchView: View {
             }
             Divider()
             HStack {
+                Button("Manage Presets…", action: onManagePresets)
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
@@ -439,7 +482,7 @@ private struct MixedBatchView: View {
                         let options = presets(for: group.urls)
                         let id = choices[group.category] ?? options.first?.id
                         guard let preset = options.first(where: { $0.id == id }) else { return nil }
-                        return (group.urls, preset)
+                        return (group.urls, applyingOverrides(preset))
                     }
                     onConvert(work)
                 }

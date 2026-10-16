@@ -51,19 +51,16 @@ public struct FileConverterMainView: View {
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 0) {
-            if !appState.uncompletedJournalEntries.isEmpty {
-                interruptedRecoveryBanner
-            }
-
+        Group {
             if queue.jobs.isEmpty {
                 DropZoneView(onSelectFiles: openFilesDialog, isDropTargeted: $dropTargeted)
             } else {
                 ConversionQueueView()
                     .environmentObject(appState)
-                dropHintBar
+                    .edgeBar(.bottom) { dropHint }
             }
         }
+        .edgeBar(.top, isPresented: !appState.uncompletedJournalEntries.isEmpty) { interruptedRecovery }
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: 10)
@@ -96,12 +93,10 @@ public struct FileConverterMainView: View {
             return !providers.isEmpty
         }
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button(action: openFilesDialog) {
-                    Label("Add Files…", systemImage: "plus")
-                }
-                .help(coordinator.isPresenting ? "Finish the open dialog first; your files will be added next" : "Choose files to convert (⌘O)")
-                .accessibilityLabel("Add Files to Convert")
+            // With rows, the list adds this after its own controls so it
+            // stays the last button.
+            if queue.jobs.isEmpty {
+                ToolbarItem { AddFilesButton() }
             }
         }
         .sheet(item: Binding(
@@ -333,60 +328,110 @@ public struct FileConverterMainView: View {
     }
 
     /// Once the list has rows the empty-state drop target is gone; this
-    /// status bar keeps saying the window still takes files.
-    private var dropHintBar: some View {
-        VStack(spacing: 0) {
-            Divider()
-            HStack {
-                Text("Drop files anywhere in this window to convert them.")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer()
-                Button("Choose Files…", action: openFilesDialog)
-            }
+    /// bar keeps saying the window still takes files.
+    private var dropHint: some View {
+        Text("Drop files anywhere in this window to convert them, or click + above.")
             .font(.callout)
-            .controlSize(.small)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-        }
-        .background(.bar)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
     }
 
     // MARK: - Interrupted conversions
 
     /// One line, like a Finder or Mail info bar: what happened and the two
     /// things the user can do about it.
-    private var interruptedRecoveryBanner: some View {
+    private var interruptedRecovery: some View {
         let entries = appState.uncompletedJournalEntries
         let names = entries.prefix(2).map { URL(fileURLWithPath: $0.sourceURLPath).lastPathComponent }
         let detail = entries.count > 2
             ? "\(names.joined(separator: ", ")) and \(entries.count - 2) more"
             : names.joined(separator: " and ")
-        return VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.yellow)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(Inflect.string("^[\(entries.count) conversion](inflect: true) stopped when File Converter quit"))
-                        .font(.callout.weight(.medium))
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer()
-                Button("Convert Again") { appState.retryInterruptedConversions() }
-                Button("Dismiss") { appState.dismissAllJournalRecovery() }
-                    .accessibilityLabel("Dismiss interrupted conversion alerts")
+        return HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(Inflect.string("^[\(entries.count) conversion](inflect: true) stopped when File Converter quit"))
+                    .font(.callout.weight(.medium))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
+            Spacer()
+            Button("Convert Again") { appState.retryInterruptedConversions() }
+                .edgeBarButtonStyle()
+            Button("Dismiss") { appState.dismissAllJournalRecovery() }
+                .edgeBarButtonStyle()
+                .accessibilityLabel("Dismiss interrupted conversion alerts")
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Opens the file chooser (the window handles it, as for ⌘O).
+struct AddFilesButton: View {
+    @ObservedObject private var coordinator = WorkflowPresentationCoordinator.shared
+
+    var body: some View {
+        Button {
+            NotificationCenter.default.post(name: NSNotification.Name("OpenFileConverterOpenPanel"), object: nil)
+        } label: {
+            Label("Add Files…", systemImage: "plus")
+        }
+        .help(coordinator.isPresenting ? "Finish the open dialog first; your files will be added next" : "Choose files to convert (⌘O)")
+        .accessibilityLabel("Add Files to Convert")
+    }
+}
+
+/// A bar along the top or bottom of the window's content. On macOS 26 and
+/// later it floats over scrolling content with the system scroll-edge
+/// effect, as in Finder and Mail; earlier systems get a bar with a divider.
+private struct EdgeBar<Bar: View>: ViewModifier {
+    let edge: VerticalEdge
+    let isPresented: Bool
+    @ViewBuilder let bar: () -> Bar
+
+    func body(content: Content) -> some View {
+        if !isPresented {
+            content
+        } else if #available(macOS 26, *) {
+            content.safeAreaBar(edge: edge) {
+                bar()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+            }
+        } else {
+            VStack(spacing: 0) {
+                if edge == .top { fallbackBar; Divider() }
+                content
+                if edge == .bottom { Divider(); fallbackBar }
+            }
+        }
+    }
+
+    private var fallbackBar: some View {
+        bar()
             .controlSize(.small)
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            Divider()
+            .padding(.vertical, 6)
+            .background(.bar)
+    }
+}
+
+extension View {
+    fileprivate func edgeBar<Bar: View>(_ edge: VerticalEdge, isPresented: Bool = true, @ViewBuilder _ bar: @escaping () -> Bar) -> some View {
+        modifier(EdgeBar(edge: edge, isPresented: isPresented, bar: bar))
+    }
+
+    @ViewBuilder
+    fileprivate func edgeBarButtonStyle() -> some View {
+        if #available(macOS 26, *) {
+            buttonStyle(.glass)
+        } else {
+            self
         }
-        .background(.bar)
-        .accessibilityElement(children: .contain)
     }
 }

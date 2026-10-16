@@ -71,15 +71,9 @@ public struct ConversionQueueView: View {
     // MARK: - Body
 
     public var body: some View {
-        VStack(spacing: 0) {
-            if !queue.jobs.isEmpty {
-                headerBar
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                Divider()
-                list
-            }
-        }
+        list
+            .navigationSubtitle(statusText)
+            .toolbar { queueToolbar }
         .confirmationDialog(
             "Cancel \(queue.cancelableCount) conversions?",
             isPresented: $showingCancelConfirmation,
@@ -182,62 +176,96 @@ public struct ConversionQueueView: View {
         return Inflect.string("Cancel ^[\(escapeCancelIDs.count) conversion](inflect: true)?")
     }
 
-    // MARK: - Header
+    // MARK: - Status and toolbar
 
-    private var headerBar: some View {
-        let current = currentBatches
-        let jobs = current.flatMap(\.jobs)
-        let converting = jobs.filter { $0.state.isActive }.count
-        let waiting = jobs.filter { $0.state == .queued || $0.state == .awaitingCollision }.count
-        let completed = current.reduce(0) { $0 + $1.completed }
-        let failed = current.reduce(0) { $0 + $1.failed }
-        let progress = ConversionQueue.activeBatchProgress(queue.jobs)
+    private struct Counts {
+        var converting = 0, waiting = 0, completed = 0, failed = 0, total = 0
+    }
 
-        return HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(headerTitle(converting: converting, waiting: waiting, completed: completed, failed: failed, total: jobs.count))
-                    .font(.headline)
-                if let progress {
-                    ProgressView(value: progress.fraction)
-                        .frame(maxWidth: 220)
-                        .accessibilityLabel("Batch progress")
-                        .accessibilityValue("\(Int(progress.fraction * 100)) percent")
-                }
-                if settings.enableNotifications && settings.notificationAuthorizationState == .denied {
-                    Label("Notifications are off in System Settings", systemImage: "bell.slash")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            if waiting > 0 || queue.isPaused {
-                Button(queue.isPaused ? "Resume" : "Pause") {
-                    if queue.isPaused { queue.resume() } else { queue.pause() }
-                }
-                .help(queue.isPaused ? "Start the waiting conversions (⌥⌘P)" : "Finish the current files, then wait (⌥⌘P)")
-            }
-            if queue.cancelableCount > 0 {
-                Button("Cancel All") {
-                    if queue.cancelableCount > 1 { showingCancelConfirmation = true } else { queue.cancelAll() }
-                }
-            }
-            if queue.failedCount > 0 && queue.jobs.contains(where: { if case .failed = $0.state { return !$0.isFromHistory }; return false }) {
-                Button("Retry All Failed") { retryAllFailed() }
-                    .help("Try every failed conversion again (⇧⌘R)")
-            }
-            if completed > 0 {
-                Button("Show in Finder") { reveal(Set(jobs.map(\.id))) }
-                    .help("Show this batch's converted files in Finder")
-            }
-            if queue.hasClearableJobs {
-                Button("Clear") {
-                    queue.clearCompleted()
-                    selection.removeAll()
-                }
-                .help("Remove finished conversions from the list (⌘K)")
-            }
+    private var counts: Counts {
+        let jobs = currentBatches.flatMap(\.jobs)
+        return Counts(
+            converting: jobs.filter { $0.state.isActive }.count,
+            waiting: jobs.filter { $0.state == .queued || $0.state == .awaitingCollision }.count,
+            completed: currentBatches.reduce(0) { $0 + $1.completed },
+            failed: currentBatches.reduce(0) { $0 + $1.failed },
+            total: jobs.count
+        )
+    }
+
+    /// Shown under the window title, like Finder's item count.
+    private var statusText: String {
+        let c = counts
+        var text = headerTitle(converting: c.converting, waiting: c.waiting, completed: c.completed, failed: c.failed, total: c.total)
+        if let progress = ConversionQueue.activeBatchProgress(queue.jobs), c.converting + c.waiting > 0 {
+            text += " · \(Int(progress.fraction * 100))%"
         }
-        .controlSize(.small)
+        if settings.enableNotifications && settings.notificationAuthorizationState == .denied {
+            text += " · Notifications are off in System Settings"
+        }
+        return text
+    }
+
+    private var hasRetryableFailures: Bool {
+        queue.jobs.contains { if case .failed = $0.state { return !$0.isFromHistory }; return false }
+    }
+
+    /// Always the same buttons in the same places, dimmed when they don't
+    /// apply, so nothing shifts as conversions start and finish. Groups
+    /// become separate glass capsules on macOS 26 and later.
+    @ToolbarContentBuilder
+    private var queueToolbar: some ToolbarContent {
+        ToolbarItemGroup {
+            Button {
+                if queue.isPaused { queue.resume() } else { queue.pause() }
+            } label: {
+                Label(queue.isPaused ? "Resume" : "Pause", systemImage: queue.isPaused ? "play.fill" : "pause.fill")
+            }
+            .help(queue.isPaused ? "Start the waiting conversions (⌥⌘P)" : "Finish the current files, then wait (⌥⌘P)")
+            .disabled(!queue.isPaused && counts.waiting == 0)
+
+            Button {
+                if queue.cancelableCount > 1 { showingCancelConfirmation = true } else { queue.cancelAll() }
+            } label: {
+                Label("Cancel All", systemImage: "stop.fill")
+            }
+            .help("Stop every conversion that hasn't finished (⌘.)")
+            .disabled(queue.cancelableCount == 0)
+        }
+        toolbarGap
+        ToolbarItemGroup {
+            Button(action: retryAllFailed) {
+                Label("Retry Failed", systemImage: "arrow.clockwise")
+            }
+            .help("Try every failed conversion again (⇧⌘R)")
+            .disabled(!hasRetryableFailures)
+
+            Button {
+                reveal(Set(currentBatches.flatMap(\.jobs).map(\.id)))
+            } label: {
+                Label("Show in Finder", systemImage: "folder")
+            }
+            .help("Show this batch's converted files in Finder")
+            .disabled(counts.completed == 0)
+
+            Button {
+                queue.clearCompleted()
+                selection.removeAll()
+            } label: {
+                Label("Clear Finished", systemImage: "checklist.checked")
+            }
+            .help("Remove finished conversions from the list (⌘K)")
+            .disabled(!queue.hasClearableJobs)
+        }
+        toolbarGap
+        ToolbarItem { AddFilesButton() }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarGap: some ToolbarContent {
+        if #available(macOS 26, *) {
+            ToolbarSpacer(.fixed)
+        }
     }
 
     private func headerTitle(converting: Int, waiting: Int, completed: Int, failed: Int, total: Int) -> String {
