@@ -34,6 +34,7 @@
 		31B2171DF2C724174533615A /* PresetCorruptionAndRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FAB835AE2882C0D5055209F /* PresetCorruptionAndRecoveryTests.swift */; };
 		329F8326FE9EA3FC3D6437FD /* PresetEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8D89E5E1FC2B3AF468CE170 /* PresetEditorView.swift */; };
 		352E928F537FB2E5E653E2AF /* ConversionQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632DF3C51A1614507C0D50CB /* ConversionQueueView.swift */; };
+		3638D64AD560FA8C8940659C /* WatchFoldersSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF7132450B97B6C514C2D4F /* WatchFoldersSection.swift */; };
 		39BFFA79B6E23F8637D87B30 /* FinderIntegrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AEABD70E4F177405FB0DFBB /* FinderIntegrationView.swift */; };
 		39FF2D57E4D6F6FADEBF7C3F /* OutputSizePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F1F283AF896D84FB581268 /* OutputSizePreview.swift */; };
 		3D3EFDAD5B9DDB2834FD8EB1 /* HelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801990DCDE5BA048BBCE733C /* HelpView.swift */; };
@@ -47,6 +48,7 @@
 		4CD55D6D4322D0A260A92F42 /* ConversionBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A185352B72B877A1BF14308 /* ConversionBackendTests.swift */; };
 		4EE4226319C87F12E349FDAB /* FFmpegBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279296A7335E4F1D44B5DB76 /* FFmpegBuilderTests.swift */; };
 		4FF08E186C31A85A4149A807 /* PresetMigrationV3Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCFC81C66C4EF013EC500051 /* PresetMigrationV3Tests.swift */; };
+		50A559653D09667D38A146F8 /* FolderWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7ABFF0082CBE47478E8D2A4 /* FolderWatcher.swift */; };
 		521EB4AF30A2943DCD854C74 /* AppSceneRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E85CD0CC907C98BCD4E27871 /* AppSceneRulesTests.swift */; };
 		54F94519D4C6305D00AA04CE /* ExternalBackendProcessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C435D3CFEEBC25F8E79567A4 /* ExternalBackendProcessTests.swift */; };
 		566FE2EA56DF8A9DB9FF69C1 /* QTAFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34075D7C7DBF0D24B56DB09F /* QTAFormatTests.swift */; };
@@ -71,6 +73,7 @@
 		7CCDE03ED7147EF85936B592 /* PDFSplitDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1C765D090CB7319C8A0BA1 /* PDFSplitDialogView.swift */; };
 		839225C39784EB65CD1EF317 /* FinderHostResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B203B8F93ED765AE2190AECC /* FinderHostResolverTests.swift */; };
 		85FBD19AA9B1C95C6701DB85 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44DF1CBD8B458ED3F956354F /* AppSettings.swift */; };
+		878D221BB6F76FCD455D5D22 /* FolderExpansionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA07E50585CD2107BC2F6803 /* FolderExpansionTests.swift */; };
 		888A04B44684B32DEBDB9744 /* FFmpegOutputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A07DACFBCCEF3827438A3C /* FFmpegOutputTests.swift */; };
 		8941A77DB5C68841F00FF945 /* InterruptedConversionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEDA343FAA5F7EAC10E19381 /* InterruptedConversionTests.swift */; };
 		89F868817057644138AE08A1 /* OutputNamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11222B579A59ED7204A7EA06 /* OutputNamingTests.swift */; };
@@ -88,6 +91,7 @@
 		9A222C49E3CA19334CFFBC30 /* ExternalToolsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B980366D20EC1D96E42D0C1 /* ExternalToolsSettingsView.swift */; };
 		9C29FA51833DDBE148DAC646 /* FileConverterFinderSupport in Frameworks */ = {isa = PBXBuildFile; productRef = B0C2F96AF4FDCFC551847F8E /* FileConverterFinderSupport */; };
 		A3297F56ED5A399AB8CB61BD /* PresetEditorStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4468E84554108A18726282F /* PresetEditorStateTests.swift */; };
+		A8AA025F20F4AC46B1E0C427 /* WatchFolderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A322E210E0ADD1746A18CB7 /* WatchFolderTests.swift */; };
 		B1F3BCFC6D9DCB6720DD7B93 /* FinderMenuTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB4B98618E617B383B9D6A1F /* FinderMenuTests.swift */; };
 		B2CFB31C303FC106AC47E284 /* QoLBugsRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 697B9C7D9530433245C4CA55 /* QoLBugsRegressionTests.swift */; };
 		B3FFFEC3FC7E70F489C7A10F /* TimestampPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90EECED91A8BA3461696DBBA /* TimestampPolicyTests.swift */; };
@@ -157,10 +161,12 @@
 		291E38F0721E59A5E9AA1F00 /* MediaAssertions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaAssertions.swift; sourceTree = "<group>"; };
 		2A185352B72B877A1BF14308 /* ConversionBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionBackendTests.swift; sourceTree = "<group>"; };
 		2A4D6AFE9DC7F28B4351FF5B /* ColdStartAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdStartAdmissionTests.swift; sourceTree = "<group>"; };
+		2AF7132450B97B6C514C2D4F /* WatchFoldersSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchFoldersSection.swift; sourceTree = "<group>"; };
 		2B6EE0706AB0C9C332C8FC30 /* VideoTargetSizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTargetSizeTests.swift; sourceTree = "<group>"; };
 		2EE212909B350A09AECEEEFB /* AppDataIsolationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataIsolationTests.swift; sourceTree = "<group>"; };
 		34075D7C7DBF0D24B56DB09F /* QTAFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QTAFormatTests.swift; sourceTree = "<group>"; };
 		371BB29A7BD8D7C20B27D475 /* AppMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMain.swift; sourceTree = "<group>"; };
+		3A322E210E0ADD1746A18CB7 /* WatchFolderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchFolderTests.swift; sourceTree = "<group>"; };
 		3D884AF4939A8770573CB7C2 /* NotificationPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPolicyTests.swift; sourceTree = "<group>"; };
 		3E04D82201458248ECBC9366 /* EffectivePresetResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectivePresetResolverTests.swift; sourceTree = "<group>"; };
 		40BE0546A700050C325752DA /* FileConverterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FileConverterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -232,12 +238,14 @@
 		E1BA703A45B352F7F7987CC4 /* AccessibilityAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityAuditTests.swift; sourceTree = "<group>"; };
 		E1F1F283AF896D84FB581268 /* OutputSizePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputSizePreview.swift; sourceTree = "<group>"; };
 		E85CD0CC907C98BCD4E27871 /* AppSceneRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSceneRulesTests.swift; sourceTree = "<group>"; };
+		EA07E50585CD2107BC2F6803 /* FolderExpansionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderExpansionTests.swift; sourceTree = "<group>"; };
 		EB4B98618E617B383B9D6A1F /* FinderMenuTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderMenuTests.swift; sourceTree = "<group>"; };
 		F15A65C5BF8AC675B87F75AB /* CorrectnessRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectnessRegressionTests.swift; sourceTree = "<group>"; };
 		F27C6050409BD5029ABD8097 /* FileConverter-master */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "FileConverter-master"; path = .; sourceTree = SOURCE_ROOT; };
 		F4468E84554108A18726282F /* PresetEditorStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetEditorStateTests.swift; sourceTree = "<group>"; };
 		F627544065B9FC2789727837 /* BackendIsolationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendIsolationTests.swift; sourceTree = "<group>"; };
 		F67584430B608EA5F154CD64 /* ConversionRequestContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionRequestContractTests.swift; sourceTree = "<group>"; };
+		F7ABFF0082CBE47478E8D2A4 /* FolderWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderWatcher.swift; sourceTree = "<group>"; };
 		F95E8A9382BBDD25311B4261 /* AVFoundationPCMSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AVFoundationPCMSettingsTests.swift; sourceTree = "<group>"; };
 		F9FF2DEF52502896869616BE /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		FC769BDA488B4A019E9E62F9 /* DocumentTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTypesTests.swift; sourceTree = "<group>"; };
@@ -358,6 +366,7 @@
 				AB443A3B555830E18719F430 /* FinderIPCDrainTests.swift */,
 				7A3CC6251CB7DCBA702D7F83 /* FinderMenuRelevanceTests.swift */,
 				EB4B98618E617B383B9D6A1F /* FinderMenuTests.swift */,
+				EA07E50585CD2107BC2F6803 /* FolderExpansionTests.swift */,
 				138A16C2AE1ACB54EE936E4D /* FormatDetectionEdgeCaseTests.swift */,
 				BACC3A123A245EC05FC9658B /* FormatRegistryTests.swift */,
 				5D63128181B04BEBFBD3B590 /* HelpContentTests.swift */,
@@ -387,6 +396,7 @@
 				9B71904E8E8496292224CCFD /* StagingArtifactManifestTests.swift */,
 				90EECED91A8BA3461696DBBA /* TimestampPolicyTests.swift */,
 				2B6EE0706AB0C9C332C8FC30 /* VideoTargetSizeTests.swift */,
+				3A322E210E0ADD1746A18CB7 /* WatchFolderTests.swift */,
 				D1A59ABB9BE480AAA6056771 /* WebPEncodingTests.swift */,
 				7E877B12124A413B66BD9B86 /* WorkflowPresentationCoordinatorTests.swift */,
 			);
@@ -445,6 +455,7 @@
 				5182D156CF2AFD6C8EAF8307 /* Queue */,
 				94309FE40377B1220421DB97 /* DockProgressController.swift */,
 				D11A33C2083497C1B210C65C /* FileConverterMainView.swift */,
+				F7ABFF0082CBE47478E8D2A4 /* FolderWatcher.swift */,
 				7ADCCC890CA30CE76DB9EF0E /* GlassBars.swift */,
 				801990DCDE5BA048BBCE733C /* HelpView.swift */,
 				8E67EDD57AF54B0A8CBC872A /* Inflect.swift */,
@@ -493,6 +504,7 @@
 				9483C4AB840BC823C3814801 /* SettingsComponents.swift */,
 				9769F9673E8312F4CCC36F8C /* SettingsView.swift */,
 				FDF3D38F14536AB422C8BEED /* SnapshotRunner.swift */,
+				2AF7132450B97B6C514C2D4F /* WatchFoldersSection.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -691,6 +703,7 @@
 				59E207BF141E72371BDA3822 /* FinderIPCDrainTests.swift in Sources */,
 				162633BD2DF7C225EA78164B /* FinderMenuRelevanceTests.swift in Sources */,
 				B1F3BCFC6D9DCB6720DD7B93 /* FinderMenuTests.swift in Sources */,
+				878D221BB6F76FCD455D5D22 /* FolderExpansionTests.swift in Sources */,
 				935BA804CC7D2AEC1878DE48 /* FormatDetectionEdgeCaseTests.swift in Sources */,
 				D611114373802578868F74CA /* FormatRegistryTests.swift in Sources */,
 				1140F6590DFA9B93E84A8AE5 /* HelpContentTests.swift in Sources */,
@@ -723,6 +736,7 @@
 				12DFCD658666CC43A43E1758 /* TestFixtures.swift in Sources */,
 				B3FFFEC3FC7E70F489C7A10F /* TimestampPolicyTests.swift in Sources */,
 				6D357E0517B2D23C421D1B2C /* VideoTargetSizeTests.swift in Sources */,
+				A8AA025F20F4AC46B1E0C427 /* WatchFolderTests.swift in Sources */,
 				005D40BD5AEF34CEA231984D /* WebPEncodingTests.swift in Sources */,
 				C13CA2452862E25F3EAB0A8B /* WorkflowPresentationCoordinatorTests.swift in Sources */,
 			);
@@ -755,6 +769,7 @@
 				9A222C49E3CA19334CFFBC30 /* ExternalToolsSettingsView.swift in Sources */,
 				E89D9EC36711FC89F83C7CA0 /* FileConverterMainView.swift in Sources */,
 				39BFFA79B6E23F8637D87B30 /* FinderIntegrationView.swift in Sources */,
+				50A559653D09667D38A146F8 /* FolderWatcher.swift in Sources */,
 				93439141BEF8B359482C8B3A /* GeneralSettingsView.swift in Sources */,
 				D29963D2FBEC31DC92EFDCA3 /* GlassBars.swift in Sources */,
 				3D3EFDAD5B9DDB2834FD8EB1 /* HelpView.swift in Sources */,
@@ -771,6 +786,7 @@
 				D4277B59309AC2649486F1EA /* SettingsComponents.swift in Sources */,
 				C68461C0C1262E1309861CC7 /* SettingsView.swift in Sources */,
 				D3C986F9AA88AB4AB2B98069 /* SnapshotRunner.swift in Sources */,
+				3638D64AD560FA8C8940659C /* WatchFoldersSection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -17,6 +17,7 @@ public struct GeneralSettingsView: View {
             fileDetailsSection
             ConversionSpeedSection()
             afterConvertingSection
+            WatchFoldersSection()
             openingFilesSection
             Section {
                 HStack {

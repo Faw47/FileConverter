@@ -69,6 +69,9 @@ public enum SnapshotRunner {
             }
         }
 
+        snap("settings_watched_folders", size: CGSize(width: 760, height: 360), appearances: appearances, to: outURL) {
+            Form { WatchFoldersSection() }.formStyle(.grouped)
+        }
         snap("help", size: CGSize(width: 620, height: 900), appearances: appearances, to: outURL) { HelpView() }
         snap("main_empty", size: CGSize(width: 640, height: 500), appearances: appearances, to: outURL) {
             FileConverterMainView().environmentObject(AppState.shared)

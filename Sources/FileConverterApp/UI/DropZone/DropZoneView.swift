@@ -14,9 +14,9 @@ public struct DropZoneView: View {
 
     public var body: some View {
         ContentUnavailableView {
-            Label("Drop Files to Convert", systemImage: "arrow.down.doc")
+            Label("Drop Files or Folders to Convert", systemImage: "arrow.down.doc")
         } description: {
-            Text("Or select files in Finder, right-click, and choose File Converter.")
+            Text("Folders convert everything inside them. Or select files in Finder, right-click, and choose File Converter.")
         } actions: {
             Button("Choose Files…") { onSelectFiles?() }
         }

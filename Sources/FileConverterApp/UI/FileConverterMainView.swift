@@ -175,9 +175,43 @@ public struct FileConverterMainView: View {
         }
     }
 
+    /// Folders become the convertible files inside them (subfolders too),
+    /// found away from the main thread; then the files are checked.
     private func processCandidateURLs(_ candidates: [URL]) {
         let candidates = candidates.filter { !$0.path.isEmpty }
         guard !candidates.isEmpty else { return }
+        let folders = candidates.filter(FolderExpansion.isPlainFolder)
+        guard !folders.isEmpty else {
+            processFiles(candidates, emptyFolderCount: 0, truncated: false)
+            return
+        }
+        let looseFiles = candidates.filter { !folders.contains($0) }
+        Task {
+            let expansion = await Task.detached(priority: .userInitiated) {
+                let accessed = folders.map { $0.startAccessingSecurityScopedResource() }
+                defer { zip(folders, accessed).forEach { if $1 { $0.stopAccessingSecurityScopedResource() } } }
+                return FolderExpansion.convertibleFiles(in: folders)
+            }.value
+            processFiles(
+                looseFiles + expansion.files,
+                emptyFolderCount: expansion.files.isEmpty ? folders.count : 0,
+                truncated: expansion.wasTruncated
+            )
+        }
+    }
+
+    private func processFiles(_ candidates: [URL], emptyFolderCount: Int, truncated: Bool) {
+        guard !candidates.isEmpty else {
+            if emptyFolderCount > 0 {
+                conversionErrorDescription = emptyFolderCount == 1
+                    ? "That folder has no files File Converter can convert."
+                    : "Those folders have no files File Converter can convert."
+            }
+            return
+        }
+        if truncated {
+            conversionErrorDescription = "Only the first \(FolderExpansion.fileLimit.formatted()) files are added. Add the rest separately."
+        }
 
         var directoryCount = 0
         var missingCount = 0
@@ -216,7 +250,7 @@ public struct FileConverterMainView: View {
 
         guard !valid.isEmpty else {
             if directoryCount == candidates.count {
-                self.conversionErrorDescription = "Folders cannot be converted directly. Drop individual files instead."
+                self.conversionErrorDescription = "Those folders have no files File Converter can convert."
             } else if missingCount == candidates.count {
                 self.conversionErrorDescription = "Some files could not be found."
             } else if zeroByteCount == candidates.count {
@@ -227,7 +261,7 @@ public struct FileConverterMainView: View {
             return
         }
 
-        self.conversionErrorDescription = nil
+        if !truncated { self.conversionErrorDescription = nil }
         let excludedCount = candidates.count - valid.count
         coordinator.enqueue(.batch(urls: valid, excludedCount: excludedCount))
     }
@@ -240,7 +274,7 @@ public struct FileConverterMainView: View {
         coordinator.isOpenPanelPresented = true
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.prompt = "Choose"
 

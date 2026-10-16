@@ -78,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Conservative startup cleanup of prior session staging artifacts (TASK-028 / SEC-004)
         StagingArtifactManifest.shared.sweepOrphanedArtifacts()
         DockProgressController.shared.start()
+        FolderWatcher.shared.start()
 
         #if DEBUG
         // Visual check of the real Settings scene (not a hosted copy):
