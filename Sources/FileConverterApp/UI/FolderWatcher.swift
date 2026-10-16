@@ -3,8 +3,9 @@ import FileConverterCore
 import Foundation
 
 /// Converts new files that appear in watched folders. Only each folder's
-/// own files count (not subfolders), files already there when watching
-/// starts are left alone, and a file is converted once its size has stopped
+/// own files count (not subfolders), files already there when a folder is
+/// added are left alone, files added while the app was closed are caught up
+/// at start, and a file is converted once its size has stopped
 /// changing, so a copy in progress isn't picked up half-written.
 @MainActor
 final class FolderWatcher: ObservableObject {
@@ -18,9 +19,12 @@ final class FolderWatcher: ObservableObject {
 
     func start() {
         stopAll()
-        for folder in folders where folder.isEnabled {
-            watch(folder)
+        let now = Date()
+        for index in folders.indices where folders[index].isEnabled {
+            watch(folders[index])
+            folders[index].lastChecked = now
         }
+        WatchFolderStore.save(folders)
     }
 
     func add(folderURL: URL, presetID: UUID) {
@@ -55,6 +59,11 @@ final class FolderWatcher: ObservableObject {
         let descriptor = open(folder.path, O_EVTONLY)
         guard descriptor >= 0 else { return }
         known[folder.id] = Set(Self.fileNames(in: folder.url))
+        if let lastChecked = folder.lastChecked {
+            for url in WatchFolder.filesToCatchUp(in: folder.url, since: lastChecked) {
+                waitUntilStable(url, folderID: folder.id, lastSize: -1, checks: 0)
+            }
+        }
         let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: [.write], queue: .main)
         let id = folder.id
         source.setEventHandler { [weak self] in
@@ -70,6 +79,10 @@ final class FolderWatcher: ObservableObject {
         let names = Self.fileNames(in: folder.url)
         let new = Set(names).subtracting(known[id] ?? [])
         known[id, default: []].formUnion(new)
+        if let index = folders.firstIndex(where: { $0.id == id }) {
+            folders[index].lastChecked = Date()
+            WatchFolderStore.save(folders)
+        }
         for name in new {
             waitUntilStable(folder.url.appendingPathComponent(name), folderID: id, lastSize: -1, checks: 0)
         }
@@ -103,13 +116,6 @@ final class FolderWatcher: ObservableObject {
     }
 
     private static func fileNames(in folder: URL) -> [String] {
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: folder,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        return contents
-            .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true }
-            .map(\.lastPathComponent)
+        WatchFolder.files(in: folder).map(\.lastPathComponent)
     }
 }

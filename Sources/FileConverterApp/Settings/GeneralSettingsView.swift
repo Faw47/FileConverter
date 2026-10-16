@@ -12,6 +12,7 @@ public struct GeneralSettingsView: View {
 
     public var body: some View {
         Form {
+            OpenAtLoginSection()
             savingSection
             fileNameSection
             fileDetailsSection

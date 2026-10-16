@@ -55,6 +55,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         isHeadlessBackgroundLaunch
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Opened at login: start quietly, with the menu bar item and no window.
+        if let event = NSAppleEventManager.shared().currentAppleEvent,
+           event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem {
+            isHeadlessBackgroundLaunch = true
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.servicesProvider = self
         UNUserNotificationCenter.current().delegate = self

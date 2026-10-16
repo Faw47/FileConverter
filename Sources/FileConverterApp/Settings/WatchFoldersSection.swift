@@ -27,7 +27,7 @@ struct WatchFoldersSection: View {
         } header: {
             Text("Watched Folders")
         } footer: {
-            FooterText("New files in a watched folder convert on their own with its preset, into a “\(WatchFolder.outputSubfolderName)” folder inside it. Files already there, and files in its subfolders, are left alone. File Converter must be open.")
+            FooterText("New files in a watched folder convert on their own with its preset, into a “\(WatchFolder.outputSubfolderName)” folder inside it. Files already there when you add the folder, and files in its subfolders, are left alone. Files added while File Converter is closed convert the next time it opens; turn on “Open at login” to keep it running.")
         }
     }
 
