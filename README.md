@@ -34,7 +34,11 @@ If this saves you a command-line detour, [star the repository](https://github.co
 
 - **Finder integration:** right-click a supported file or batch and choose a compatible conversion recipe.
 - **Capability-aware menus:** recipes are filtered by source type, destination encoder, installed tool, and reported FFmpeg encoders. Unavailable recipes stay out of the Finder menu.
-- **Drag-and-drop queue:** batch progress, cancellation, retries, conflicts, notifications, and multi-output jobs are handled in one queue.
+- **Drag-and-drop queue:** batch progress, cancellation, retries (also for earlier launches), conflicts, notifications, thumbnails, and multi-output jobs are handled in one queue. Drop a folder to convert everything inside it.
+- **Watched folders:** new files that appear in a chosen folder convert on their own with its preset.
+- **Shortcuts and Siri:** a Convert Files action takes files and a preset and returns the converted files.
+- **PDF tools:** compress (with a size preview), split, rotate, and combine PDFs and images into one PDF.
+- **Size limits:** MP4 – Fit in 10 / 25 / 50 MB picks the bitrate and picture size so a video fits.
 - **Native macOS backends:** AVFoundation/VideoToolbox, ImageIO, and PDFKit cover common paths without extra installs.
 - **Optional power tools:** FFmpeg, ImageMagick, LibreOffice, Ghostscript, and Calibre extend the format matrix when present.
 - **Editable presets:** configure codecs, quality, resolution, audio, metadata, destinations, filename patterns, and collision policy.
@@ -94,7 +98,8 @@ The preset library contains broad format presets plus explicit source-to-destina
 | Artwork files | `SVG → PNG`, `PSD → PNG`, ICNS, ICO |
 | PDF page extraction | `PDF → PNG`, `PDF → JPEG`, `PDF → TIFF`, or one output per page |
 | PDF compression | **Compress PDF** with Ghostscript when installed |
-| Video output | MP4 balanced, 720p MP4, 1080p MP4, smaller MP4, HEVC |
+| PDF pages | **Rotate PDF Right / Left**, **Split PDF**, and File › **Combine into PDF…** |
+| Video output | MP4 balanced, 720p MP4, 1080p MP4, smaller MP4, HEVC, MP4 – Fit in 10 / 25 / 50 MB |
 | Video containers | `MOV → MP4`, `MKV → MP4`, MOV, MKV, WebM, AV1 |
 | Audio output | MP3 at 128/192/320 kbps, AAC/M4A, ALAC, WAV, AIFF, FLAC, Opus, OGG |
 | Audio splitting and size limits | Five-minute MP3 parts or a target file size of 5 MB |
@@ -151,6 +156,10 @@ File Converter is designed to keep the conversion boundary on the Mac:
 - Logs contain milestones and error information, not file contents, bookmark tokens, or IPC keys.
 
 See the [security and privacy model](SECURITY.md) for the implemented threat boundaries, subprocess safeguards, local IPC, and output policy details.
+
+## Release build
+
+`./Scripts/release.sh --check` lists what a public release needs on this Mac: a Developer ID Application certificate and a `notarytool` keychain profile (the script header shows the one-time setup). With both in place, `./Scripts/release.sh [VERSION]` builds, signs with the hardened runtime, makes a DMG, notarizes and staples it, and checks it with Gatekeeper. `FILE_CONVERTER_RELEASE_DRY_RUN=1` runs the same steps with an ad-hoc signature and no notarization.
 
 ## Build and test
 

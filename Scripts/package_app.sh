@@ -18,7 +18,7 @@ for arg in "$@"; do
     *) echo "Usage: $0 [--no-backup] [Debug|Release]" >&2; exit 64 ;;
   esac
 done
-DIST_DIR="${PROJECT_DIR}/dist"
+DIST_DIR="${FILE_CONVERTER_DIST_DIR:-${PROJECT_DIR}/dist}"
 APP_NAME="File Converter"
 BUILD_DIR="$(mktemp -d "/tmp/FileConverterPackageBuild.XXXXXX")"
 ARCHIVE_PATH="${BUILD_DIR}/FileConverter.xcarchive"
