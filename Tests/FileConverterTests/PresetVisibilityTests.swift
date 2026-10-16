@@ -69,7 +69,6 @@ final class PresetVisibilityTests: XCTestCase {
             from: [try BackendHarness.builtIn("video.animated-gif"), try BackendHarness.builtIn("image.png")],
             resolver: BackendResolver(backends: NativeBackendCatalog.makeBackends())
         )
-        XCTAssertEqual(presets.count, 2)
-        XCTAssertEqual(presets.first?.builtInKey, "image.png", "a photo should not default to Animated GIF")
+        XCTAssertEqual(presets.map(\.builtInKey), ["image.png"], "a still photo is never offered Animated GIF")
     }
 }

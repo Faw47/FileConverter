@@ -4,7 +4,7 @@ import Foundation
 /// disk. Stored built-ins keep user edits, so each upgrade changes a field
 /// only when it still holds the value the previous factory version shipped.
 public enum BuiltInPresetUpgrades {
-    public static let currentRevision = 4
+    public static let currentRevision = 5
 
     private struct Upgrade: Sendable {
         let revision: Int
@@ -68,6 +68,35 @@ public enum BuiltInPresetUpgrades {
         "video.mp4-720p": { replace(\.menuName, from: "720p MP4", to: "MP4 – 720p", in: &$0) },
         "video.mp4-high-quality": { replace(\.menuName, from: "MP4 - High Quality", to: "MP4 – High Quality", in: &$0) },
         "video.mp4-smaller": { replace(\.menuName, from: "MP4 - Smaller File", to: "MP4 – Smaller", in: &$0) },
+    ]
+
+    /// Revision 5 renames: long names follow `<Format> (<detail>)`, and the
+    /// rewrap-only MOV/MKV → MP4 presets say what they are next to "MP4".
+    /// Applied only when the stored name is still the old factory name.
+    private static let revision5Renames: [String: @Sendable (inout ConversionPreset) -> Void] = [
+        "video.mp4-1080p": { replace(\.name, from: "MP4 Video (1080p Full HD)", to: "MP4 (1080p)", in: &$0) },
+        "video.mp4-720p": { replace(\.name, from: "MP4 Video (720p Web / Email)", to: "MP4 (720p)", in: &$0) },
+        "video.hevc-hardware": { replace(\.name, from: "HEVC (H.265 Hardware)", to: "HEVC (H.265)", in: &$0) },
+        "video.hevc-smaller": { replace(\.name, from: "HEVC Video (Smaller File - H.265)", to: "HEVC (Smaller File)", in: &$0) },
+        "video.mkv-to-mp4": {
+            replace(\.name, from: "MKV Video to MP4", to: "MKV to MP4 (No Re-encoding When Possible)", in: &$0)
+            replace(\.menuName, from: "MKV → MP4", to: "MP4 – Fast", in: &$0)
+        },
+        "video.mov-to-mp4": {
+            replace(\.name, from: "QuickTime MOV to MP4", to: "MOV to MP4 (No Re-encoding When Possible)", in: &$0)
+            replace(\.menuName, from: "MOV → MP4", to: "MP4 – Fast", in: &$0)
+        },
+        "audio.mp3-320": { replace(\.name, from: "MP3 Audio (320 kbps)", to: "MP3 (320 kbps)", in: &$0) },
+        "audio.mp3-192": { replace(\.name, from: "MP3 Audio (192 kbps - Balanced)", to: "MP3 (192 kbps)", in: &$0) },
+        "audio.mp3-128": { replace(\.name, from: "MP3 Audio (128 kbps - Voice / Small)", to: "MP3 (128 kbps, for Voice)", in: &$0) },
+        "audio.aac-256": { replace(\.name, from: "AAC Audio (256 kbps)", to: "M4A (AAC, 256 kbps)", in: &$0) },
+        "audio.wav-pcm": { replace(\.name, from: "PCM WAV (Uncompressed)", to: "WAV (Uncompressed)", in: &$0) },
+        "audio.wav-44k": { replace(\.name, from: "PCM WAV (CD Quality - 44.1 kHz / 16-bit)", to: "WAV (CD Quality, 44.1 kHz / 16-bit)", in: &$0) },
+        "audio.opus-128": { replace(\.name, from: "Opus Audio (128 kbps)", to: "Opus (128 kbps)", in: &$0) },
+        "image.pdf-to-png": { replace(\.name, from: "PDF pages to PNG images", to: "PDF Pages to PNG Images", in: &$0) },
+        "image.pdf-to-jpg": { replace(\.name, from: "PDF pages to JPEG images", to: "PDF Pages to JPEG Images", in: &$0) },
+        "image.pdf-to-tiff": { replace(\.name, from: "PDF pages to TIFF images", to: "PDF Pages to TIFF Images", in: &$0) },
+        "document.pdf-compressed": { replace(\.name, from: "PDF Document (Compressed / Small File)", to: "Compressed PDF", in: &$0) },
     ]
 
     /// Built-ins removed from the factory list, as they last shipped. A stored
@@ -134,6 +163,9 @@ public enum BuiltInPresetUpgrades {
                 upgrade.apply(&preset)
             }
             if storedRevision < 3, let rename = revision3Renames[key] {
+                rename(&preset)
+            }
+            if storedRevision < 5, let rename = revision5Renames[key] {
                 rename(&preset)
             }
             if let factory = factoryPresets[key] {

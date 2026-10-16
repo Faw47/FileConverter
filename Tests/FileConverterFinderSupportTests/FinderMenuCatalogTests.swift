@@ -33,6 +33,37 @@ final class FinderMenuCatalogTests: XCTestCase {
         XCTAssertEqual(mixedSections[0].entries.map(\.title), ["JPEG"])
     }
 
+    func testRecentPresetsThatFitTheSelectionComeFirst() throws {
+        let jpeg = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let png = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let base = makeSnapshot()
+        try writeSnapshot(FinderMenuSnapshot(
+            edition: .native, formats: base.formats, presets: base.presets, recentPresetIDs: [png, jpeg]
+        ))
+        let catalog = FinderMenuCatalog(snapshotURL: snapshotURL, expectedEdition: .native)
+
+        XCTAssertEqual(catalog.recentEntries(for: [URL(fileURLWithPath: "/tmp/photo.png")]).map(\.id), [png, jpeg])
+        XCTAssertEqual(catalog.recentEntries(for: [URL(fileURLWithPath: "/tmp/photo.jpg")]).map(\.id), [jpeg],
+                       "PNG is not offered for a JPEG")
+        XCTAssertEqual(catalog.recentEntries(for: [URL(fileURLWithPath: "/tmp/photo.png")], limit: 1).map(\.id), [png])
+    }
+
+    func testOlderSnapshotWithoutNewFieldsStillDecodes() throws {
+        // Written by an app build before recents and "More" existed.
+        let json = """
+        {"protocolVersion":1,"edition":"native","generatedAt":0,
+         "formats":[{"id":"png","extensions":["png"],"utTypeIdentifiers":["public.png"]}],
+         "presets":[{"id":"00000000-0000-0000-0000-000000000001","title":"JPEG","sectionIdentifier":"image",
+                     "sectionTitle":"Image","sectionOrder":0,"sortOrder":0,"compatibleFormatIDs":["png"]}]}
+        """
+        try Data(json.utf8).write(to: snapshotURL)
+        let catalog = FinderMenuCatalog(snapshotURL: snapshotURL, expectedEdition: .native)
+        let entries = catalog.sections(for: [URL(fileURLWithPath: "/tmp/photo.png")]).flatMap(\.entries)
+        XCTAssertEqual(entries.map(\.title), ["JPEG"])
+        XCTAssertEqual(entries.first?.isSecondary, false)
+        XCTAssertTrue(catalog.recentEntries(for: [URL(fileURLWithPath: "/tmp/photo.png")]).isEmpty)
+    }
+
     func testCatalogRejectsWrongEdition() throws {
         try writeSnapshot(makeSnapshot())
 

@@ -56,12 +56,49 @@ public enum PresetVisibility {
             && (lhs.allowsStreamCopy ?? false) == (rhs.allowsStreamCopy ?? false)
     }
 
+    /// Document kinds that convert into each other. A spreadsheet does not
+    /// become a slide deck, and a PDF does not become a Word file in any
+    /// useful way, even when LibreOffice can technically open both.
+    static let documentFamilies: [String: String] = [
+        "doc": "text", "docx": "text", "odt": "text", "rtf": "text", "txt": "text",
+        "html": "text", "pages": "text", "epub": "text",
+        "xls": "sheet", "xlsx": "sheet", "ods": "sheet", "csv": "sheet", "numbers": "sheet",
+        "ppt": "slides", "pptx": "slides", "odp": "slides", "key": "slides",
+        "pdf": "pdf",
+    ]
+
+    /// Sources an animated GIF can come from besides video: images that can
+    /// themselves be animated. A still photo never makes an animation.
+    static let animatableImageFormatIDs: Set<String> = ["gif", "webp"]
+
+    /// False for a conversion that would technically run but makes no sense
+    /// for this kind of file: Compress PDF on a Word file, PDF → XLSX, a
+    /// spreadsheet → PPTX, or Animated GIF from a JPEG.
+    public static func isSensible(_ preset: ConversionPreset, for format: FormatDefinition) -> Bool {
+        if preset.isInteractiveWorkflow {
+            return format.id == "pdf"
+        }
+        let destination = FormatRegistry.shared.format(forID: preset.destinationFormat)
+        if preset.category == .video, destination?.category == .video || preset.destinationFormat == "gif",
+           format.category == .image {
+            return animatableImageFormatIDs.contains(format.id)
+        }
+        if format.category == .document, let destination, destination.category == .document,
+           destination.id != "pdf",
+           let sourceFamily = documentFamilies[format.id],
+           let destinationFamily = documentFamilies[destination.id] {
+            return sourceFamily == destinationFamily
+        }
+        return true
+    }
+
     /// Presets from `candidates` (already known to accept `format`) that are
-    /// worth showing for it: identity conversions are dropped, and a generic
-    /// preset is dropped when a preset written for this exact format does
-    /// the same thing ("WAV → MP3" replaces "MP3 – 320 kbps" for WAV files).
+    /// worth showing for it: identity conversions and senseless ones are
+    /// dropped, and a generic preset is dropped when a preset written for
+    /// this exact format does the same thing ("WAV → MP3" replaces
+    /// "MP3 – 320 kbps" for WAV files).
     public static func visible(_ candidates: [ConversionPreset], for format: FormatDefinition) -> [ConversionPreset] {
-        let useful = candidates.filter { !isIdentityTransform($0, for: format) }
+        let useful = candidates.filter { !isIdentityTransform($0, for: format) && isSensible($0, for: format) }
         let specific = useful.filter { targetsExplicitly($0, format: format) }
         return useful.filter { preset in
             if targetsExplicitly(preset, format: format) { return true }

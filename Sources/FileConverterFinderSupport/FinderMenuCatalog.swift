@@ -5,10 +5,16 @@ import UniformTypeIdentifiers
 public struct FinderMenuEntry: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let title: String
+    /// Listed under "More" in its section.
+    public let isSecondary: Bool
+    /// Accepts every selected file (no "(3 of 5 files)").
+    public let coversSelection: Bool
 
-    public init(id: UUID, title: String) {
+    public init(id: UUID, title: String, isSecondary: Bool = false, coversSelection: Bool = true) {
         self.id = id
         self.title = title
+        self.isSecondary = isSecondary
+        self.coversSelection = coversSelection
     }
 }
 
@@ -189,12 +195,28 @@ public final class FinderMenuCatalog: @unchecked Sendable {
                 if member.covered < urls.count {
                     title += " (\(member.covered) of \(urls.count) files)"
                 }
-                return FinderMenuEntry(id: member.preset.id, title: title)
+                return FinderMenuEntry(
+                    id: member.preset.id,
+                    title: title,
+                    isSecondary: member.preset.isSecondary ?? false,
+                    coversSelection: member.covered == urls.count
+                )
             }
             return FinderMenuSection(id: key.id, title: key.title, order: key.order, entries: entries)
         }.sorted { lhs, rhs in
             lhs.order == rhs.order ? lhs.id < rhs.id : lhs.order < rhs.order
         }
+    }
+
+    /// Up to `limit` presets used recently that accept every selected file,
+    /// newest first, for the top of the menu.
+    public func recentEntries(for urls: [URL], limit: Int = 3) -> [FinderMenuEntry] {
+        guard let recent = lock.withLock({ snapshot?.recentPresetIDs }), !recent.isEmpty else { return [] }
+        let offered = Dictionary(
+            sections(for: urls).flatMap(\.entries).filter(\.coversSelection).map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return Array(recent.compactMap { offered[$0] }.prefix(limit))
     }
 
     /// The selected files a preset accepts, in selection order.

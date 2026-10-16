@@ -38,7 +38,7 @@ final class PresetEngineTests: XCTestCase {
         XCTAssertFalse(presets.contains { $0.menuName == "HEIC → PNG" })
         XCTAssertTrue(presets.contains { $0.menuName == "PDF → TIFF" })
         XCTAssertTrue(presets.contains { $0.menuName == "WAV → MP3" })
-        XCTAssertTrue(presets.contains { $0.menuName == "MKV → MP4" })
+        XCTAssertTrue(presets.contains { $0.builtInKey == "video.mkv-to-mp4" && $0.menuName == "MP4 – Fast" })
         XCTAssertTrue(presets.contains { $0.menuName == "DOCX → PDF" })
         XCTAssertTrue(presets.contains { $0.menuName == "Compress PDF" })
         XCTAssertTrue(presets.contains { $0.menuName == "ODT" })

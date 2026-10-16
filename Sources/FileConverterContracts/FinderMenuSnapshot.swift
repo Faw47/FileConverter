@@ -12,19 +12,26 @@ public struct FinderMenuSnapshot: Codable, Equatable, Sendable {
     public let generatedAt: Date
     public let formats: [FinderInputFormatRecord]
     public let presets: [FinderPresetRecord]
+    /// Presets used most recently, newest first, offered at the top of the
+    /// menu. Optional so snapshots written by older app builds still decode.
+    public let recentPresetIDs: [UUID]?
+
+    public static let maximumRecentCount = 16
 
     public init(
         protocolVersion: Int = FinderMenuSnapshot.currentProtocolVersion,
         edition: ProductEdition,
         generatedAt: Date = Date(),
         formats: [FinderInputFormatRecord],
-        presets: [FinderPresetRecord]
+        presets: [FinderPresetRecord],
+        recentPresetIDs: [UUID]? = nil
     ) {
         self.protocolVersion = protocolVersion
         self.edition = edition
         self.generatedAt = generatedAt
         self.formats = formats
         self.presets = presets
+        self.recentPresetIDs = recentPresetIDs
     }
 
     public func validate(expectedEdition: ProductEdition) throws {
@@ -69,6 +76,9 @@ public struct FinderMenuSnapshot: Codable, Equatable, Sendable {
               }) else {
             throw FinderMenuSnapshotError.invalidPresetRecord
         }
+        guard (recentPresetIDs?.count ?? 0) <= Self.maximumRecentCount else {
+            throw FinderMenuSnapshotError.invalidPresetRecord
+        }
     }
 }
 
@@ -96,6 +106,9 @@ public struct FinderPresetRecord: Identifiable, Codable, Equatable, Sendable {
     public let sectionOrder: Int
     public let sortOrder: Int
     public let compatibleFormatIDs: [String]
+    /// Less common presets, listed under "More" in their section. Optional so
+    /// snapshots written by older app builds still decode.
+    public let isSecondary: Bool?
 
     public init(
         id: UUID,
@@ -104,7 +117,8 @@ public struct FinderPresetRecord: Identifiable, Codable, Equatable, Sendable {
         sectionTitle: String,
         sectionOrder: Int,
         sortOrder: Int,
-        compatibleFormatIDs: [String]
+        compatibleFormatIDs: [String],
+        isSecondary: Bool? = nil
     ) {
         self.id = id
         self.title = title
@@ -113,6 +127,7 @@ public struct FinderPresetRecord: Identifiable, Codable, Equatable, Sendable {
         self.sectionOrder = sectionOrder
         self.sortOrder = sortOrder
         self.compatibleFormatIDs = compatibleFormatIDs
+        self.isSecondary = isSecondary
     }
 }
 

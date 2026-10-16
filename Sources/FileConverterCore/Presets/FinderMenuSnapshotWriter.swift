@@ -2,10 +2,22 @@ import FileConverterContracts
 import Foundation
 
 public enum FinderMenuSnapshotWriter {
+    /// Built-ins most people never need, listed under "More" so a video's
+    /// menu starts with a handful of MP4 choices instead of fourteen.
+    static let secondaryBuiltInKeys: Set<String> = [
+        "video.mp4-high-quality", "video.hevc-smaller", "video.av1", "video.quicktime-mov",
+        "video.prores-editing", "video.webm-vp9-opus", "video.matroska",
+        "audio.alac", "audio.wav-44k", "audio.aiff", "audio.opus-128", "audio.ogg-vorbis", "audio.quicktime-qta",
+        "image.webp-lossless", "image.avif", "image.tiff", "image.bmp", "image.icns", "image.ico", "image.gif",
+        "document.rtf", "document.html", "document.epub", "document.odt", "document.ods", "document.odp",
+        "document.docx-to-odt",
+    ]
+
     public static func makeSnapshot(
         presets: [ConversionPreset],
         resolver: BackendResolver,
         edition: ProductEdition,
+        recentPresetIDs: [UUID] = [],
         generatedAt: Date = Date()
     ) -> FinderMenuSnapshot {
         let formats = FormatRegistry.shared.allFormats().sorted { $0.id < $1.id }
@@ -42,17 +54,20 @@ public enum FinderMenuSnapshotWriter {
                 sectionTitle: preset.category.displayName,
                 sectionOrder: preset.category.sortOrder,
                 sortOrder: preset.sortOrder,
-                compatibleFormatIDs: compatibleFormatIDs
+                compatibleFormatIDs: compatibleFormatIDs,
+                isSecondary: preset.builtInKey.map(secondaryBuiltInKeys.contains) ?? false
             )
         }.sorted { lhs, rhs in
             lhs.sortOrder == rhs.sortOrder ? lhs.id.uuidString < rhs.id.uuidString : lhs.sortOrder < rhs.sortOrder
         }
 
+        let offered = Set(presetRecords.map(\.id))
         return FinderMenuSnapshot(
             edition: edition,
             generatedAt: generatedAt,
             formats: formatRecords,
-            presets: presetRecords
+            presets: presetRecords,
+            recentPresetIDs: Array(recentPresetIDs.filter(offered.contains).prefix(FinderMenuSnapshot.maximumRecentCount))
         )
     }
 
@@ -65,7 +80,8 @@ public enum FinderMenuSnapshotWriter {
         let snapshot = makeSnapshot(
             presets: presets,
             resolver: resolver,
-            edition: configuration.edition
+            edition: configuration.edition,
+            recentPresetIDs: PresetUsageStore.recentPresetIDs()
         )
         let directory = container.appendingPathComponent("FileConverter", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

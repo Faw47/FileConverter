@@ -67,27 +67,33 @@ public class FileConverterFinderSync: FIFinderSync {
             // Folders and files File Converter cannot convert get no menu,
             // so the context menu stays uncluttered.
             return nil
-        } else if sections.count == 1, let only = sections.first {
-            // One group: list its recipes directly under "File Converter".
-            for entry in only.entries {
+        } else {
+            // What you used last for these files, one click away.
+            let recent = FinderMenuCatalog.shared.recentEntries(for: selectedURLs)
+            for entry in recent {
                 subMenu.addItem(menuItem(for: entry))
             }
-        } else {
-            for section in sections {
-                let catItem = NSMenuItem(title: section.title, action: nil, keyEquivalent: "")
-                let catSubMenu = NSMenu(title: section.title)
-                for entry in section.entries {
-                    catSubMenu.addItem(menuItem(for: entry))
+            if !recent.isEmpty {
+                subMenu.addItem(NSMenuItem.separator())
+            }
+            if sections.count == 1, let only = sections.first {
+                // One group: list its recipes directly under "File Converter".
+                addEntries(only.entries, sectionTitle: only.title, to: subMenu)
+            } else {
+                for section in sections {
+                    let catItem = NSMenuItem(title: section.title, action: nil, keyEquivalent: "")
+                    let catSubMenu = NSMenu(title: section.title)
+                    addEntries(section.entries, sectionTitle: section.title, to: catSubMenu)
+                    catItem.submenu = catSubMenu
+                    subMenu.addItem(catItem)
                 }
-                catItem.submenu = catSubMenu
-                subMenu.addItem(catItem)
             }
         }
 
         subMenu.addItem(NSMenuItem.separator())
 
         let configItem = NSMenuItem(
-            title: "Configure Presets...",
+            title: "Manage Presets…",
             action: #selector(openConfigurationSelected(_:)),
             keyEquivalent: ""
         )
@@ -98,6 +104,23 @@ public class FileConverterFinderSync: FIFinderSync {
         rootMenu.addItem(mainMenuItem)
 
         return rootMenu
+    }
+
+    /// Common presets first; the rest under "More" (its menu keeps the
+    /// section title so a dropped represented object still resolves).
+    private func addEntries(_ entries: [FinderMenuEntry], sectionTitle: String, to menu: NSMenu) {
+        let primary = entries.filter { !$0.isSecondary }
+        let secondary = entries.filter(\.isSecondary)
+        guard !primary.isEmpty, !secondary.isEmpty else {
+            entries.forEach { menu.addItem(menuItem(for: $0)) }
+            return
+        }
+        primary.forEach { menu.addItem(menuItem(for: $0)) }
+        let moreItem = NSMenuItem(title: "More", action: nil, keyEquivalent: "")
+        let moreMenu = NSMenu(title: sectionTitle)
+        secondary.forEach { moreMenu.addItem(menuItem(for: $0)) }
+        moreItem.submenu = moreMenu
+        menu.addItem(moreItem)
     }
 
     private func menuItem(for entry: FinderMenuEntry) -> NSMenuItem {

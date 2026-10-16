@@ -101,7 +101,7 @@ public actor ConversionCoordinator {
         }
 
         try validateAdmission(urls: jobs.map(\.sourceURL), preset: preset)
-        PresetUsageStore.record(presetID: preset.id, urls: jobs.map(\.sourceURL))
+        recordUsage(presetID: preset.id, urls: jobs.map(\.sourceURL))
         await ConversionQueue.shared.addJobs(jobs, groupID: request.groupID)
         AppLogger.conversion.notice(
             "Finder request admitted to conversion queue: id=\(request.id.uuidString, privacy: .public)"
@@ -153,8 +153,18 @@ public actor ConversionCoordinator {
                 detectionSnapshot: FormatDetector.snapshot(for: url)
             ))
         }
-        PresetUsageStore.record(presetID: preset.id, urls: urls)
+        recordUsage(presetID: preset.id, urls: urls)
         await ConversionQueue.shared.addJobs(jobs)
+    }
+
+    /// Remembers the preset for these files and, when the recent list
+    /// changed, rewrites the Finder menu so it is offered at the top.
+    private func recordUsage(presetID: UUID, urls: [URL]) {
+        let before = PresetUsageStore.recentPresetIDs()
+        PresetUsageStore.record(presetID: presetID, urls: urls)
+        if PresetUsageStore.recentPresetIDs() != before {
+            _ = PresetStore.shared.publishFinderMenuSnapshot()
+        }
     }
 
     public func checkAndDrainPendingRequests() async {

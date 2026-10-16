@@ -66,7 +66,7 @@ public enum BuiltInPresets {
         ))
 
         add("video.mp4-1080p", ConversionPreset(
-            name: "MP4 Video (1080p Full HD)",
+            name: "MP4 (1080p)",
             menuName: "MP4 – 1080p",
             category: .video,
             sourceFormats: ["video"],
@@ -83,7 +83,7 @@ public enum BuiltInPresets {
         ))
 
         add("video.mp4-720p", ConversionPreset(
-            name: "MP4 Video (720p Web / Email)",
+            name: "MP4 (720p)",
             menuName: "MP4 – 720p",
             category: .video,
             sourceFormats: ["video"],
@@ -100,7 +100,7 @@ public enum BuiltInPresets {
         ))
 
         add("video.hevc-hardware", ConversionPreset(
-            name: "HEVC (H.265 Hardware)",
+            name: "HEVC (H.265)",
             menuName: "HEVC",
             category: .video,
             sourceFormats: ["video"],
@@ -116,7 +116,7 @@ public enum BuiltInPresets {
         ))
 
         add("video.hevc-smaller", ConversionPreset(
-            name: "HEVC Video (Smaller File - H.265)",
+            name: "HEVC (Smaller File)",
             menuName: "HEVC – Smaller",
             category: .video,
             sourceFormats: ["video"],
@@ -218,8 +218,8 @@ public enum BuiltInPresets {
         ))
 
         add("video.mkv-to-mp4", ConversionPreset(
-            name: "MKV Video to MP4",
-            menuName: "MKV → MP4",
+            name: "MKV to MP4 (No Re-encoding When Possible)",
+            menuName: "MP4 – Fast",
             category: .video,
             sourceFormats: ["mkv"],
             destinationFormat: "mp4",
@@ -233,8 +233,8 @@ public enum BuiltInPresets {
         ))
 
         add("video.mov-to-mp4", ConversionPreset(
-            name: "QuickTime MOV to MP4",
-            menuName: "MOV → MP4",
+            name: "MOV to MP4 (No Re-encoding When Possible)",
+            menuName: "MP4 – Fast",
             category: .video,
             sourceFormats: ["mov"],
             destinationFormat: "mp4",
@@ -248,7 +248,7 @@ public enum BuiltInPresets {
 
         // MARK: - AUDIO PRESETS
         add("audio.mp3-320", ConversionPreset(
-            name: "MP3 Audio (320 kbps)",
+            name: "MP3 (320 kbps)",
             menuName: "MP3 – 320 kbps",
             category: .audio,
             sourceFormats: ["audio", "video"],
@@ -261,7 +261,7 @@ public enum BuiltInPresets {
         ))
 
         add("audio.mp3-192", ConversionPreset(
-            name: "MP3 Audio (192 kbps - Balanced)",
+            name: "MP3 (192 kbps)",
             menuName: "MP3 – 192 kbps",
             category: .audio,
             sourceFormats: ["audio", "video"],
@@ -275,7 +275,7 @@ public enum BuiltInPresets {
         ))
 
         add("audio.mp3-128", ConversionPreset(
-            name: "MP3 Audio (128 kbps - Voice / Small)",
+            name: "MP3 (128 kbps, for Voice)",
             menuName: "MP3 – 128 kbps",
             category: .audio,
             sourceFormats: ["audio", "video"],
@@ -289,7 +289,7 @@ public enum BuiltInPresets {
         ))
 
         add("audio.aac-256", ConversionPreset(
-            name: "AAC Audio (256 kbps)",
+            name: "M4A (AAC, 256 kbps)",
             menuName: "M4A – AAC",
             category: .audio,
             sourceFormats: ["audio", "video"],
@@ -328,7 +328,7 @@ public enum BuiltInPresets {
         ))
 
         add("audio.wav-pcm", ConversionPreset(
-            name: "PCM WAV (Uncompressed)",
+            name: "WAV (Uncompressed)",
             menuName: "WAV",
             category: .audio,
             sourceFormats: ["audio", "video"],
@@ -340,7 +340,7 @@ public enum BuiltInPresets {
         ))
 
         add("audio.wav-44k", ConversionPreset(
-            name: "PCM WAV (CD Quality - 44.1 kHz / 16-bit)",
+            name: "WAV (CD Quality, 44.1 kHz / 16-bit)",
             menuName: "WAV – CD Quality",
             category: .audio,
             sourceFormats: ["audio", "video"],
@@ -367,7 +367,7 @@ public enum BuiltInPresets {
         ))
 
         add("audio.opus-128", ConversionPreset(
-            name: "Opus Audio (128 kbps)",
+            name: "Opus (128 kbps)",
             menuName: "Opus",
             category: .audio,
             sourceFormats: ["audio", "video"],
@@ -646,7 +646,7 @@ public enum BuiltInPresets {
         ))
 
         add("image.pdf-to-png", ConversionPreset(
-            name: "PDF pages to PNG images",
+            name: "PDF Pages to PNG Images",
             menuName: "PDF → PNG",
             category: .image,
             sourceFormats: ["pdf"],
@@ -657,7 +657,7 @@ public enum BuiltInPresets {
         ))
 
         add("image.pdf-to-jpg", ConversionPreset(
-            name: "PDF pages to JPEG images",
+            name: "PDF Pages to JPEG Images",
             menuName: "PDF → JPEG",
             category: .image,
             sourceFormats: ["pdf"],
@@ -668,7 +668,7 @@ public enum BuiltInPresets {
         ))
 
         add("image.pdf-to-tiff", ConversionPreset(
-            name: "PDF pages to TIFF images",
+            name: "PDF Pages to TIFF Images",
             menuName: "PDF → TIFF",
             category: .image,
             sourceFormats: ["pdf"],
@@ -691,7 +691,7 @@ public enum BuiltInPresets {
         ))
 
         add("document.pdf-compressed", ConversionPreset(
-            name: "PDF Document (Compressed / Small File)",
+            name: "Compressed PDF",
             menuName: "Compress PDF",
             category: .document,
             sourceFormats: ["pdf", "document"],
