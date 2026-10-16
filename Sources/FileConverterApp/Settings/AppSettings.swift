@@ -346,8 +346,9 @@ public final class AppSettings: ObservableObject {
         OverwritePolicy(rawValue: value)?.rawValue ?? OverwritePolicy.appendNumber.rawValue
     }
 
+    /// At least one, at most one per processor core (two on a one-core Mac).
     private static func normalizeConcurrency(_ value: Int) -> Int {
-        min(max(1, value), 16)
+        min(max(1, value), max(2, ProcessInfo.processInfo.activeProcessorCount))
     }
 
     private static func normalizeFilenamePattern(_ value: String) -> String {

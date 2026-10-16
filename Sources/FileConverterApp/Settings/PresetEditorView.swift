@@ -19,8 +19,10 @@ public struct PresetEditorView: View {
     @State private var showingUnsavedDeleteConfirmation = false
     @State private var showingSaveError = false
     @State private var saveErrorMessage = ""
-    @State private var savedIndicatorVisible = false
-    @State private var savedIndicatorTask: Task<Void, Never>?
+    /// The preset as it was when the editor opened, for "Revert".
+    @State private var openedPreset: ConversionPreset?
+    @Environment(\.undoManager) private var undoManager
+    @State private var pendingSave: Task<Void, Never>?
     @State private var sourceSelection = "category:image"
     @State private var partLengthText = "00:05:00.00"
     @State private var partLengthValidationError: String?
@@ -116,7 +118,7 @@ public struct PresetEditorView: View {
                     get: { self.draft ?? draft },
                     set: { newDraft in
                         self.draft = newDraft
-                        self.onDirtyChange(newDraft != self.baselinePreset)
+                        self.scheduleSave()
                     }
                 ))
             } else {
@@ -128,8 +130,12 @@ public struct PresetEditorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear(perform: load)
         .onDisappear {
-            savedIndicatorTask?.cancel()
-            savedIndicatorTask = nil
+            // Leaving with a valid edit still waiting: save it now.
+            if pendingSave != nil {
+                pendingSave?.cancel()
+                pendingSave = nil
+                saveDraftIfValid()
+            }
         }
         .confirmationDialog(
             "Delete this preset?",
@@ -138,7 +144,16 @@ public struct PresetEditorView: View {
         ) {
             Button(draft?.isBuiltIn == true ? "Disable Preset" : "Delete Preset", role: .destructive) {
                 do {
+                    let deleted = PresetStore.shared.preset(forID: presetID)
                     try PresetStore.shared.deletePreset(withID: presetID)
+                    if let deleted, !deleted.isBuiltIn {
+                        let reload = onSaved
+                        undoManager?.registerUndo(withTarget: PresetStore.shared) { store in
+                            try? store.addPreset(deleted)
+                            reload()
+                        }
+                        undoManager?.setActionName("Delete Preset")
+                    }
                     onDeleted()
                 } catch {
                     saveErrorMessage = error.localizedDescription
@@ -249,10 +264,11 @@ public struct PresetEditorView: View {
                     .edgeBarButtonStyle()
                 }
 
-                Button("Revert") {
-                    load()
+                Button("Revert to Opened Version") {
+                    revertToOpened()
                 }
-                .disabled(!hasChanges)
+                .disabled(openedPreset == nil || draft == openedPreset)
+                .help("Undo every change made since this preset was opened")
                 .edgeBarButtonStyle()
 
                 Button("Export…") {
@@ -262,30 +278,11 @@ public struct PresetEditorView: View {
 
                 Spacer()
 
-                if hasChanges {
-                    Text("Changes are saved when you click Save")
+                if !errors.isEmpty {
+                    Text("Changes are saved once the problems above are fixed")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-
-                if savedIndicatorVisible {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.green)
-                        Text("Saved")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .transition(.opacity)
-                }
-
-                Button("Save") {
-                    save(preset.wrappedValue)
-                }
-                .edgeBarButtonStyle(prominent: true)
-                .disabled(!hasChanges || !errors.isEmpty)
-                .keyboardShortcut("s", modifiers: .command)
             }
         }
     }
@@ -359,19 +356,22 @@ public struct PresetEditorView: View {
                 }
             }
 
-            SettingsRow(
-                title: stateController.qualitySectionTitle(for: preset.wrappedValue),
-                subtitle: stateController.qualitySectionSubtitle(for: preset.wrappedValue)
-            ) {
-                Picker("", selection: preset.quality) {
-                    ForEach(stateController.availableQualities(for: preset.wrappedValue), id: \.self) { quality in
-                        Text(stateController.qualityDisplayName(quality, for: preset.wrappedValue)).tag(quality)
+            // A size limit decides the quality, so the picker would do nothing.
+            if preset.wrappedValue.videoTargetFileSizeBytes == nil && preset.wrappedValue.audioTargetFileSizeBytes == nil {
+                SettingsRow(
+                    title: stateController.qualitySectionTitle(for: preset.wrappedValue),
+                    subtitle: stateController.qualitySectionSubtitle(for: preset.wrappedValue)
+                ) {
+                    Picker("", selection: preset.quality) {
+                        ForEach(stateController.availableQualities(for: preset.wrappedValue), id: \.self) { quality in
+                            Text(stateController.qualityDisplayName(quality, for: preset.wrappedValue)).tag(quality)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                    .disabled(!stateController.isQualityEnabled(for: preset.wrappedValue))
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
-                .disabled(!stateController.isQualityEnabled(for: preset.wrappedValue))
             }
         }
     }
@@ -1169,9 +1169,6 @@ public struct PresetEditorView: View {
     }
 
     private func load() {
-        savedIndicatorTask?.cancel()
-        savedIndicatorTask = nil
-
         guard let stored = PresetStore.shared.preset(forID: presetID) else {
             draft = nil
             baselinePreset = nil
@@ -1181,6 +1178,7 @@ public struct PresetEditorView: View {
 
         baselinePreset = stored
         draft = stored
+        if openedPreset == nil { openedPreset = stored }
         let splitSeconds = stored.audioSplitDurationSeconds ?? 300
         partLengthText = AudioDurationParser.format(seconds: splitSeconds)
         partLengthValidationError = nil
@@ -1195,8 +1193,6 @@ public struct PresetEditorView: View {
         } else {
             subfolderName = "Converted"
         }
-
-        savedIndicatorVisible = false
     }
 
     private var commonSourceChoices: [SourceChoice] {
@@ -1365,36 +1361,57 @@ public struct PresetEditorView: View {
         return "custom"
     }
 
-    private func save(_ preset: ConversionPreset) {
+    /// Saves shortly after the last change, so typing a name doesn't write
+    /// the preset library on every keystroke.
+    private func scheduleSave() {
+        pendingSave?.cancel()
+        pendingSave = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            pendingSave = nil
+            saveDraftIfValid()
+        }
+    }
+
+    /// Saves the draft when it is valid and changed; an invalid draft stays
+    /// unsaved (the parent asks before discarding it).
+    private func saveDraftIfValid() {
+        guard let draft else { return }
+        guard validationErrors(for: draft).isEmpty else {
+            onDirtyChange(draft != baselinePreset)
+            return
+        }
+        guard draft != baselinePreset else {
+            onDirtyChange(false)
+            return
+        }
         do {
-            try PresetStore.shared.updatePreset(preset)
+            try PresetStore.shared.updatePreset(draft)
         } catch {
-            savedIndicatorVisible = false
             saveErrorMessage = error.localizedDescription
             showingSaveError = true
+            onDirtyChange(true)
             return
         }
         guard PresetStore.shared.lastSaveSucceeded else {
-            savedIndicatorVisible = false
             saveErrorMessage = PresetStore.shared.lastErrorDescription ?? "The preset could not be saved."
             showingSaveError = true
+            onDirtyChange(true)
             return
         }
-        onSaved()
-        draft = PresetStore.shared.preset(forID: presetID) ?? preset
+        // Keep the draft the user is looking at; only the baseline moves.
         baselinePreset = draft
         onDirtyChange(false)
+        onSaved()
+    }
 
-        if reduceMotion { savedIndicatorVisible = true }
-        else { withAnimation(.easeOut(duration: 0.15)) { savedIndicatorVisible = true } }
-
-        savedIndicatorTask?.cancel()
-        savedIndicatorTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.25))
-            guard !Task.isCancelled else { return }
-            if reduceMotion { savedIndicatorVisible = false }
-            else { withAnimation(.easeOut(duration: 0.15)) { savedIndicatorVisible = false } }
-        }
+    private func revertToOpened() {
+        guard let openedPreset else { return }
+        pendingSave?.cancel()
+        pendingSave = nil
+        draft = openedPreset
+        saveDraftIfValid()
+        load()
     }
 
     private func inferredSourceScope(for preset: ConversionPreset) -> SourceScope {

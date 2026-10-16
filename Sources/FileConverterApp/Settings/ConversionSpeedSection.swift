@@ -31,7 +31,7 @@ struct ConversionSpeedSection: View {
                 Picker("Simultaneous conversions", selection: selection) {
                     Text("Automatic (\(AppSettings.systemDefaultConcurrency))").tag(0)
                     Divider()
-                    ForEach(1...16, id: \.self) { count in
+                    ForEach(1...max(2, ProcessInfo.processInfo.activeProcessorCount), id: \.self) { count in
                         Text("\(count)").tag(count)
                     }
                 }

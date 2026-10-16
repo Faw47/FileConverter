@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 public struct PresetsSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @Environment(\.undoManager) private var undoManager
 
     @State private var presets: [ConversionPreset] = []
     @State private var selection: UUID?
@@ -110,7 +111,7 @@ public struct PresetsSettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("A deleted preset cannot be recovered unless you exported it.")
+            Text("You can undo this with Edit › Undo (⌘Z) while Settings is open.")
         }
         .confirmationDialog(
             "Reset all presets to factory values?",
@@ -156,7 +157,7 @@ public struct PresetsSettingsView: View {
             Text(mutationErrorMessage)
         }
         .confirmationDialog(
-            "Discard unsaved preset changes?",
+            "Discard changes that couldn't be saved?",
             isPresented: $showingUnsavedChangesConfirmation,
             titleVisibility: .visible
         ) {
@@ -170,7 +171,7 @@ public struct PresetsSettingsView: View {
                 pendingEditorAction = nil
             }
         } message: {
-            Text("Save or revert the current preset before switching to another one.")
+            Text("This preset has a problem, so its latest changes aren’t saved yet. Fix it, or discard those changes.")
         }
         .onDeleteCommand {
             if let selection, selectedPreset?.isBuiltIn == false {
@@ -499,10 +500,23 @@ public struct PresetsSettingsView: View {
 
     private func deleteSelected() {
         guard let selection else { return }
+        let deleted = PresetStore.shared.preset(forID: selection)
         do {
             try PresetStore.shared.deletePreset(withID: selection)
             self.selection = nil
             reload()
+            // Edit › Undo Delete Preset (⌘Z) puts it back as it was.
+            if let deleted {
+                let restore = { (id: UUID) in
+                    self.reload()
+                    self.selection = id
+                }
+                undoManager?.registerUndo(withTarget: PresetStore.shared) { store in
+                    try? store.addPreset(deleted)
+                    restore(deleted.id)
+                }
+                undoManager?.setActionName("Delete Preset")
+            }
         } catch {
             mutationErrorMessage = error.localizedDescription
             showingMutationError = true
@@ -863,140 +877,75 @@ private struct PresetSidebarRow: View {
     }
 }
 
+/// What a new preset converts. Each starts blank for that kind of file;
+/// to start from an existing recipe, select it and click Duplicate.
 private enum PresetTemplate: String, CaseIterable, Identifiable, Hashable {
-    case imageToJPEG
-    case heicToJPEG
-    case heicToPNG
-    case imageToPNG
-    case videoToMP4
-    case audioToMP3
-    case documentToPDF
-    case startBlank
+    case image
+    case video
+    case audio
+    case document
+    case anything
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .imageToJPEG: return "Images → JPEG"
-        case .heicToJPEG: return "HEIC photos → JPEG"
-        case .heicToPNG: return "HEIC photos → PNG"
-        case .imageToPNG: return "Images → PNG"
-        case .videoToMP4: return "Video → MP4"
-        case .audioToMP3: return "Audio/video → MP3"
-        case .documentToPDF: return "Documents → PDF"
-        case .startBlank: return "Start from scratch"
+        case .image: return "Photos and images"
+        case .video: return "Video"
+        case .audio: return "Audio, or the sound from a video"
+        case .document: return "Documents"
+        case .anything: return "Any file"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .imageToJPEG: return "A small, widely compatible photo file"
-        case .heicToJPEG: return "Share iPhone photos with almost anyone"
-        case .heicToPNG: return "Keep a lossless image for editing"
-        case .imageToPNG: return "Keep transparency and image quality"
-        case .videoToMP4: return "The safest choice for video sharing"
-        case .audioToMP3: return "Play audio on phones, cars, and web apps"
-        case .documentToPDF: return "Make a document that looks the same everywhere"
-        case .startBlank: return "Choose every detail yourself"
+        case .image: return "Starts as JPEG; pick the format and size next"
+        case .video: return "Starts as MP4 (H.264)"
+        case .audio: return "Starts as MP3"
+        case .document: return "Starts as PDF"
+        case .anything: return "You choose every detail"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .imageToJPEG, .heicToJPEG, .heicToPNG, .imageToPNG: return "photo"
-        case .videoToMP4: return "film"
-        case .audioToMP3: return "waveform"
-        case .documentToPDF: return "doc.text"
-        case .startBlank: return "slider.horizontal.3"
+        case .image: return "photo"
+        case .video: return "film"
+        case .audio: return "waveform"
+        case .document: return "doc.text"
+        case .anything: return "slider.horizontal.3"
         }
     }
 
     func makePreset() -> ConversionPreset {
         switch self {
-        case .imageToJPEG:
+        case .image:
             return ConversionPreset(
-                name: "Images to JPEG",
-                menuName: "Images → JPEG",
-                category: .image,
-                sourceFormats: ["image"],
-                destinationFormat: "jpg",
-                backend: .imageIO,
-                quality: .high
+                name: "New Image Preset", menuName: "New Image Preset", category: .image,
+                sourceFormats: ["image"], destinationFormat: "jpg", backend: .auto, quality: .high
             )
-        case .heicToJPEG:
+        case .video:
             return ConversionPreset(
-                name: "HEIC Photos to JPEG",
-                menuName: "HEIC → JPEG",
-                category: .image,
-                sourceFormats: ["heic"],
-                destinationFormat: "jpg",
-                backend: .imageIO,
-                quality: .high
+                name: "New Video Preset", menuName: "New Video Preset", category: .video,
+                sourceFormats: ["video"], destinationFormat: "mp4", backend: .auto,
+                videoCodec: .h264, audioCodec: .aac, quality: .high
             )
-        case .heicToPNG:
+        case .audio:
             return ConversionPreset(
-                name: "HEIC Photos to PNG",
-                menuName: "HEIC → PNG",
-                category: .image,
-                sourceFormats: ["heic"],
-                destinationFormat: "png",
-                backend: .imageIO,
-                quality: .lossless
+                name: "New Audio Preset", menuName: "New Audio Preset", category: .audio,
+                sourceFormats: ["audio", "video"], destinationFormat: "mp3", backend: .auto,
+                audioCodec: .mp3, quality: .high
             )
-        case .imageToPNG:
+        case .document:
             return ConversionPreset(
-                name: "Images to PNG",
-                menuName: "Images → PNG",
-                category: .image,
-                sourceFormats: ["image"],
-                destinationFormat: "png",
-                backend: .imageIO,
-                quality: .lossless
+                name: "New Document Preset", menuName: "New Document Preset", category: .document,
+                sourceFormats: ["document"], destinationFormat: "pdf", backend: .auto, quality: .high
             )
-        case .videoToMP4:
+        case .anything:
             return ConversionPreset(
-                name: "Video to MP4",
-                menuName: "Video → MP4",
-                category: .video,
-                sourceFormats: ["video"],
-                destinationFormat: "mp4",
-                backend: .auto,
-                videoCodec: .h264,
-                audioCodec: .aac,
-                quality: .high,
-                crf: 22
-            )
-        case .audioToMP3:
-            return ConversionPreset(
-                name: "Audio or Video to MP3",
-                menuName: "Audio/video → MP3",
-                category: .audio,
-                sourceFormats: ["audio", "video"],
-                destinationFormat: "mp3",
-                backend: .auto,
-                audioCodec: .mp3,
-                quality: .high,
-                audioBitrateKbps: 320
-            )
-        case .documentToPDF:
-            return ConversionPreset(
-                name: "Documents to PDF",
-                menuName: "Documents → PDF",
-                category: .document,
-                sourceFormats: ["document", "image"],
-                destinationFormat: "pdf",
-                backend: .auto,
-                quality: .high
-            )
-        case .startBlank:
-            return ConversionPreset(
-                name: "Custom Conversion",
-                menuName: "Custom Conversion",
-                category: .custom,
-                sourceFormats: ["*"],
-                destinationFormat: "jpg",
-                backend: .auto,
-                quality: .high
+                name: "New Preset", menuName: "New Preset", category: .custom,
+                sourceFormats: ["*"], destinationFormat: "jpg", backend: .auto, quality: .high
             )
         }
     }
@@ -1006,14 +955,14 @@ struct NewPresetWizardView: View {
     let onCreate: (ConversionPreset) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedTemplate: PresetTemplate? = .imageToJPEG
+    @State private var selectedTemplate: PresetTemplate? = .image
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("New Preset")
                     .font(.title3.weight(.semibold))
-                Text("Choose a starting point. You can change every setting afterwards.")
+                Text("What will it convert? To start from an existing preset instead, select it and click Duplicate.")
                     .foregroundStyle(.secondary)
             }
             .padding([.horizontal, .top], 20)
