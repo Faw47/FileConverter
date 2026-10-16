@@ -23,6 +23,9 @@ public enum QueueHistoryStore {
         /// converted again (everything but `completed`). Absent in records
         /// written by older versions.
         var preset: ConversionPreset? = nil
+        /// For failures: what "Details" showed besides the message.
+        var recoverySuggestion: String? = nil
+        var technicalDetails: String? = nil
 
         enum Outcome: String, Codable {
             case completed, completedWithWarnings, failed, skipped, cancelled
@@ -36,6 +39,8 @@ public enum QueueHistoryStore {
     static func record(for job: ConversionJob) -> Record? {
         let outcome: Record.Outcome
         var message: String?
+        var suggestion: String?
+        var technical: String?
         switch job.state {
         case .completed: outcome = .completed
         case .completedWithWarnings(let warnings):
@@ -44,6 +49,9 @@ public enum QueueHistoryStore {
         case .failed(let error):
             outcome = .failed
             message = error.localizedDescription
+            suggestion = error.recoverySuggestion
+            let details = error.technicalDetails
+            technical = details == message ? nil : String(details.suffix(16 * 1024))
         case .skipped(let reason):
             outcome = .skipped
             message = reason
@@ -64,7 +72,9 @@ public enum QueueHistoryStore {
             outputPaths: job.outputURLs.map(\.path),
             startedAt: job.startedAt,
             finishedAt: job.finishedAt,
-            preset: outcome == .completed ? nil : job.preset
+            preset: outcome == .completed ? nil : job.preset,
+            recoverySuggestion: suggestion,
+            technicalDetails: technical
         )
     }
 
@@ -81,7 +91,12 @@ public enum QueueHistoryStore {
         switch record.outcome {
         case .completed: state = .completed
         case .completedWithWarnings: state = .completedWithWarnings((record.message ?? "").components(separatedBy: "\n").filter { !$0.isEmpty })
-        case .failed: state = .failed(.unknown(message: record.message ?? "Conversion failed."))
+        case .failed:
+            state = .failed(.restored(
+                message: record.message ?? "Conversion failed.",
+                recoverySuggestion: record.recoverySuggestion,
+                technicalDetails: record.technicalDetails
+            ))
         case .skipped: state = .skipped(record.message ?? "Skipped")
         case .cancelled: state = .cancelled
         }

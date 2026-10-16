@@ -27,6 +27,9 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
     case admissionRejected(reason: String)
     case imageTooLarge(width: Int, height: Int, limitMegapixels: Int)
     case unknown(message: String)
+    /// A failure read back from history: the text as it was shown, so
+    /// "Details" still has the suggestion and the technical log.
+    case restored(message: String, recoverySuggestion: String?, technicalDetails: String?)
 
     public var errorDescription: String? {
         func name(_ path: String) -> String { URL(fileURLWithPath: path).lastPathComponent }
@@ -108,6 +111,9 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
 
         case .unknown(let message):
             return message
+
+        case .restored(let message, _, _):
+            return message
         }
     }
 
@@ -131,6 +137,8 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
             return "Installing FFmpeg adds support for more formats."
         case .backendContractViolation:
             return "Try again. If it keeps happening, copy the details and report it."
+        case .restored(_, let suggestion, _):
+            return suggestion
         default:
             return nil
         }
@@ -161,6 +169,8 @@ public enum ConversionError: Error, LocalizedError, CustomStringConvertible, Sen
             return "Security-scoped access to '\(path)' could not be kept."
         case .dependencyMissing(let tool, let command):
             return "Missing dependency: \(tool)\nInstall command: \(command)"
+        case .restored(let message, _, let technical):
+            return technical ?? message
         default:
             return errorDescription ?? "Unknown error"
         }

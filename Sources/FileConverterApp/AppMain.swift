@@ -162,7 +162,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound])
+        // Someone looking at the queue already sees the batch finish; keep it
+        // in Notification Center without a banner or sound.
+        let watching = Thread.isMainThread && MainActor.assumeIsolated { Self.isWatchingQueue }
+        completionHandler(watching ? [.list] : [.banner, .sound])
+    }
+
+    /// File Converter is the active app and its main window is on screen.
+    static var isWatchingQueue: Bool {
+        guard NSApp.isActive, let window = MainWindowTracker.shared.mainWindow else { return false }
+        return window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
     }
 
     nonisolated func userNotificationCenter(
@@ -353,9 +362,11 @@ struct FileConverterApp: App {
         MenuBarExtra(isInserted: menuBarExtraInserted) {
             MenuBarStatusView(queue: conversionQueue)
         } label: {
+            // Two-way arrows (one format to another), filled while converting;
+            // the old circular arrows read as "sync".
             Image(systemName: conversionQueue.activeCount + conversionQueue.queuedCount > 0
-                ? "arrow.triangle.2.circlepath.circle.fill"
-                : "arrow.triangle.2.circlepath")
+                ? "arrow.left.arrow.right.circle.fill"
+                : "arrow.left.arrow.right.circle")
                 .accessibilityLabel("File Converter")
         }
         Window("File Converter Help", id: "help") {
