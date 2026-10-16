@@ -329,24 +329,18 @@ final class OutputNamingTests: XCTestCase {
         let preset = BuiltInPresets.makeDefaultPresets().first { $0.menuName == "MP4" }!
         XCTAssertEqual(preset.outputDirectoryPolicy, .sameAsSource)
 
-        let originalPolicy = UserDefaults.standard.string(forKey: "outputDirectoryPolicy")
-        defer {
-            if let originalPolicy {
-                UserDefaults.standard.set(originalPolicy, forKey: "outputDirectoryPolicy")
-            } else {
-                UserDefaults.standard.removeObject(forKey: "outputDirectoryPolicy")
-            }
+        try withIsolatedDefaults { defaults in
+            defaults.set("downloads", forKey: "outputDirectoryPolicy")
+            XCTAssertEqual(OutputNamingEngine.globalDefaultOutputPolicy, .downloads)
+
+            // Only resolves the path; nothing is written to ~/Downloads.
+            let resolvedURL = try OutputNamingEngine.resolveFinalDestinationURL(
+                sourceURL: sourceURL,
+                preset: preset
+            )
+            let expectedDownloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+            XCTAssertEqual(resolvedURL.deletingLastPathComponent().standardizedFileURL, expectedDownloads.standardizedFileURL)
         }
-
-        UserDefaults.standard.set("downloads", forKey: "outputDirectoryPolicy")
-        XCTAssertEqual(OutputNamingEngine.globalDefaultOutputPolicy, .downloads)
-
-        let resolvedURL = try OutputNamingEngine.resolveFinalDestinationURL(
-            sourceURL: sourceURL,
-            preset: preset
-        )
-        let expectedDownloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
-        XCTAssertEqual(resolvedURL.deletingLastPathComponent().standardizedFileURL, expectedDownloads.standardizedFileURL)
     }
 
     func testGlobalDefaultOutputPolicyCustomFolderApplied() throws {
@@ -361,29 +355,22 @@ final class OutputNamingTests: XCTestCase {
             relativeTo: nil
         )
 
-        let origPolicy = UserDefaults.standard.string(forKey: "outputDirectoryPolicy")
-        let origBookmark = UserDefaults.standard.data(forKey: "fc.customOutputFolderBookmark")
-        let origPath = UserDefaults.standard.string(forKey: "fc.customOutputFolderPath")
-        defer {
-            UserDefaults.standard.setValue(origPolicy, forKey: "outputDirectoryPolicy")
-            UserDefaults.standard.setValue(origBookmark, forKey: "fc.customOutputFolderBookmark")
-            UserDefaults.standard.setValue(origPath, forKey: "fc.customOutputFolderPath")
+        try withIsolatedDefaults { defaults in
+            defaults.set("custom", forKey: "outputDirectoryPolicy")
+            defaults.set(bookmark, forKey: "fc.customOutputFolderBookmark")
+            defaults.set(customDir.path, forKey: "fc.customOutputFolderPath")
+
+            XCTAssertEqual(
+                OutputNamingEngine.globalDefaultOutputPolicy,
+                .customFolder(bookmarkData: bookmark, displayPath: customDir.path)
+            )
+
+            let resolvedURL = try OutputNamingEngine.resolveFinalDestinationURL(
+                sourceURL: sourceURL,
+                preset: preset
+            )
+            XCTAssertEqual(resolvedURL.deletingLastPathComponent().standardizedFileURL, customDir.standardizedFileURL)
         }
-
-        UserDefaults.standard.set("custom", forKey: "outputDirectoryPolicy")
-        UserDefaults.standard.set(bookmark, forKey: "fc.customOutputFolderBookmark")
-        UserDefaults.standard.set(customDir.path, forKey: "fc.customOutputFolderPath")
-
-        XCTAssertEqual(
-            OutputNamingEngine.globalDefaultOutputPolicy,
-            .customFolder(bookmarkData: bookmark, displayPath: customDir.path)
-        )
-
-        let resolvedURL = try OutputNamingEngine.resolveFinalDestinationURL(
-            sourceURL: sourceURL,
-            preset: preset
-        )
-        XCTAssertEqual(resolvedURL.deletingLastPathComponent().standardizedFileURL, customDir.standardizedFileURL)
     }
 
     func testCollisionResolutionPlanExactReplaceSucceeds() throws {

@@ -194,7 +194,7 @@ public final class AppSettings: ObservableObject {
         normalizeConcurrency(max(2, ProcessInfo.processInfo.activeProcessorCount / 2))
     }
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = ConversionDefaults.store) {
         self.defaults = defaults
 
         defaults.register(defaults: [

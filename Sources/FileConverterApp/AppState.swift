@@ -48,7 +48,7 @@ public final class AppState: ObservableObject {
     }
 
     public init() {
-        let stored = UserDefaults.standard.string(forKey: AppSettings.Keys.selectedSettingsTab)
+        let stored = ConversionDefaults.store.string(forKey: AppSettings.Keys.selectedSettingsTab)
         self.selectedTab = SettingsTab(rawValue: stored ?? "") ?? .general
 
         _ = AppSettings.shared
@@ -69,7 +69,7 @@ public final class AppState: ObservableObject {
 
         $selectedTab
             .sink { tab in
-                UserDefaults.standard.set(tab.rawValue, forKey: AppSettings.Keys.selectedSettingsTab)
+                ConversionDefaults.store.set(tab.rawValue, forKey: AppSettings.Keys.selectedSettingsTab)
             }
             .store(in: &cancellables)
 

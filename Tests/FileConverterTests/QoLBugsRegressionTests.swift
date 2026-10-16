@@ -76,19 +76,10 @@ final class QoLBugsRegressionTests: XCTestCase {
     }
 
     func testNotificationDefaultIsFalseWhenUnset() {
-        let key = "enableNotifications"
-        let previous = UserDefaults.standard.object(forKey: key)
-        defer {
-            if let previous {
-                UserDefaults.standard.set(previous, forKey: key)
-            } else {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
+        withIsolatedDefaults { defaults in
+            let enabled = defaults.object(forKey: "enableNotifications") as? Bool ?? false
+            XCTAssertFalse(enabled, "enableNotifications should default to false")
         }
-        UserDefaults.standard.removeObject(forKey: key)
-
-        let enabled = UserDefaults.standard.object(forKey: key) as? Bool ?? false
-        XCTAssertFalse(enabled, "enableNotifications should default to false")
     }
 
     @MainActor

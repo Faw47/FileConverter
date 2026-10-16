@@ -105,7 +105,7 @@ public struct ConversionDefaults: Sendable, Equatable {
 
 private final class DefaultsBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var stored: UserDefaults = .standard
+    private var stored: UserDefaults = AppDataLocation.defaults
 
     var value: UserDefaults {
         get { lock.withLock { stored } }

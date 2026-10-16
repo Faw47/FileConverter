@@ -289,7 +289,7 @@ public actor ConversionCoordinator {
 }
 
 func postUserNotification(title: String, body: String) {
-    let enabled = UserDefaults.standard.object(forKey: "enableNotifications") as? Bool ?? false
+    let enabled = ConversionDefaults.store.object(forKey: "enableNotifications") as? Bool ?? false
     guard enabled else { return }
     guard Bundle.main.bundleURL.pathExtension.lowercased() == "app" else { return }
 
