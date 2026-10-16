@@ -7,6 +7,7 @@ File Converter changes files from one format to another on your Mac. Nothing is 
 - **From Finder:** select one or more files, right-click, and choose **File Converter**, then a preset. Conversion starts right away; progress shows on the Dock icon and in the menu bar.
 - **From the window:** drop files or folders on the File Converter window or click **Choose Files…**, pick a preset, and click **Convert** (or press Return). A folder converts every file inside it that File Converter can convert, including its subfolders.
 - In **Settings › General › Watched Folders**, add a folder and choose a preset. New files that appear in it convert on their own into a “Converted” folder inside it, while File Converter is open.
+- In the Shortcuts app, the **Convert Files** action converts files with a preset you pick and passes the converted files to the next action. You can also say “Convert files with File Converter” to Siri.
 - **Open With, Services, and the Dock icon:** these show the preset picker with your last choice for that file type selected. In **Settings › General › Opening Files** you can make them convert right away instead.
 
 The Finder menu only lists presets that fit the selected files. When some of the selected files fit a preset and others don't, the preset shows “(3 of 5 files)” and converts only those.
