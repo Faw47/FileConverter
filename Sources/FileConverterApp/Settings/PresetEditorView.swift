@@ -170,14 +170,40 @@ public struct PresetEditorView: View {
     private func editor(for preset: Binding<ConversionPreset>) -> some View {
         let errors = validationErrors(for: preset.wrappedValue)
 
-        return VStack(spacing: 0) {
-            // Pinned Inspector Header
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: preset.wrappedValue.category.systemImage)
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28)
+        // The name and Save float over the form on macOS 26 and later, as
+        // the main window's bars do; earlier systems pin them with dividers.
+        return Form {
+            if !errors.isEmpty {
+                needsAttentionSection(errors: errors)
+            }
 
+            identitySection(preset: preset)
+            quickSetupSection(preset: preset)
+
+            if preset.wrappedValue.category == .document,
+               (preset.wrappedValue.splitPDFIntoPages
+                   || PresetValidator.canSplitPDFPages(preset.wrappedValue)) {
+                documentToolsSection(preset: preset)
+            }
+            if preset.wrappedValue.category == .video {
+                videoSection(preset: preset)
+            }
+            if preset.wrappedValue.category == .image {
+                imageSection(preset: preset)
+            }
+            if preset.wrappedValue.category == .audio || preset.wrappedValue.category == .video {
+                audioSection(preset: preset)
+            }
+
+            outputSection(preset: preset)
+            metadataSection(preset: preset)
+            nameAndMatchingSection(preset: preset)
+            conversionEngineSection(preset: preset)
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .edgeBar(.top) {
+            HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(preset.wrappedValue.name.isEmpty ? "Untitled Preset" : preset.wrappedValue.name)
                         .font(.headline)
@@ -205,49 +231,12 @@ public struct PresetEditorView: View {
                             showingSaveError = true
                         }
                     }
-                    .controlSize(.small)
+                    .edgeBarButtonStyle()
                     .accessibilityLabel("Restore factory preset")
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-
-            Divider()
-
-            Form {
-                if !errors.isEmpty {
-                    needsAttentionSection(errors: errors)
-                }
-
-                identitySection(preset: preset)
-                quickSetupSection(preset: preset)
-
-                if preset.wrappedValue.category == .document,
-                   (preset.wrappedValue.splitPDFIntoPages
-                       || PresetValidator.canSplitPDFPages(preset.wrappedValue)) {
-                    documentToolsSection(preset: preset)
-                }
-                if preset.wrappedValue.category == .video {
-                    videoSection(preset: preset)
-                }
-                if preset.wrappedValue.category == .image {
-                    imageSection(preset: preset)
-                }
-                if preset.wrappedValue.category == .audio || preset.wrappedValue.category == .video {
-                    audioSection(preset: preset)
-                }
-
-                outputSection(preset: preset)
-                metadataSection(preset: preset)
-                nameAndMatchingSection(preset: preset)
-                conversionEngineSection(preset: preset)
-            }
-            .formStyle(.grouped)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Divider()
-
-            // Pinned Action Footer
+        }
+        .edgeBar(.bottom) {
             HStack(spacing: 8) {
                 if !preset.wrappedValue.isBuiltIn {
                     Button("Delete…", role: .destructive) {
@@ -257,16 +246,19 @@ public struct PresetEditorView: View {
                             showingDeleteConfirmation = true
                         }
                     }
+                    .edgeBarButtonStyle()
                 }
 
                 Button("Revert") {
                     load()
                 }
                 .disabled(!hasChanges)
+                .edgeBarButtonStyle()
 
                 Button("Export…") {
                     exportSinglePreset(preset.wrappedValue)
                 }
+                .edgeBarButtonStyle()
 
                 Spacer()
 
@@ -291,16 +283,11 @@ public struct PresetEditorView: View {
                 Button("Save") {
                     save(preset.wrappedValue)
                 }
-                .buttonStyle(.borderedProminent)
+                .edgeBarButtonStyle(prominent: true)
                 .disabled(!hasChanges || !errors.isEmpty)
                 .keyboardShortcut("s", modifiers: .command)
             }
-            .controlSize(.small)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Sections

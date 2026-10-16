@@ -117,11 +117,10 @@ public struct ExternalToolsSettingsView: View {
                         Button("Copy Install Command") { copy(tool.installCommand) }
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Label("Options", systemImage: "ellipsis")
+                        .labelStyle(.iconOnly)
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+                .rowMenuStyle()
                 .accessibilityLabel("Options for \(displayName(tool.name))")
             }
             Text(role(tool.name))
@@ -216,5 +215,24 @@ public struct ExternalToolsSettingsView: View {
             if !clean.isEmpty { return clean }
         }
         return String(raw.prefix(12))
+    }
+}
+
+private extension View {
+    /// The round "…" button macOS 26 uses for a row's actions; the
+    /// borderless circled ellipsis before that.
+    @ViewBuilder
+    func rowMenuStyle() -> some View {
+        if #available(macOS 26, *) {
+            menuStyle(.button)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.circle)
+                .menuIndicator(.hidden)
+                .fixedSize()
+        } else {
+            menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+        }
     }
 }

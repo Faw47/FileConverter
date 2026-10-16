@@ -37,7 +37,7 @@ public struct FinderIntegrationView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: integrationFilesReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(integrationFilesReady ? .green : .orange)
-                        .font(.title2)
+                        .imageScale(.large)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(statusTitle).font(.headline)
@@ -68,36 +68,30 @@ public struct FinderIntegrationView: View {
                 Text("3. Pick a preset. The converted file appears next to the original, or wherever General settings say.")
             }
 
-            Section {
-                DisclosureGroup("Troubleshooting") {
-                    LabeledContent("Menu data") {
-                        Text(snapshotAge ?? "Never written")
-                            .foregroundStyle(.secondary)
+            Section("Troubleshooting") {
+                LabeledContent("Menu data") {
+                    Text(snapshotAge ?? "Never written")
+                }
+                LabeledContent {
+                    Button("Rewrite Menu Data") { forceRefreshSnapshot() }
+                } label: {
+                    Text("New presets are missing from the menu")
+                    Text("Writes the menu data Finder reads again.")
+                }
+                LabeledContent {
+                    Button(finderRelaunched ? "Restarted" : "Restart Finder…") {
+                        showingRelaunchConfirmation = true
                     }
-                    HStack {
-                        Text("If new presets are missing from the menu, rewrite the menu data.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Rewrite Menu Data") { forceRefreshSnapshot() }
-                    }
-                    HStack {
-                        Text("If the menu does not appear at all, restart Finder. Open Finder windows will close and reopen.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button(finderRelaunched ? "Restarted" : "Restart Finder…") {
-                            showingRelaunchConfirmation = true
-                        }
-                        .disabled(finderRelaunched)
-                    }
-                    HStack {
-                        Text("Show the folder File Converter shares with Finder.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Show Folder") { revealIPCFolder() }
-                    }
+                    .disabled(finderRelaunched)
+                } label: {
+                    Text("The menu does not appear at all")
+                    Text("Open Finder windows close and reopen.")
+                }
+                LabeledContent {
+                    Button("Show Folder") { revealIPCFolder() }
+                } label: {
+                    Text("Shared folder")
+                    Text("The folder File Converter shares with Finder.")
                 }
             }
         }

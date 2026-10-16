@@ -138,6 +138,14 @@ public enum SnapshotRunner {
                 }
                 ConversionQueue.shared.setJobsForTesting(realJobs)
             }
+            // A queue of its own, so nothing touches the real one.
+            let conflictQueue = ConversionQueue()
+            for url in urls {
+                conflictQueue.injectCollisionForTesting(jobID: UUID(), destination: url, filename: url.lastPathComponent)
+            }
+            snap("conflicts", size: CGSize(width: 640, height: 420), appearances: appearances, to: outURL) {
+                CollisionResolutionView(queue: conflictQueue) {}
+            }
             snap("new_preset", size: CGSize(width: 640, height: 620), appearances: appearances, to: outURL) {
                 NewPresetWizardView { _ in }
             }

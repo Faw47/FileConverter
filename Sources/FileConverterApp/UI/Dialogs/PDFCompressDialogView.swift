@@ -137,109 +137,94 @@ public struct PDFCompressDialogView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            headerView
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
+        Form {
+            Section {
+                Picker("Aim for", selection: $profile) {
+                    ForEach(CompressionProfile.allCases) { profile in
+                        Text(profile.rawValue).tag(profile)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Compression level")
+                .onChange(of: profile) { _, newValue in
+                    pageDPI = newValue.defaultDPI
+                    imageQuality = newValue.defaultQuality
+                }
 
-            Divider()
+                if !usesGhostscript {
+                    Toggle("Turn pages into images", isOn: $flattenPages)
+                        .accessibilityLabel("Turn pages into images")
+                }
 
-            Form {
-                Section {
-                    Picker("Aim for", selection: $profile) {
-                        ForEach(CompressionProfile.allCases) { profile in
-                            Text(profile.rawValue).tag(profile)
+                if showsImageControls {
+                    Toggle("Convert to grayscale", isOn: $grayscale)
+                        .accessibilityLabel("Convert to grayscale")
+                    Picker("Image resolution", selection: $pageDPI) {
+                        ForEach([72, 96, 150, 200, 300], id: \.self) { dpi in
+                            Text("\(dpi) dpi").tag(dpi)
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Compression level")
-                    .onChange(of: profile) { _, newValue in
-                        pageDPI = newValue.defaultDPI
-                        imageQuality = newValue.defaultQuality
-                    }
-
-                    if !usesGhostscript {
-                        Toggle("Turn pages into images", isOn: $flattenPages)
-                            .accessibilityLabel("Turn pages into images")
-                    }
-
-                    if showsImageControls {
-                        Toggle("Convert to grayscale", isOn: $grayscale)
-                            .accessibilityLabel("Convert to grayscale")
-                        Picker("Image resolution", selection: $pageDPI) {
-                            ForEach([72, 96, 150, 200, 300], id: \.self) { dpi in
-                                Text("\(dpi) dpi").tag(dpi)
-                            }
-                        }
-                        .accessibilityLabel("Image resolution in dots per inch")
-                        if flattenPages && !usesGhostscript {
-                            LabeledContent("Image quality") {
-                                HStack {
-                                    Slider(value: $imageQuality, in: 0.3...1.0, step: 0.05)
-                                        .accessibilityLabel("JPEG image quality")
-                                        .accessibilityValue("\(Int(imageQuality * 100)) percent")
-                                    Text("\(Int(imageQuality * 100))%")
-                                        .monospacedDigit()
-                                        .frame(width: 40, alignment: .trailing)
-                                }
+                    .accessibilityLabel("Image resolution in dots per inch")
+                    if flattenPages && !usesGhostscript {
+                        LabeledContent("Image quality") {
+                            HStack {
+                                Slider(value: $imageQuality, in: 0.3...1.0, step: 0.05)
+                                    .accessibilityLabel("JPEG image quality")
+                                    .accessibilityValue("\(Int(imageQuality * 100)) percent")
+                                Text("\(Int(imageQuality * 100))%")
+                                    .monospacedDigit()
+                                    .frame(width: 40, alignment: .trailing)
                             }
                         }
                     }
-                    if usesGhostscript {
-                        Toggle("Optimize for fast web viewing", isOn: $linearize)
-                            .accessibilityLabel("Optimize for fast web viewing")
-                    }
-                } footer: {
-                    FooterText(compressionFooter)
                 }
-
-                Section("Remove") {
-                    Toggle("Document details (author, title, keywords)", isOn: $removeMetadata)
-                        .accessibilityLabel("Remove document details")
-                    Toggle("Comments and highlights", isOn: $removeAnnotations)
-                        .accessibilityLabel("Remove comments and highlights")
+                if usesGhostscript {
+                    Toggle("Optimize for fast web viewing", isOn: $linearize)
+                        .accessibilityLabel("Optimize for fast web viewing")
                 }
-
-                Section {
-                    TextField("Name ending", text: $nameEnding, prompt: Text("-compressed"))
-                        .accessibilityLabel("Filename ending")
-                    LabeledContent("Save to") {
-                        HStack {
-                            Text(customOutputDirectory.map { ($0.path as NSString).abbreviatingWithTildeInPath }
-                                ?? DestinationDescription.folder(for: initialPreset))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .foregroundStyle(.secondary)
-                            Button("Change…") { chooseOutputDirectory() }
-                                .accessibilityLabel("Change output folder")
-                            if customOutputDirectory != nil {
-                                Button("Use Default") { customOutputDirectory = nil }
-                                    .accessibilityLabel("Use the default output folder")
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Saving")
-                } footer: {
-                    FooterText("Example: \(exampleName). If the result is not smaller, nothing is saved.")
-                }
+            } footer: {
+                FooterText(compressionFooter)
             }
-            .formStyle(.grouped)
 
-            Divider()
+            Section("Remove") {
+                Toggle("Document details (author, title, keywords)", isOn: $removeMetadata)
+                    .accessibilityLabel("Remove document details")
+                Toggle("Comments and highlights", isOn: $removeAnnotations)
+                    .accessibilityLabel("Remove comments and highlights")
+            }
 
-            footerView
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+            Section {
+                TextField("Name ending", text: $nameEnding, prompt: Text("-compressed"))
+                    .accessibilityLabel("Filename ending")
+                LabeledContent("Save to") {
+                    HStack {
+                        Text(customOutputDirectory.map { ($0.path as NSString).abbreviatingWithTildeInPath }
+                            ?? DestinationDescription.folder(for: initialPreset))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.secondary)
+                        Button("Change…") { chooseOutputDirectory() }
+                            .accessibilityLabel("Change output folder")
+                        if customOutputDirectory != nil {
+                            Button("Use Default") { customOutputDirectory = nil }
+                                .accessibilityLabel("Use the default output folder")
+                        }
+                    }
+                }
+            } header: {
+                Text("Saving")
+            } footer: {
+                FooterText("Example: \(exampleName). If the result is not smaller, nothing is saved.")
+            }
         }
+        .formStyle(.grouped)
+        .edgeBar(.top, style: .sheet) { headerView }
+        .edgeBar(.bottom, style: .sheet) { footerView }
         .frame(minWidth: 540, idealWidth: 580, minHeight: 480, idealHeight: 600)
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
-        )
+        .dropHighlight(isDropTargeted, "Drop to add PDFs")
         .task {
             recalculateStats()
         }
@@ -372,28 +357,15 @@ public struct PDFCompressDialogView: View {
 
     // MARK: - Header
     private var headerView: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "doc.richtext")
-                .font(.system(size: 26))
+        VStack(alignment: .leading, spacing: 4) {
+            Text(currentURLs.count == 1 ? "Compress “\(firstURL?.lastPathComponent ?? "PDF Document")”" : "Compress \(currentURLs.count) PDFs")
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(statsText)
                 .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(currentURLs.count == 1 ? (firstURL?.lastPathComponent ?? "PDF Document") : "\(currentURLs.count) PDF Documents")
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(statsText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if isDropTargeted {
-                Label("Drop to add PDFs", systemImage: "plus.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var statsText: String {
@@ -422,7 +394,7 @@ public struct PDFCompressDialogView: View {
                             currentURLs.removeAll { left.contains($0) }
                             recalculateStats()
                         }
-                        .controlSize(.small)
+                        .edgeBarButtonStyle()
                     }
                 }
             }
@@ -430,6 +402,7 @@ public struct PDFCompressDialogView: View {
             HStack {
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
+                    .edgeBarButtonStyle()
                     .accessibilityLabel("Cancel compression")
 
                 Spacer()
@@ -438,7 +411,7 @@ public struct PDFCompressDialogView: View {
                     startCompression()
                 }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .edgeBarButtonStyle(prominent: true)
                 .disabled(isLoadingStats || cachedPageCount == nil || !problemFiles.isEmpty)
                 .accessibilityLabel("Start PDF compression")
             }

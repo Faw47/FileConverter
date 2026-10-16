@@ -16,7 +16,6 @@ struct PresetPickerView: View {
 
     @State private var searchText = ""
     @State private var selectedID: UUID?
-    @State private var showingOptions = false
     @State private var locationOverride: LocationOverride = .preset
     @State private var qualityOverride: QualityOverride = .preset
     @State private var customFolder: URL?
@@ -103,9 +102,7 @@ struct PresetPickerView: View {
                 noPresets
             } else {
                 presetGrid
-                Divider()
-                footer
-                    .padding(16)
+                    .edgeBar(.bottom, style: .sheet) { footer }
             }
         }
         .frame(minWidth: 560, idealWidth: 720, maxWidth: 960, minHeight: 420, idealHeight: 540)
@@ -300,23 +297,23 @@ struct PresetPickerView: View {
                     .truncationMode(.middle)
             }
 
-            DisclosureGroup("Options for This Conversion", isExpanded: $showingOptions) {
-                Form {
-                    optionPickers(showQuality: selectedPreset.map(Self.takesQualityOverride) ?? false)
-                }
-                .formStyle(.columns)
-                .padding(.top, 6)
+            // This conversion's own choices, always in view: two menus
+            // rather than a disclosure to open first.
+            HStack(spacing: 16) {
+                optionPickers(showQuality: selectedPreset.map(Self.takesQualityOverride) ?? false)
+                    .fixedSize()
             }
-            .font(.callout)
 
             HStack {
                 Button("Manage Presets…", action: onManagePresets)
+                    .edgeBarButtonStyle()
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
+                    .edgeBarButtonStyle()
                 Button("Convert") { convertSelected() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                    .edgeBarButtonStyle(prominent: true)
                     .disabled(effectivePreset == nil)
             }
         }
@@ -463,19 +460,32 @@ private struct MixedBatchView: View {
                 }
             }
             .formStyle(.grouped)
+            .edgeBar(.bottom, style: .sheet) { footer }
+        }
+        .onAppear {
+            for group in groups {
+                let options = presets(for: group.urls)
+                guard !options.isEmpty else { continue }
+                included.insert(group.category)
+                choices[group.category] = PresetUsageStore.lastCompatiblePreset(for: group.urls, among: options)?.id ?? options[0].id
+            }
+        }
+    }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 10) {
             if let note = metadataNote {
                 Text(note)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
             }
-            Divider()
             HStack {
                 Button("Manage Presets…", action: onManagePresets)
+                    .edgeBarButtonStyle()
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
+                    .edgeBarButtonStyle()
                 Button("Convert") {
                     let work = groups.compactMap { group -> (urls: [URL], preset: ConversionPreset)? in
                         guard included.contains(group.category) else { return nil }
@@ -487,17 +497,8 @@ private struct MixedBatchView: View {
                     onConvert(work)
                 }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .edgeBarButtonStyle(prominent: true)
                 .disabled(included.isEmpty)
-            }
-            .padding(16)
-        }
-        .onAppear {
-            for group in groups {
-                let options = presets(for: group.urls)
-                guard !options.isEmpty else { continue }
-                included.insert(group.category)
-                choices[group.category] = PresetUsageStore.lastCompatiblePreset(for: group.urls, among: options)?.id ?? options[0].id
             }
         }
     }

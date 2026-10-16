@@ -180,22 +180,40 @@ public struct PresetsSettingsView: View {
     }
 
     private var presetSidebar: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                TextField("Search presets", text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Search presets")
+        sidebarList
+            .edgeBar(.top) { sidebarFilterBar }
+            .edgeBar(.bottom) { sidebarActions }
+    }
 
-                Picker("Category", selection: $categoryFilter) {
-                    Text("All Categories").tag(nil as FormatCategory?)
-                    ForEach(FormatCategory.allCases) { category in
-                        Text(category.displayName).tag(category as FormatCategory?)
+    private var sidebarFilterBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                SearchField(prompt: "Search presets", text: $searchText)
+
+                Menu {
+                    Picker("Category", selection: $categoryFilter) {
+                        Text("All Categories").tag(nil as FormatCategory?)
+                        Divider()
+                        ForEach(FormatCategory.allCases) { category in
+                            Text(category.displayName).tag(category as FormatCategory?)
+                        }
                     }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } label: {
+                    Label(
+                        categoryFilter?.displayName ?? "All Categories",
+                        systemImage: categoryFilter == nil
+                            ? "line.3.horizontal.decrease"
+                            : "line.3.horizontal.decrease.circle.fill"
+                    )
+                    .labelStyle(.iconOnly)
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
+                .sidebarMenuStyle()
+                .help(categoryFilter.map { "Showing \($0.displayName) presets" } ?? "Show one category")
+                .accessibilityLabel("Category filter")
+                .accessibilityValue(categoryFilter?.displayName ?? "All Categories")
             }
-            .padding(10)
 
             if let selected = selectedPreset, !filteredPresets.contains(where: { $0.id == selected.id }) {
                 HStack(spacing: 6) {
@@ -212,124 +230,120 @@ public struct PresetsSettingsView: View {
                     .controlSize(.small)
                     .accessibilityLabel("Clear filter to show selected preset")
                 }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 6)
             }
+        }
+    }
 
-            Divider()
-
-            if filteredPresets.isEmpty {
-                ContentUnavailableView(
-                    "No Matching Presets",
-                    systemImage: "magnifyingglass",
-                    description: Text("Change the search or category filter.")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(selection: guardedSelection) {
-                    ForEach(FormatCategory.allCases) { category in
-                        let members = filteredPresets.filter { $0.category == category }
-                        if !members.isEmpty {
-                            Section(category.displayName) {
-                                ForEach(members) { preset in
-                                    PresetSidebarRow(preset: preset)
-                                        .tag(preset.id)
-                                        .contextMenu {
-                                            Button(preset.isEnabled ? "Hide from Menus" : "Show in Menus") {
-                                                request(.toggle(preset.id))
-                                            }
-                                            Button("Duplicate") {
-                                                request(.duplicate(preset.id))
-                                            }
-                                            Button("Export…") {
-                                                exportSinglePreset(preset)
-                                            }
-                                            if preset.isBuiltIn {
-                                                if isModifiedBuiltIn(preset) {
-                                                    Divider()
-                                                    Button("Restore Factory Settings") {
-                                                        restoreFactory(preset)
-                                                    }
-                                                }
-                                            } else {
+    @ViewBuilder
+    private var sidebarList: some View {
+        if filteredPresets.isEmpty {
+            ContentUnavailableView(
+                "No Matching Presets",
+                systemImage: "magnifyingglass",
+                description: Text("Change the search or category filter.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List(selection: guardedSelection) {
+                ForEach(FormatCategory.allCases) { category in
+                    let members = filteredPresets.filter { $0.category == category }
+                    if !members.isEmpty {
+                        Section(category.displayName) {
+                            ForEach(members) { preset in
+                                PresetSidebarRow(preset: preset)
+                                    .tag(preset.id)
+                                    .contextMenu {
+                                        Button(preset.isEnabled ? "Hide from Menus" : "Show in Menus") {
+                                            request(.toggle(preset.id))
+                                        }
+                                        Button("Duplicate") {
+                                            request(.duplicate(preset.id))
+                                        }
+                                        Button("Export…") {
+                                            exportSinglePreset(preset)
+                                        }
+                                        if preset.isBuiltIn {
+                                            if isModifiedBuiltIn(preset) {
                                                 Divider()
-                                                Button("Delete…", role: .destructive) {
-                                                    request(.delete(preset.id))
+                                                Button("Restore Factory Settings") {
+                                                    restoreFactory(preset)
                                                 }
+                                            }
+                                        } else {
+                                            Divider()
+                                            Button("Delete…", role: .destructive) {
+                                                request(.delete(preset.id))
                                             }
                                         }
-                                }
+                                    }
                             }
                         }
                     }
                 }
-                .listStyle(.sidebar)
             }
-
-            Divider()
-
-            HStack(spacing: 2) {
-                Button {
-                    request(.add)
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .help("New preset")
-                .accessibilityLabel("Create preset")
-
-                Button {
-                    if let selectedPreset {
-                        request(.duplicate(selectedPreset.id))
-                    }
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                }
-                .disabled(selectedPreset == nil)
-                .help("Duplicate selected preset")
-                .accessibilityLabel("Duplicate selected preset")
-
-                Button {
-                    if let selectedPreset {
-                        request(.delete(selectedPreset.id))
-                    }
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .disabled(selectedPreset == nil || selectedPreset?.isBuiltIn == true)
-                .help(selectedPreset?.isBuiltIn == true ? "Built-in presets can be hidden but not deleted" : "Delete selected preset")
-                .accessibilityLabel("Delete selected preset")
-
-                Spacer()
-
-                Menu {
-                    Button("Import Presets…") {
-                        request(.importPresets)
-                    }
-                    Button("Export All Presets…") {
-                        exportPresets()
-                    }
-                    if let selected = selectedPreset {
-                        Button("Export “\(selected.name)”…") {
-                            exportSinglePreset(selected)
-                        }
-                    }
-                    Divider()
-                    Button("Reset All Presets…", role: .destructive) {
-                        request(.resetAll)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("More preset actions")
-                .accessibilityLabel("More preset actions")
-            }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .listStyle(.sidebar)
         }
+    }
+
+    private var sidebarActions: some View {
+        HStack(spacing: 6) {
+            Button {
+                request(.add)
+            } label: {
+                Label("New Preset", systemImage: "plus")
+            }
+            .help("New preset")
+            .accessibilityLabel("Create preset")
+
+            Button {
+                if let selectedPreset {
+                    request(.duplicate(selectedPreset.id))
+                }
+            } label: {
+                Label("Duplicate", systemImage: "doc.on.doc")
+            }
+            .disabled(selectedPreset == nil)
+            .help("Duplicate selected preset")
+            .accessibilityLabel("Duplicate selected preset")
+
+            Button {
+                if let selectedPreset {
+                    request(.delete(selectedPreset.id))
+                }
+            } label: {
+                Label("Delete", systemImage: "minus")
+            }
+            .disabled(selectedPreset == nil || selectedPreset?.isBuiltIn == true)
+            .help(selectedPreset?.isBuiltIn == true ? "Built-in presets can be hidden but not deleted" : "Delete selected preset")
+            .accessibilityLabel("Delete selected preset")
+
+            Spacer()
+
+            Menu {
+                Button("Import Presets…") {
+                    request(.importPresets)
+                }
+                Button("Export All Presets…") {
+                    exportPresets()
+                }
+                if let selected = selectedPreset {
+                    Button("Export “\(selected.name)”…") {
+                        exportSinglePreset(selected)
+                    }
+                }
+                Divider()
+                Button("Reset All Presets…", role: .destructive) {
+                    request(.resetAll)
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis")
+            }
+            .sidebarMenuStyle()
+            .help("More preset actions")
+            .accessibilityLabel("More preset actions")
+        }
+        .labelStyle(.iconOnly)
+        .sidebarButtonStyle()
     }
 
     @ViewBuilder
@@ -770,18 +784,17 @@ private struct PresetConflictResolutionSheet: View {
                 }
             }
             .formStyle(.grouped)
-
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Cancel", role: .cancel) { onCancel() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Import") { onResolve(resolutions) }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
+            .edgeBar(.bottom, style: .sheet) {
+                HStack {
+                    Spacer()
+                    Button("Cancel", role: .cancel) { onCancel() }
+                        .keyboardShortcut(.cancelAction)
+                        .edgeBarButtonStyle()
+                    Button("Import") { onResolve(resolutions) }
+                        .keyboardShortcut(.defaultAction)
+                        .edgeBarButtonStyle(prominent: true)
+                }
             }
-            .padding(16)
         }
         .frame(width: 520)
         .frame(minHeight: 300, maxHeight: 560)
@@ -995,20 +1008,20 @@ struct NewPresetWizardView: View {
                 if let template = templates.first { create(template) }
             }
 
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Create") {
-                    if let selectedTemplate { create(selectedTemplate) }
+            .edgeBar(.bottom, style: .sheet) {
+                HStack {
+                    Spacer()
+                    Button("Cancel") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                        .edgeBarButtonStyle()
+                    Button("Create") {
+                        if let selectedTemplate { create(selectedTemplate) }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .edgeBarButtonStyle(prominent: true)
+                    .disabled(selectedTemplate == nil)
                 }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(selectedTemplate == nil)
             }
-            .padding(16)
         }
         .frame(minWidth: 420, idealWidth: 460, minHeight: 440, idealHeight: 500)
     }
@@ -1016,5 +1029,33 @@ struct NewPresetWizardView: View {
     private func create(_ template: PresetTemplate) {
         onCreate(template.makePreset())
         dismiss()
+    }
+}
+
+private extension View {
+    /// Round glass buttons in the sidebar's floating bar on macOS 26 and
+    /// later; plain borderless icons in the older bottom strip.
+    @ViewBuilder
+    func sidebarButtonStyle() -> some View {
+        if #available(macOS 26, *) {
+            buttonStyle(.glass).buttonBorderShape(.circle)
+        } else {
+            buttonStyle(.borderless)
+        }
+    }
+
+    @ViewBuilder
+    func sidebarMenuStyle() -> some View {
+        if #available(macOS 26, *) {
+            menuStyle(.button)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .menuIndicator(.hidden)
+                .fixedSize()
+        } else {
+            menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+        }
     }
 }

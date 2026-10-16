@@ -15,7 +15,7 @@ public struct SettingsView: View {
                     .tag(tab)
             }
         }
-        .frame(minWidth: 860, idealWidth: 900, maxWidth: .infinity, minHeight: 600, idealHeight: 660, maxHeight: .infinity)
+        .frame(minWidth: 720, idealWidth: 860, maxWidth: .infinity, minHeight: 520, idealHeight: 640, maxHeight: .infinity)
     }
 
     @ViewBuilder

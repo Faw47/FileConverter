@@ -61,16 +61,7 @@ public struct FileConverterMainView: View {
             }
         }
         .edgeBar(.top, isPresented: !appState.uncompletedJournalEntries.isEmpty) { interruptedRecovery }
-        .overlay {
-            if dropTargeted {
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.accentColor, lineWidth: 3)
-                    .background(Color.accentColor.opacity(0.06))
-                    .overlay(Label("Drop to convert", systemImage: "arrow.down.doc").font(.title3))
-                    .padding(6)
-                    .allowsHitTesting(false)
-            }
-        }
+        .dropHighlight(dropTargeted, "Drop to convert")
         .background(MainWindowAccessor())
         .frame(minWidth: 560, idealWidth: 640, minHeight: 420, idealHeight: 500)
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenFileConverterOpenPanel"))) { _ in
@@ -383,55 +374,5 @@ struct AddFilesButton: View {
         }
         .help(coordinator.isPresenting ? "Finish the open dialog first; your files will be added next" : "Choose files to convert (⌘O)")
         .accessibilityLabel("Add Files to Convert")
-    }
-}
-
-/// A bar along the top or bottom of the window's content. On macOS 26 and
-/// later it floats over scrolling content with the system scroll-edge
-/// effect, as in Finder and Mail; earlier systems get a bar with a divider.
-private struct EdgeBar<Bar: View>: ViewModifier {
-    let edge: VerticalEdge
-    let isPresented: Bool
-    @ViewBuilder let bar: () -> Bar
-
-    func body(content: Content) -> some View {
-        if !isPresented {
-            content
-        } else if #available(macOS 26, *) {
-            content.safeAreaBar(edge: edge) {
-                bar()
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-            }
-        } else {
-            VStack(spacing: 0) {
-                if edge == .top { fallbackBar; Divider() }
-                content
-                if edge == .bottom { Divider(); fallbackBar }
-            }
-        }
-    }
-
-    private var fallbackBar: some View {
-        bar()
-            .controlSize(.small)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .background(.bar)
-    }
-}
-
-extension View {
-    fileprivate func edgeBar<Bar: View>(_ edge: VerticalEdge, isPresented: Bool = true, @ViewBuilder _ bar: @escaping () -> Bar) -> some View {
-        modifier(EdgeBar(edge: edge, isPresented: isPresented, bar: bar))
-    }
-
-    @ViewBuilder
-    fileprivate func edgeBarButtonStyle() -> some View {
-        if #available(macOS 26, *) {
-            buttonStyle(.glass)
-        } else {
-            self
-        }
     }
 }

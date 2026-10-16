@@ -15,53 +15,26 @@ struct CollisionResolutionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(conflicts.count == 1 ? "A File Already Exists" : "\(conflicts.count) Files Already Exist")
                     .font(.title3.weight(.semibold))
                 Text("Nothing is changed until you choose. Replaced files are moved to the Trash.")
                     .foregroundStyle(.secondary)
             }
+            .padding([.horizontal, .top], 20)
+            .padding(.bottom, 12)
 
             List(conflicts) { conflict in
                 CollisionRow(conflict: conflict) { decision in
                     queue.resolveCollisions(decision, jobIDs: [conflict.jobID])
                 }
             }
-            .listStyle(.bordered(alternatesRowBackgrounds: true))
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
             .frame(minHeight: 160)
-
-            HStack {
-                // Says what it does: these conversions stop. Nothing on disk
-                // changes either way.
-                Button(conflicts.count == 1 ? "Cancel Conversion" : "Cancel Conversions") {
-                    for conflict in conflicts {
-                        queue.cancelJob(id: conflict.jobID)
-                    }
-                    onFinished()
-                }
-                .keyboardShortcut(.cancelAction)
-                .help("Stop converting these files; existing files are left as they are")
-
-                Spacer()
-
-                if conflicts.count > 1 {
-                    Button("Skip All") {
-                        queue.resolveCollisions(.skip, applyToAll: true)
-                    }
-                    .accessibilityLabel("Skip all conflicting files")
-                    Button("Keep Both for All") {
-                        queue.resolveCollisions(.keepBoth, applyToAll: true)
-                    }
-                    .accessibilityLabel("Keep both files for all conflicts")
-                    Button("Replace All…") {
-                        confirmingReplaceAll = true
-                    }
-                    .accessibilityLabel("Replace all existing files")
-                }
-            }
+            .edgeBar(.bottom, style: .sheet) { actions }
         }
-        .padding(20)
         .frame(minWidth: 560, idealWidth: 640, minHeight: 320)
         .onChange(of: conflicts.isEmpty) { _, isEmpty in
             if isEmpty { onFinished() }
@@ -80,6 +53,38 @@ struct CollisionResolutionView: View {
         } message: {
             Text("The existing files will be moved to the Trash.")
         }
+    }
+    private var actions: some View {
+        HStack {
+            // Says what it does: these conversions stop. Nothing on disk
+            // changes either way.
+            Button(conflicts.count == 1 ? "Cancel Conversion" : "Cancel Conversions") {
+                for conflict in conflicts {
+                    queue.cancelJob(id: conflict.jobID)
+                }
+                onFinished()
+            }
+            .keyboardShortcut(.cancelAction)
+            .help("Stop converting these files; existing files are left as they are")
+
+            Spacer()
+
+            if conflicts.count > 1 {
+                Button("Skip All") {
+                    queue.resolveCollisions(.skip, applyToAll: true)
+                }
+                .accessibilityLabel("Skip all conflicting files")
+                Button("Keep Both for All") {
+                    queue.resolveCollisions(.keepBoth, applyToAll: true)
+                }
+                .accessibilityLabel("Keep both files for all conflicts")
+                Button("Replace All…") {
+                    confirmingReplaceAll = true
+                }
+                .accessibilityLabel("Replace all existing files")
+            }
+        }
+        .edgeBarButtonStyle()
     }
 }
 

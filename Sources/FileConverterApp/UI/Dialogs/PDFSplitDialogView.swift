@@ -226,36 +226,21 @@ public struct PDFSplitDialogView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            headerView
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-
-            Divider()
-
-            Form {
-                if batchItems.count > 1 {
-                    batchFilesSection
-                }
-                modeSection
-                namingAndFolderSection
+        Form {
+            if batchItems.count > 1 {
+                batchFilesSection
             }
-            .formStyle(.grouped)
-
-            Divider()
-
-            footerView
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+            modeSection
+            namingAndFolderSection
         }
+        .formStyle(.grouped)
+        .edgeBar(.top, style: .sheet) { headerView }
+        .edgeBar(.bottom, style: .sheet) { footerView }
         .frame(minWidth: 540, idealWidth: 600, minHeight: 480, idealHeight: 620)
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
-        )
+        .dropHighlight(isDropTargeted, "Drop to add PDFs")
         .task {
             recalculateStats()
         }
@@ -373,28 +358,15 @@ public struct PDFSplitDialogView: View {
 
     // MARK: - Header
     private var headerView: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "doc.on.doc")
-                .font(.system(size: 26))
+        VStack(alignment: .leading, spacing: 4) {
+            Text(batchItems.count <= 1 ? "Split “\(firstURL?.lastPathComponent ?? "PDF Document")”" : "Split \(batchItems.count) PDFs")
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(statsText)
                 .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(batchItems.count <= 1 ? (firstURL?.lastPathComponent ?? "PDF Document") : "\(batchItems.count) PDF Documents")
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(statsText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if isDropTargeted {
-                Label("Drop to add PDFs", systemImage: "plus.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var statsText: String {
@@ -641,6 +613,7 @@ public struct PDFSplitDialogView: View {
             HStack {
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
+                    .edgeBarButtonStyle()
 
                 Spacer()
 
@@ -652,7 +625,7 @@ public struct PDFSplitDialogView: View {
                     startSplitting()
                 }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .edgeBarButtonStyle(prominent: true)
                 .disabled(isSplitDisabled)
             }
         }
