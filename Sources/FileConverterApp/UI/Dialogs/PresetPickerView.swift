@@ -23,6 +23,8 @@ struct PresetPickerView: View {
     @State private var sizeEstimate: String?
     @State private var customFolder: URL?
     @FocusState private var focus: Field?
+    /// Detection results for `urls`, filled once rather than on every redraw.
+    @State private var batch = SourceBatchCache()
 
     private enum Field: Hashable { case search, grid }
 
@@ -33,23 +35,19 @@ struct PresetPickerView: View {
 
     // MARK: - Inputs
 
-    private var recognized: [URL] {
-        urls.filter { FormatDetector.detect(url: $0).format != nil }
-    }
+    private var recognized: [URL] { batch.analysis(for: urls).recognized }
 
-    private var unsupported: [URL] {
-        urls.filter { FormatDetector.detect(url: $0).format == nil }
-    }
+    private var unsupported: [URL] { batch.analysis(for: urls).unsupported }
 
-    private var groups: [(category: FormatCategory, urls: [URL])] {
-        let grouped = Dictionary(grouping: recognized) { FormatDetector.detect(url: $0).format?.category ?? .custom }
-        return FormatCategory.allCases.compactMap { category in
-            grouped[category].map { (category, $0) }
-        }
-    }
+    private var groups: [(category: FormatCategory, urls: [URL])] { batch.analysis(for: urls).groups }
 
     private var compatible: [ConversionPreset] {
-        PresetValidator.compatiblePresets(forURLs: recognized)
+        batch.compatiblePresets(forURLs: recognized)
+    }
+
+    private var canCombine: Bool {
+        let files = recognized
+        return batch.value("canCombine") { PDFCombiner.canCombine(files) }
     }
 
     private var isMixed: Bool { compatible.isEmpty && groups.count > 1 }
@@ -97,6 +95,7 @@ struct PresetPickerView: View {
             } else if isMixed {
                 MixedBatchView(
                     groups: groups,
+                    batch: batch,
                     options: AnyView(optionPickers(showQuality: true, showSize: groups.contains { $0.category == .image })),
                     applyingOverrides: applyingOverrides,
                     onCancel: onCancel,
@@ -342,7 +341,7 @@ struct PresetPickerView: View {
             HStack {
                 Button("Manage Presets…", action: onManagePresets)
                     .edgeBarButtonStyle()
-                if PDFCombiner.canCombine(recognized) {
+                if canCombine {
                     Button("Combine into PDF…") {
                         let files = recognized
                         onCancel()
@@ -423,6 +422,7 @@ struct PresetPickerView: View {
 /// Convert button.
 private struct MixedBatchView: View {
     let groups: [(category: FormatCategory, urls: [URL])]
+    let batch: SourceBatchCache
     let options: AnyView
     let applyingOverrides: (ConversionPreset) -> ConversionPreset
     let onCancel: () -> Void
@@ -433,7 +433,7 @@ private struct MixedBatchView: View {
     @State private var included: Set<FormatCategory> = []
 
     private func presets(for urls: [URL]) -> [ConversionPreset] {
-        PresetValidator.compatiblePresets(forURLs: urls)
+        batch.compatiblePresets(forURLs: urls)
     }
 
     private var allURLs: [URL] { groups.flatMap(\.urls) }

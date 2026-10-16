@@ -12,12 +12,14 @@ struct MenuBarStatusView: View {
         queue.jobs.filter { !$0.state.isTerminal }
     }
 
+    /// The newest finished job's outputs. Whether they still exist is checked
+    /// when the button is used, not on every redraw.
     private var lastOutputs: [URL] {
         guard let job = queue.jobs.last(where: { $0.state == .completed || { if case .completedWithWarnings = $0.state { return true }; return false }($0) }) else {
             return []
         }
         let candidates = job.outputURLs.isEmpty ? (job.destinationURL.map { [$0] } ?? []) : job.outputURLs
-        return candidates.filter { FileManager.default.fileExists(atPath: $0.path) }
+        return candidates
     }
 
     /// "Converting 3 files · 42% done" for everything running or waiting.
@@ -45,7 +47,8 @@ struct MenuBarStatusView: View {
         }
         Divider()
         Button("Show Last Converted File") {
-            NSWorkspace.shared.activateFileViewerSelecting(lastOutputs)
+            let existing = lastOutputs.filter { FileManager.default.fileExists(atPath: $0.path) }
+            if !existing.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(existing) }
         }
         .disabled(lastOutputs.isEmpty)
         if queue.isPaused || !activeJobs.isEmpty {

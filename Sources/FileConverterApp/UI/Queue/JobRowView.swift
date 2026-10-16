@@ -18,9 +18,20 @@ public struct JobRowView: View {
         self.job = job
     }
 
+    /// Finder icons by path, so redraws during progress don't ask NSWorkspace again.
+    @MainActor private static var icons: [String: NSImage] = [:]
+
+    @MainActor private static func icon(for url: URL) -> NSImage {
+        if let icon = icons[url.path] { return icon }
+        if icons.count > 2_000 { icons.removeAll() }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        icons[url.path] = icon
+        return icon
+    }
+
     public var body: some View {
         HStack(spacing: 10) {
-            Image(nsImage: thumbnail ?? NSWorkspace.shared.icon(forFile: job.sourceURL.path))
+            Image(nsImage: thumbnail ?? Self.icon(for: job.sourceURL))
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 28, height: 28)

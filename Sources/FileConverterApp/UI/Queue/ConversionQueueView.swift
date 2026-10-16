@@ -32,6 +32,34 @@ struct QueueBatch: Identifiable {
     }
 }
 
+/// The queue's batches and counts, worked out once per change to the job list
+/// rather than several times per redraw (progress redraws up to 10 times a second).
+final class QueueLayoutCache {
+    struct Layout {
+        var batches: [QueueBatch] = []
+        var current: [QueueBatch] = []
+        var earlier: [QueueBatch] = []
+    }
+
+    /// Kept so the queue's next change copies the array, giving it new storage.
+    private var jobs: [ConversionJob] = []
+    private var storage: UnsafeRawPointer?
+    private var cached = Layout()
+
+    func layout(for jobs: [ConversionJob]) -> Layout {
+        let address = jobs.withUnsafeBufferPointer { $0.baseAddress.map(UnsafeRawPointer.init) }
+        if address == storage, jobs.count == self.jobs.count, address != nil { return cached }
+        self.jobs = jobs
+        storage = address
+        let all = QueueBatch.group(jobs)
+        let active = all.filter(\.isActive)
+        let current = active.isEmpty ? (all.last.map { [$0] } ?? []) : active
+        let currentIDs = Set(current.map(\.id))
+        cached = Layout(batches: all, current: current, earlier: all.filter { !currentIDs.contains($0.id) }.reversed())
+        return cached
+    }
+}
+
 public struct ConversionQueueView: View {
     @ObservedObject var queue = ConversionQueue.shared
     @ObservedObject private var settings = AppSettings.shared
@@ -44,25 +72,18 @@ public struct ConversionQueueView: View {
     /// Conversions Esc asked to cancel; empty when nothing is being asked.
     @State private var escapeCancelIDs = Set<UUID>()
     @State private var revealErrorMessage: String?
+    @State private var layoutCache = QueueLayoutCache()
 
     public init() {}
 
     // MARK: - Grouping
 
-    private var batches: [QueueBatch] { QueueBatch.group(queue.jobs) }
+    private var batches: [QueueBatch] { layoutCache.layout(for: queue.jobs).batches }
 
     /// Batches with work left; when everything is done, the newest batch.
-    private var currentBatches: [QueueBatch] {
-        let all = batches
-        let active = all.filter(\.isActive)
-        if !active.isEmpty { return active }
-        return all.last.map { [$0] } ?? []
-    }
+    private var currentBatches: [QueueBatch] { layoutCache.layout(for: queue.jobs).current }
 
-    private var earlierBatches: [QueueBatch] {
-        let current = Set(currentBatches.map(\.id))
-        return batches.filter { !current.contains($0.id) }.reversed()
-    }
+    private var earlierBatches: [QueueBatch] { layoutCache.layout(for: queue.jobs).earlier }
 
     private var currentJobs: [ConversionJob] { currentBatches.flatMap(\.jobs) }
 

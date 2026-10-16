@@ -39,9 +39,25 @@ public struct FormatDetectionResult: Sendable {
     }
 }
 
-private final class DetectionSnapshotStorage: @unchecked Sendable {
+/// Least-recently-used cache of detection results. Holds more than the
+/// largest folder drop (10,000 files) so a whole batch stays cached; when
+/// full, it drops the least recently used quarter at once.
+final class DetectionSnapshotStorage: @unchecked Sendable {
+    private struct Entry {
+        var snapshot: DetectionSnapshot
+        var lastUse: UInt64
+    }
+
+    let capacity: Int
     private let lock = NSLock()
-    private var cache: [URL: DetectionSnapshot] = [:]
+    private var cache: [URL: Entry] = [:]
+    private var clock: UInt64 = 0
+
+    init(capacity: Int = 20_000) {
+        self.capacity = capacity
+    }
+
+    var count: Int { lock.withLock { cache.count } }
 
     func clear() {
         lock.withLock { cache.removeAll() }
@@ -49,17 +65,22 @@ private final class DetectionSnapshotStorage: @unchecked Sendable {
 
     func get(for url: URL) -> DetectionSnapshot? {
         lock.withLock {
-            guard let cached = cache[url], cached.isValid else { return nil }
-            return cached
+            guard let cached = cache[url], cached.snapshot.isValid else { return nil }
+            clock += 1
+            cache[url]?.lastUse = clock
+            return cached.snapshot
         }
     }
 
     func set(_ snapshot: DetectionSnapshot, for url: URL) {
         lock.withLock {
-            if cache.count > 500 {
-                cache.removeAll()
+            if cache[url] == nil, cache.count >= capacity {
+                let evict = max(1, capacity / 4)
+                let oldest = cache.sorted { $0.value.lastUse < $1.value.lastUse }.prefix(evict)
+                for (key, _) in oldest { cache.removeValue(forKey: key) }
             }
-            cache[url] = snapshot
+            clock += 1
+            cache[url] = Entry(snapshot: snapshot, lastUse: clock)
         }
     }
 }
