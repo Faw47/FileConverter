@@ -18,6 +18,8 @@ struct PresetPickerView: View {
     @State private var selectedID: UUID?
     @State private var locationOverride: LocationOverride = .preset
     @State private var qualityOverride: QualityOverride = .preset
+    @State private var sizeOverride: SizeOverride = .preset
+    @State private var sizeEstimate: String?
     @State private var customFolder: URL?
     @FocusState private var focus: Field?
 
@@ -25,6 +27,8 @@ struct PresetPickerView: View {
 
     enum LocationOverride: Hashable { case preset, sameFolder, downloads, chosen }
     enum QualityOverride: Hashable { case preset, smaller, balanced, higher }
+    /// Longest side for images, in pixels.
+    enum SizeOverride: Int, Hashable { case preset = 0, large = 3840, medium = 2048, small = 1280, tiny = 640 }
 
     // MARK: - Inputs
 
@@ -92,7 +96,7 @@ struct PresetPickerView: View {
             } else if isMixed {
                 MixedBatchView(
                     groups: groups,
-                    options: AnyView(optionPickers(showQuality: true)),
+                    options: AnyView(optionPickers(showQuality: true, showSize: groups.contains { $0.category == .image })),
                     applyingOverrides: applyingOverrides,
                     onCancel: onCancel,
                     onConvert: onConvert,
@@ -250,6 +254,9 @@ struct PresetPickerView: View {
             }
         }
         preset.inheritance = inheritance
+        if preset.category == .image, sizeOverride != .preset {
+            preset.resolution = .custom(width: sizeOverride.rawValue, height: sizeOverride.rawValue)
+        }
         guard Self.takesQualityOverride(preset) else { return preset }
         switch qualityOverride {
         case .preset: break
@@ -264,9 +271,10 @@ struct PresetPickerView: View {
         !preset.isInteractiveWorkflow && preset.category != .document
     }
 
-    /// "Save to" and "Quality", shared by single-kind and mixed batches.
+    /// "Save to", "Quality", and for images "Size", shared by single-kind
+    /// and mixed batches.
     @ViewBuilder
-    private func optionPickers(showQuality: Bool) -> some View {
+    private func optionPickers(showQuality: Bool, showSize: Bool) -> some View {
         Picker("Save to", selection: $locationOverride) {
             Text("As the preset says").tag(LocationOverride.preset)
             Text("Same folder as the original").tag(LocationOverride.sameFolder)
@@ -284,23 +292,49 @@ struct PresetPickerView: View {
                 Text("Higher quality").tag(QualityOverride.higher)
             }
         }
+        if showSize {
+            Picker("Image size", selection: $sizeOverride) {
+                Text("As the preset says").tag(SizeOverride.preset)
+                Divider()
+                Text("Large (3840 px)").tag(SizeOverride.large)
+                Text("Medium (2048 px)").tag(SizeOverride.medium)
+                Text("Small (1280 px)").tag(SizeOverride.small)
+                Text("Tiny (640 px)").tag(SizeOverride.tiny)
+            }
+            .help("Longest side; images are never enlarged")
+        }
+    }
+
+    /// Recomputed when the chosen preset or an option changes.
+    private struct EstimateKey: Hashable {
+        let presetID: UUID?
+        let quality: QualityOverride
+        let size: SizeOverride
     }
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let preset = effectivePreset {
                 Text([DestinationDescription.sentence(for: preset, sources: recognized),
+                      sizeEstimate.map { "Expected size: \($0)." },
                       DestinationDescription.metadataNote(for: preset)].compactMap { $0 }.joined(separator: " "))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
                     .truncationMode(.middle)
+                    .task(id: EstimateKey(presetID: selectedID, quality: qualityOverride, size: sizeOverride)) {
+                        sizeEstimate = nil
+                        try? await Task.sleep(for: .milliseconds(250))
+                        guard !Task.isCancelled, let preset = effectivePreset else { return }
+                        let estimate = await OutputSizePreview.estimate(preset: preset, sources: recognized)
+                        if !Task.isCancelled { sizeEstimate = estimate }
+                    }
             }
 
             // This conversion's own choices, always in view: two menus
             // rather than a disclosure to open first.
             HStack(spacing: 16) {
-                optionPickers(showQuality: selectedPreset.map(Self.takesQualityOverride) ?? false)
+                optionPickers(showQuality: selectedPreset.map(Self.takesQualityOverride) ?? false, showSize: selectedPreset?.category == .image)
                     .fixedSize()
             }
 

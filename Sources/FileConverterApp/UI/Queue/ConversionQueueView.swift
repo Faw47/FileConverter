@@ -135,10 +135,18 @@ public struct ConversionQueueView: View {
         }
         .onDeleteCommand { removeFinished(selection) }
         .onKeyPress(.space) {
+            guard quickLookURL != nil || !quickLookItems.isEmpty else { return .ignored }
             toggleQuickLook()
             return .handled
         }
-        .onKeyPress(.return) {
+        // As in Finder: ⌘↓ opens, ⌘R shows the file in Finder.
+        .onKeyPress(keys: [.downArrow], phases: .down) { press in
+            guard press.modifiers.contains(.command), !outputs(of: selection).isEmpty else { return .ignored }
+            open(selection)
+            return .handled
+        }
+        .onKeyPress(characters: ["r"]) { press in
+            guard press.modifiers == .command, !selection.isEmpty else { return .ignored }
             reveal(selection)
             return .handled
         }

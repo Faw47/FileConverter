@@ -1,16 +1,18 @@
 import AppKit
 import FileConverterCore
+import QuickLookThumbnailing
 import SwiftUI
 
 /// One conversion in the queue. Selection, keyboard handling, and the
 /// context menu belong to the enclosing list.
 public struct JobRowView: View {
     public let job: ConversionJob
-    @State private var isHovered = false
     @State private var showingErrorDetails = false
     @State private var showingWarningDetails = false
     @State private var existingOutputs: [URL] = []
     @State private var sizeSummary: String?
+    /// A picture of the converted file, once there is one.
+    @State private var thumbnail: NSImage?
 
     public init(job: ConversionJob) {
         self.job = job
@@ -18,9 +20,10 @@ public struct JobRowView: View {
 
     public var body: some View {
         HStack(spacing: 10) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: job.sourceURL.path))
+            Image(nsImage: thumbnail ?? NSWorkspace.shared.icon(forFile: job.sourceURL.path))
                 .resizable()
-                .frame(width: 24, height: 24)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -50,7 +53,11 @@ public struct JobRowView: View {
         }
         .padding(.vertical, 3)
         .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
+        // Drag the converted file into another app or a Finder window.
+        .onDrag {
+            guard let output = existingOutputs.first else { return NSItemProvider() }
+            return NSItemProvider(contentsOf: output) ?? NSItemProvider()
+        }
         .task(id: job.state) { await refreshOutputs() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(job.filename), \(job.sourceFormat) to \(job.targetFormat)")
@@ -126,14 +133,6 @@ public struct JobRowView: View {
             case .cancelled, .skipped:
                 convertAgainButton(help: "Convert again", label: "Convert \(job.filename) again")
             }
-
-            if job.state.isTerminal {
-                // Shown on hover only, so it is not confused with Cancel.
-                iconButton("xmark", help: "Remove from list", label: "Remove \(job.filename) from the list") {
-                    ConversionQueue.shared.removeJob(id: job.id)
-                }
-                .opacity(isHovered ? 1 : 0)
-            }
         }
     }
 
@@ -199,6 +198,7 @@ public struct JobRowView: View {
         guard isFinishedSuccessfully else {
             existingOutputs = []
             sizeSummary = nil
+            thumbnail = nil
             return
         }
         let candidates = job.outputURLs.isEmpty ? (job.destinationURL.map { [$0] } ?? []) : job.outputURLs
@@ -211,6 +211,19 @@ public struct JobRowView: View {
         }.value
         existingOutputs = result.0
         sizeSummary = result.1
+        thumbnail = await Self.thumbnail(for: result.0.first)
+    }
+
+    private static func thumbnail(for url: URL?) async -> NSImage? {
+        guard let url else { return nil }
+        let request = QLThumbnailGenerator.Request(
+            fileAt: url,
+            size: CGSize(width: 56, height: 56),
+            scale: NSScreen.main?.backingScaleFactor ?? 2,
+            representationTypes: .thumbnail
+        )
+        let representation = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
+        return representation?.nsImage
     }
 
     /// "2.1 MB → 640 KB (−70%) · 4 s"

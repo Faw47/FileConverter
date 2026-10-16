@@ -21,10 +21,10 @@ private struct EdgeBar<Bar: View>: ViewModifier {
     func body(content: Content) -> some View {
         if !isPresented {
             content
-        } else if #available(macOS 26, *), !floats {
-            // Beside the content rather than over it: inside the Settings
-            // split view the scroll-edge effect doesn't fade rows under a
-            // floating bar, so they showed through its buttons.
+        } else if #available(macOS 26, *), !floats || style == .sheet {
+            // Beside the content rather than over it: in Settings' split
+            // view and in sheets the scroll-edge effect didn't fade rows
+            // under a floating bar, so they showed through it.
             VStack(spacing: 0) {
                 if edge == .top { paddedBar }
                 content

@@ -18,7 +18,8 @@ When a file with the same name already exists, File Converter adds a number, ask
 
 ## The queue
 
-- Select files and press **Space** for Quick Look, **Return** to show them in Finder, **Delete** to remove finished rows, or **Esc** to cancel them (File Converter asks first).
+- Select files and press **Space** for Quick Look, **⌘↓** to open them, **⌘R** to show them in Finder, **Delete** to remove finished rows, or **Esc** to cancel them (File Converter asks first).
+- Drag a finished file from the list into another app or a Finder window.
 - Double-click a finished file to open it.
 - Drag waiting files to change their order. **Conversion › Pause Queue** (⌥⌘P) finishes the current files and waits.
 - Earlier batches are kept under **Earlier**, even after you quit. A failed, skipped, or cancelled file there can be converted again with the same preset.

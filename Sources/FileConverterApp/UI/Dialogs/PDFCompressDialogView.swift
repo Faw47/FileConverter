@@ -123,6 +123,8 @@ public struct PDFCompressDialogView: View {
     @State private var cachedPageCount: Int?
     /// Files that cannot be compressed, with the reason, in batch order.
     @State private var problemFiles: [(url: URL, reason: String)] = []
+    /// "about 2.1 MB (−64%)" for the first PDF with the current choices.
+    @State private var expectedSize: String?
     @State private var isLoadingStats = true
     @State private var dropErrorMessage: String?
 
@@ -228,6 +230,7 @@ public struct PDFCompressDialogView: View {
         .task {
             recalculateStats()
         }
+        .task(id: previewKey) { await previewCompression() }
         .alert("Cannot Add PDF", isPresented: Binding(
             get: { dropErrorMessage != nil },
             set: { if !$0 { dropErrorMessage = nil } }
@@ -381,6 +384,12 @@ public struct PDFCompressDialogView: View {
     // MARK: - Footer
     private var footerView: some View {
         VStack(spacing: 8) {
+            if let expectedSize {
+                Text(expectedSize)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if !problemFiles.isEmpty {
                 HStack(alignment: .firstTextBaseline) {
                     Text(problemSummary)
@@ -447,9 +456,72 @@ public struct PDFCompressDialogView: View {
         }
     }
 
-    private func startCompression() {
+    private struct PreviewKey: Hashable {
+        let source: URL?
+        let options: ConversionProcessingOptions
+    }
+
+    private var previewKey: PreviewKey {
+        PreviewKey(source: previewSource, options: compressionOptions())
+    }
+
+    private var previewSource: URL? {
+        let unusable = Set(problemFiles.map(\.url))
+        return isLoadingStats ? nil : currentURLs.first { !unusable.contains($0) }
+    }
+
+    /// Compresses the first PDF into a temporary file with the current
+    /// choices and reports how big it came out, before anything is saved.
+    private func previewCompression() async {
+        expectedSize = nil
+        try? await Task.sleep(for: .milliseconds(600))
+        guard !Task.isCancelled, let source = previewSource else { return }
+        let originalSize = Int64((try? source.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+        guard originalSize > 0, originalSize <= 300_000_000 else { return }
+
         var preset = initialPreset
-        var options = preset.processingOptions ?? ConversionProcessingOptions()
+        preset.processingOptions = compressionOptions()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FileConverterPreview-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("preview.pdf")
+        var job = ConversionJob(sourceURL: source, preset: preset)
+        job.destinationURL = output
+        job.temporaryOutputURL = output
+        guard let backend = try? BackendResolver.shared.resolveBackend(for: job) else { return }
+
+        let jobID = job.id
+        let previewJob = job
+        do {
+            try await withTaskCancellationHandler {
+                _ = try await backend.convert(
+                    job: previewJob,
+                    outputs: [PlannedConversionOutput(finalURL: output, temporaryURL: output)],
+                    progressHandler: { _ in }
+                )
+            } onCancel: {
+                Task { await backend.cancel(jobID: jobID) }
+            }
+        } catch {
+            if !Task.isCancelled { expectedSize = "These settings may not make this PDF smaller." }
+            return
+        }
+        guard !Task.isCancelled else { return }
+        let produced = Int64((try? output.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+        guard produced > 0 else { return }
+        let prefix = currentURLs.count > 1 ? "First PDF: about" : "Expected size: about"
+        if produced >= originalSize {
+            expectedSize = "These settings don’t make \(currentURLs.count > 1 ? "the first PDF" : "this PDF") smaller, so nothing would be saved."
+        } else {
+            let saved = Int((1 - Double(produced) / Double(originalSize)) * 100)
+            expectedSize = "\(prefix) \(ByteCountFormatter.string(fromByteCount: produced, countStyle: .file)) (−\(saved)%)."
+        }
+    }
+
+    /// The dialog's compression choices as processing options.
+    private func compressionOptions() -> ConversionProcessingOptions {
+        var options = initialPreset.processingOptions ?? ConversionProcessingOptions()
         options.pdfCompressionProfile = profile.ghostscriptName
         options.pdfFlattenToImages = !usesGhostscript && flattenPages
         options.pdfDPI = showsImageControls ? pageDPI : nil
@@ -459,7 +531,12 @@ public struct PDFCompressDialogView: View {
         options.pdfRemoveAnnotations = removeAnnotations
         options.pdfRemoveThumbnails = usesGhostscript
         options.pdfLinearize = usesGhostscript && linearize
-        preset.processingOptions = options
+        return options
+    }
+
+    private func startCompression() {
+        var preset = initialPreset
+        preset.processingOptions = compressionOptions()
 
         // The dialog's choices are this run's own values, not General ones.
         var inheritance = preset.resolvedInheritance

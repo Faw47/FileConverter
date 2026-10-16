@@ -9,7 +9,7 @@ final class HelpContentTests: XCTestCase {
     /// Names that are not in the app's own source.
     private let external: Set<String> = [
         "System Settings › General › Login Items & Extensions",
-        "Space", "Return", "Delete", "Esc", "+", "From Finder:", "From the window:",
+        "Space", "Return", "Delete", "Esc", "⌘↓", "⌘R", "+", "From Finder:", "From the window:",
         "Open With, Services, and the Dock icon:", "File Converter",
     ]
 
