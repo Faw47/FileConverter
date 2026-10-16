@@ -287,6 +287,9 @@ public enum PresetExchange {
         } else {
             dict["targetFileSize"] = ["enabled": false]
         }
+        if let videoTargetBytes = preset.videoTargetFileSizeBytes {
+            dict["videoTargetFileSize"] = ["enabled": true, "targetBytes": videoTargetBytes]
+        }
 
         // PDF section
         if preset.splitPDFIntoPages || preset.processingOptions?.pdfSplitMode != nil || preset.processingOptions?.pdfCompressionProfile != nil {
@@ -637,6 +640,16 @@ public enum PresetExchange {
             }
         }
 
+        var videoTargetFileSizeBytes: Int? = nil
+        if let targetDict = dict["videoTargetFileSize"] as? [String: Any],
+           targetDict["enabled"] as? Bool ?? true,
+           let bytes = targetDict["targetBytes"] as? Int {
+            guard bytes >= 1_000_000 else {
+                throw PresetExchangeError.invalidField(preset: displayName, field: "videoTargetFileSize.targetBytes", reason: "A video size limit must be at least 1 MB.")
+            }
+            videoTargetFileSizeBytes = bytes
+        }
+
         // Direct Stream Copy checks (Requirement 3)
         if audioCodec == .copy && targetFileSizeBytes != nil {
             throw PresetExchangeError.incompatibleConfiguration(
@@ -670,7 +683,7 @@ public enum PresetExchange {
         let recognizedKeys: Set<String> = [
             "id", "builtInKey", "name", "menuTitle", "menuName", "category", "enabled",
             "sources", "sourceFormats", "sortOrder", "output", "conversion", "split",
-            "targetFileSize", "metadata", "pdf", "processingOptions", "opaqueFields", "inheritance"
+            "targetFileSize", "videoTargetFileSize", "metadata", "pdf", "processingOptions", "opaqueFields", "inheritance"
         ]
         let unrecognized = dict.filter { !recognizedKeys.contains($0.key) }
         var opaqueDict: [String: AnyCodableValue] = [:]
@@ -735,6 +748,7 @@ public enum PresetExchange {
         let processingOptions = ConversionProcessingOptions(
             audioSplitDurationSeconds: splitDurationSeconds,
             audioTargetFileSizeBytes: targetFileSizeBytes,
+            videoTargetFileSizeBytes: videoTargetFileSizeBytes,
             splitPDFIntoPages: splitPDFIntoPages,
             pdfSplitMode: pdfSplitMode,
             pdfPageRanges: pdfPageRanges,

@@ -562,6 +562,44 @@ public struct PresetEditorView: View {
 
     @ViewBuilder
     private func videoQualityRows(preset: Binding<ConversionPreset>) -> some View {
+        if preset.wrappedValue.destinationFormat == "mp4" {
+            SettingsRow(
+                title: "Size limit",
+                subtitle: preset.wrappedValue.videoTargetFileSizeBytes == nil
+                    ? "No limit"
+                    : "Bitrate and picture size are chosen so each file fits; needs FFmpeg"
+            ) {
+                Picker("Size limit", selection: Binding<Int?>(
+                    get: { preset.wrappedValue.videoTargetFileSizeBytes },
+                    set: { bytes in
+                        preset.wrappedValue.videoTargetFileSizeBytes = bytes
+                        if bytes != nil {
+                            // Only FFmpeg can aim for a size; the bitrate comes from the limit.
+                            preset.wrappedValue.backend = .ffmpeg
+                            preset.wrappedValue.crf = nil
+                            preset.wrappedValue.videoBitrateKbps = nil
+                            preset.wrappedValue.allowsStreamCopy = nil
+                        }
+                    }
+                )) {
+                    Text("None").tag(Int?.none)
+                    Divider()
+                    ForEach([10, 25, 50, 100, 250], id: \.self) { megabytes in
+                        Text("\(megabytes) MB").tag(Int?.some(megabytes * 1_000_000))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+        }
+        if preset.wrappedValue.videoTargetFileSizeBytes == nil {
+            fineTuneRows(preset: preset)
+        }
+    }
+
+    @ViewBuilder
+    private func fineTuneRows(preset: Binding<ConversionPreset>) -> some View {
         let mode = videoQualityMode(preset.wrappedValue)
         SettingsRow(
             title: "Fine-tune",

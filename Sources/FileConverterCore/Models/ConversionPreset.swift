@@ -32,6 +32,9 @@ public enum BackendType: String, Codable, CaseIterable, Sendable {
 public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     public var audioSplitDurationSeconds: Int?
     public var audioTargetFileSizeBytes: Int?
+    /// Video size limit (MP4 through FFmpeg): bitrate and picture size are
+    /// chosen to fit, and the result is checked and redone if it is larger.
+    public var videoTargetFileSizeBytes: Int?
     public var splitPDFIntoPages: Bool
 
     // PDF Splitting Options
@@ -61,6 +64,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     public init(
         audioSplitDurationSeconds: Int? = nil,
         audioTargetFileSizeBytes: Int? = nil,
+        videoTargetFileSizeBytes: Int? = nil,
         splitPDFIntoPages: Bool = false,
         pdfSplitMode: String? = nil,
         pdfPageRanges: String? = nil,
@@ -83,6 +87,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     ) {
         self.audioSplitDurationSeconds = audioSplitDurationSeconds
         self.audioTargetFileSizeBytes = audioTargetFileSizeBytes
+        self.videoTargetFileSizeBytes = videoTargetFileSizeBytes
         self.splitPDFIntoPages = splitPDFIntoPages
         self.pdfSplitMode = pdfSplitMode
         self.pdfPageRanges = pdfPageRanges
@@ -108,6 +113,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.audioSplitDurationSeconds = try container.decodeIfPresent(Int.self, forKey: .audioSplitDurationSeconds)
         self.audioTargetFileSizeBytes = try container.decodeIfPresent(Int.self, forKey: .audioTargetFileSizeBytes)
+        self.videoTargetFileSizeBytes = try container.decodeIfPresent(Int.self, forKey: .videoTargetFileSizeBytes)
         self.splitPDFIntoPages = try container.decodeIfPresent(Bool.self, forKey: .splitPDFIntoPages) ?? false
         self.pdfSplitMode = try container.decodeIfPresent(String.self, forKey: .pdfSplitMode)
         self.pdfPageRanges = try container.decodeIfPresent(String.self, forKey: .pdfPageRanges)
@@ -132,6 +138,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     public var isEmpty: Bool {
         audioSplitDurationSeconds == nil
             && audioTargetFileSizeBytes == nil
+            && videoTargetFileSizeBytes == nil
             && !splitPDFIntoPages
             && pdfSplitMode == nil
             && pdfPageRanges == nil
@@ -530,6 +537,15 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
         set {
             var options = processingOptions ?? ConversionProcessingOptions()
             options.audioTargetFileSizeBytes = newValue
+            processingOptions = options.isEmpty ? nil : options
+        }
+    }
+
+    public var videoTargetFileSizeBytes: Int? {
+        get { processingOptions?.videoTargetFileSizeBytes }
+        set {
+            var options = processingOptions ?? ConversionProcessingOptions()
+            options.videoTargetFileSizeBytes = newValue
             processingOptions = options.isEmpty ? nil : options
         }
     }

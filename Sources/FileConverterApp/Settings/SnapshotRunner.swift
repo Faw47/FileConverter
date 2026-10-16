@@ -141,6 +141,11 @@ public enum SnapshotRunner {
             snap("new_preset", size: CGSize(width: 640, height: 620), appearances: appearances, to: outURL) {
                 NewPresetWizardView { _ in }
             }
+            if let fit = presets.first(where: { $0.builtInKey == "video.fit-10mb" }) {
+                snap("preset_editor_fit", size: CGSize(width: 640, height: 1200), appearances: appearances, to: outURL) {
+                    PresetEditorView(presetID: fit.id, onSaved: {}, onDeleted: {}, onDirtyChange: { _ in })
+                }
+            }
             if let preset = presets.first(where: { $0.destinationFormat == "mp4" }) ?? presets.first {
                 snap("preset_editor", size: CGSize(width: 640, height: 1500), appearances: appearances, to: outURL) {
                     PresetEditorView(presetID: preset.id, onSaved: {}, onDeleted: {}, onDirtyChange: { _ in })

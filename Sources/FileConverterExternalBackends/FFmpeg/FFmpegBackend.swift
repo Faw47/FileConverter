@@ -180,7 +180,7 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
         }
 
         // Probe total duration with ffprobe for accurate progress calculation
-        if job.preset.audioTargetFileSizeBytes != nil {
+        if job.preset.audioTargetFileSizeBytes != nil || job.preset.videoTargetFileSizeBytes != nil {
             try requireFFprobe()
         }
         let totalDurationSeconds: Double
@@ -244,6 +244,33 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
                 progressHandler: progressHandler
             )
             return []
+        }
+
+        if let targetBytes = job.preset.videoTargetFileSizeBytes {
+            guard totalDurationSeconds > 0 else {
+                throw ConversionError.malformedSource(
+                    path: sourceURL.path,
+                    reason: "Could not determine the video length needed to fit a size limit."
+                )
+            }
+            let sourceInfo: SourceMediaInfo?
+            do {
+                sourceInfo = try await probeSourceInfo(sourceURL: sourceURL, jobID: jobID)
+            } catch is CancellationError {
+                throw ConversionError.cancelled
+            }
+            return try await convertToTargetVideoSize(
+                sourceURL: sourceURL,
+                destinationURL: destURL,
+                preset: job.preset,
+                targetBytes: targetBytes,
+                totalDurationSeconds: totalDurationSeconds,
+                sourceInfo: sourceInfo,
+                availableEncoders: availableEncoders,
+                ffmpegPath: ffmpegPath,
+                jobID: jobID,
+                progressHandler: progressHandler
+            )
         }
 
         let isAudioOnly = job.preset.category == .audio || job.preset.videoCodec == .none
@@ -473,6 +500,109 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
 
         throw ConversionError.invalidPreset(
             reason: "The selected audio size could not be reached without dropping below the minimum supported bitrate."
+        )
+    }
+
+    /// Bitrates and picture size for a video that must fit in `targetBytes`:
+    /// a little room for the container, a modest audio track, the rest for
+    /// video, and a smaller picture when the bitrate can't carry more.
+    /// Nil when the video is too long for the size at any watchable quality.
+    static func videoSizePlan(
+        targetBytes: Int,
+        durationSeconds: Double
+    ) -> (videoKbps: Int, audioKbps: Int, resolution: ResolutionSetting)? {
+        guard targetBytes > 0, durationSeconds > 0 else { return nil }
+        let overheadBytes = min(max(targetBytes / 50, 64 * 1_024), 512 * 1_024)
+        let totalKbps = Int((Double(targetBytes - overheadBytes) * 8 / durationSeconds / 1_000).rounded(.down))
+        let audioKbps = totalKbps >= 1_000 ? 128 : (totalKbps >= 400 ? 96 : 64)
+        let videoKbps = totalKbps - audioKbps
+        guard videoKbps >= 150 else { return nil }
+        let resolution: ResolutionSetting = videoKbps < 900 ? .sd480p : (videoKbps < 2_500 ? .hd720p : .hd1080p)
+        return (min(videoKbps, 20_000), audioKbps, resolution)
+    }
+
+    private func convertToTargetVideoSize(
+        sourceURL: URL,
+        destinationURL: URL,
+        preset: ConversionPreset,
+        targetBytes: Int,
+        totalDurationSeconds: Double,
+        sourceInfo: SourceMediaInfo?,
+        availableEncoders: Set<String>,
+        ffmpegPath: String,
+        jobID: UUID,
+        progressHandler: @escaping @Sendable (ConversionProgress) -> Void
+    ) async throws -> [String] {
+        let megabytes = ByteCountFormatter.string(fromByteCount: Int64(targetBytes), countStyle: .file)
+        guard let plan = Self.videoSizePlan(targetBytes: targetBytes, durationSeconds: totalDurationSeconds) else {
+            throw ConversionError.invalidPreset(
+                reason: "This video is too long to fit in \(megabytes) at a watchable quality. Choose a larger size limit."
+            )
+        }
+
+        var attemptPreset = preset
+        attemptPreset.crf = nil
+        attemptPreset.audioBitrateKbps = plan.audioKbps
+        // The software encoder follows a bitrate closely; hardware does not.
+        attemptPreset.hardwareAcceleration = .softwareOnly
+        if preset.resolution == .original {
+            attemptPreset.resolution = plan.resolution
+        }
+        var videoKbps = plan.videoKbps
+
+        let fileManager = FileManager.default
+        let overallStart = Date()
+        var warnings: [String] = []
+        for attempt in 0..<3 {
+            try Task.checkCancellation()
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try? fileManager.removeItem(at: destinationURL)
+            }
+            attemptPreset.videoBitrateKbps = videoKbps
+            warnings.removeAll()
+            let arguments = buildFFmpegArguments(
+                sourceURL: sourceURL,
+                destURL: destinationURL,
+                preset: attemptPreset,
+                availableEncoders: availableEncoders,
+                sourceInfo: sourceInfo,
+                warn: { warnings.append($0) }
+            )
+            try await runFFmpeg(
+                executablePath: ffmpegPath,
+                arguments: arguments,
+                jobID: jobID,
+                totalDurationSeconds: totalDurationSeconds,
+                emitCompletion: false,
+                progressHandler: { progress in
+                    // Up to three passes; keep the bar moving forward.
+                    var adjusted = progress
+                    adjusted.fractionCompleted = (Double(attempt) + progress.fractionCompleted) / 3.0
+                    progressHandler(adjusted)
+                }
+            )
+
+            let producedBytes = Int(FileAccessManager.shared.fileSize(at: destinationURL))
+            guard producedBytes > 0 else {
+                throw ConversionError.externalToolFailed(
+                    tool: "FFmpeg",
+                    exitCode: -1,
+                    stderr: "FFmpeg completed without producing a readable video file."
+                )
+            }
+            if producedBytes <= targetBytes {
+                progressHandler(ConversionProgress(fractionCompleted: 1.0, elapsedTime: Date().timeIntervalSince(overallStart)))
+                return warnings
+            }
+            guard attempt < 2 else { break }
+            let scaled = Double(videoKbps) * Double(targetBytes) / Double(producedBytes) * 0.92
+            let next = Int(scaled.rounded(.down))
+            guard next >= 150, next < videoKbps else { break }
+            videoKbps = next
+        }
+
+        throw ConversionError.invalidPreset(
+            reason: "The video could not be made to fit in \(megabytes). Choose a larger size limit."
         )
     }
 

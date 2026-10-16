@@ -6,7 +6,7 @@ public enum FinderMenuSnapshotWriter {
     /// menu starts with a handful of MP4 choices instead of fourteen.
     static let secondaryBuiltInKeys: Set<String> = [
         "video.mp4-high-quality", "video.hevc-smaller", "video.av1", "video.quicktime-mov",
-        "video.prores-editing", "video.webm-vp9-opus", "video.matroska",
+        "video.prores-editing", "video.webm-vp9-opus", "video.matroska", "video.fit-50mb",
         "audio.alac", "audio.wav-44k", "audio.aiff", "audio.opus-128", "audio.ogg-vorbis", "audio.quicktime-qta",
         "image.webp-lossless", "image.avif", "image.tiff", "image.bmp", "image.icns", "image.ico", "image.gif",
         "document.rtf", "document.html", "document.epub", "document.odt", "document.ods", "document.odp",

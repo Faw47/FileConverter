@@ -245,6 +245,48 @@ public enum BuiltInPresets {
             isBuiltIn: true,
             allowsStreamCopy: true
         ))
+        add("video.fit-10mb", ConversionPreset(
+            name: "MP4 Sized for Chat Apps (Up to 10 MB)",
+            menuName: "MP4 – Fit in 10 MB",
+            category: .video,
+            sourceFormats: ["video"],
+            destinationFormat: "mp4",
+            backend: .ffmpeg,
+            videoCodec: .h264,
+            audioCodec: .aac,
+            quality: .medium,
+            processingOptions: ConversionProcessingOptions(videoTargetFileSizeBytes: 10_000_000),
+            isBuiltIn: true,
+            sameFormatSuffix: "10mb"
+        ))
+        add("video.fit-25mb", ConversionPreset(
+            name: "MP4 Sized for Email (Up to 25 MB)",
+            menuName: "MP4 – Fit in 25 MB",
+            category: .video,
+            sourceFormats: ["video"],
+            destinationFormat: "mp4",
+            backend: .ffmpeg,
+            videoCodec: .h264,
+            audioCodec: .aac,
+            quality: .medium,
+            processingOptions: ConversionProcessingOptions(videoTargetFileSizeBytes: 25_000_000),
+            isBuiltIn: true,
+            sameFormatSuffix: "25mb"
+        ))
+        add("video.fit-50mb", ConversionPreset(
+            name: "MP4 Sized for Large Uploads (Up to 50 MB)",
+            menuName: "MP4 – Fit in 50 MB",
+            category: .video,
+            sourceFormats: ["video"],
+            destinationFormat: "mp4",
+            backend: .ffmpeg,
+            videoCodec: .h264,
+            audioCodec: .aac,
+            quality: .medium,
+            processingOptions: ConversionProcessingOptions(videoTargetFileSizeBytes: 50_000_000),
+            isBuiltIn: true,
+            sameFormatSuffix: "50mb"
+        ))
 
         // MARK: - AUDIO PRESETS
         add("audio.mp3-320", ConversionPreset(

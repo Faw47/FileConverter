@@ -83,6 +83,20 @@ public enum PresetValidator {
                 }
             }
         }
+        if let bytes = preset.videoTargetFileSizeBytes {
+            if bytes < 1_000_000 {
+                errors.append("A video size limit must be at least 1 MB.")
+            }
+            if destinationKey != "mp4" || preset.backend != .ffmpeg {
+                errors.append("A video size limit needs MP4 output made with FFmpeg.")
+            }
+            if ![.auto, .h264].contains(preset.videoCodec) {
+                errors.append("A video size limit needs H.264 video.")
+            }
+            if preset.allowsStreamCopy == true {
+                errors.append("A video size limit re-encodes the video, so it can't copy streams.")
+            }
+        }
         if preset.audioSplitDurationSeconds != nil, preset.audioTargetFileSizeBytes != nil {
             errors.append("Choose either split audio or a target file size, not both.")
         }
