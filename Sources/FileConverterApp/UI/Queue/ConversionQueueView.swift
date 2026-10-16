@@ -41,6 +41,8 @@ public struct ConversionQueueView: View {
     @State private var expandedBatches = Set<UUID>()
     @State private var quickLookURL: URL?
     @State private var showingCancelConfirmation = false
+    /// Conversions Esc asked to cancel; empty when nothing is being asked.
+    @State private var escapeCancelIDs = Set<UUID>()
     @State private var revealErrorMessage: String?
 
     public init() {}
@@ -147,12 +149,37 @@ public struct ConversionQueueView: View {
             return .handled
         }
         .onKeyPress(.escape) {
-            for id in selection where job(id)?.state.isCancellable == true {
-                queue.cancelJob(id: id)
-            }
+            let cancellable = selection.filter { job($0)?.state.isCancellable == true }
+            guard !cancellable.isEmpty else { return .ignored }
+            escapeCancelIDs = cancellable
             return .handled
         }
+        .confirmationDialog(
+            escapeCancelTitle,
+            isPresented: Binding(
+                get: { !escapeCancelIDs.isEmpty },
+                set: { if !$0 { escapeCancelIDs.removeAll() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            let ids = escapeCancelIDs
+            Button(ids.count == 1 ? "Cancel Conversion" : "Cancel Conversions", role: .destructive) {
+                for id in ids where job(id)?.state.isCancellable == true {
+                    queue.cancelJob(id: id)
+                }
+            }
+            Button("Keep Converting", role: .cancel) {}
+        } message: {
+            Text("Files already converted are kept.")
+        }
         .quickLookPreview($quickLookURL, in: quickLookItems)
+    }
+
+    private var escapeCancelTitle: String {
+        if escapeCancelIDs.count == 1, let only = escapeCancelIDs.first.flatMap(job) {
+            return "Cancel converting “\(only.filename)”?"
+        }
+        return Inflect.string("Cancel ^[\(escapeCancelIDs.count) conversion](inflect: true)?")
     }
 
     // MARK: - Header
@@ -248,9 +275,16 @@ public struct ConversionQueueView: View {
         if jobs.contains(where: \.state.isCancellable) {
             Button("Cancel") { jobs.filter(\.state.isCancellable).forEach { queue.cancelJob(id: $0.id) } }
         }
-        let retryable = jobs.filter { $0.state.isTerminal && !$0.isFromHistory && $0.state != .completed }
+        let retryable = jobs.filter(\.canConvertAgain)
         if !retryable.isEmpty {
-            Button("Convert Again") { retryable.forEach { queue.retryJob(id: $0.id) } }
+            Button("Convert Again") { queue.retryJobs(ids: retryable.map(\.id)) }
+        }
+        // Older history rows don't know the preset they used.
+        let needPreset = jobs.filter { $0.isFromHistory && !$0.canConvertAgain && $0.state.isTerminal && $0.state != .completed }
+        if !needPreset.isEmpty {
+            Button("Convert Again With…") {
+                WorkflowPresentationCoordinator.shared.enqueue(.batch(urls: needPreset.map(\.sourceURL), excludedCount: 0))
+            }
         }
         if jobs.contains(where: \.state.isTerminal) {
             Divider()

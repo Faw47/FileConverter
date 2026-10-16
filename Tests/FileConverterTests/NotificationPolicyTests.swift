@@ -14,6 +14,16 @@ final class NotificationPolicyTests: XCTestCase {
         XCTAssertEqual(body, "3 converted, 1 failed.")
     }
 
+    func testBatchTitleSaysWhenConversionsFailed() {
+        XCTAssertEqual(ConversionQueue.formatBatchNotificationTitle(total: 3, completed: 3, failed: 0), "Conversion Finished")
+        XCTAssertEqual(ConversionQueue.formatBatchNotificationTitle(total: 1, completed: 0, failed: 1), "Conversion Failed")
+        XCTAssertEqual(ConversionQueue.formatBatchNotificationTitle(total: 4, completed: 0, failed: 4), "Conversions Failed")
+        XCTAssertEqual(ConversionQueue.formatBatchNotificationTitle(total: 4, completed: 3, failed: 1), "Some Conversions Failed")
+        XCTAssertEqual(ConversionQueue.formatBatchNotificationTitle(total: 2, completed: 0, failed: 0), "Nothing Converted")
+        XCTAssertEqual(ConversionQueue.formatBatchNotificationTitle(total: 3, completed: 2, failed: 0), "Conversion Finished",
+                       "skipped or cancelled files alone do not make a batch fail")
+    }
+
     func testActiveBatchProgressCoversOnlyBatchesWithWork() throws {
         let preset = try BackendHarness.builtIn("image.png")
         let doneBatch = UUID(), activeBatch = UUID()

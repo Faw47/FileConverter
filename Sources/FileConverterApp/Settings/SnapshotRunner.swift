@@ -113,8 +113,20 @@ public enum SnapshotRunner {
                     ConversionJob(sourceURL: source, preset: video, state: .failed(.dependencyMissing(dependencyName: "FFmpeg", installCommand: "brew install ffmpeg"))),
                     ConversionJob(sourceURL: source, preset: video, state: .skipped("A file with that name exists")),
                     ConversionJob(sourceURL: source, preset: video, state: .cancelled),
+                    // From an earlier launch: with its preset, and an older record without one.
+                    {
+                        var job = ConversionJob(sourceURL: source, preset: video, state: .failed(.fileNotFound(path: source.path)))
+                        job.isFromHistory = true
+                        job.hasRestoredPreset = true
+                        return job
+                    }(),
+                    {
+                        var job = ConversionJob(sourceURL: source, preset: video, state: .cancelled)
+                        job.isFromHistory = true
+                        return job
+                    }(),
                 ]
-                snap("queue_rows", size: CGSize(width: 640, height: 420), appearances: appearances, to: outURL) {
+                snap("queue_rows", size: CGSize(width: 640, height: 560), appearances: appearances, to: outURL) {
                     List(jobs) { JobRowView(job: $0) }.listStyle(.inset)
                 }
             }

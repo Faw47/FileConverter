@@ -44,7 +44,90 @@ final class QueueInteractionTests: XCTestCase {
         queue.cancelAll()
     }
 
-    func testHistorySurvivesRelaunchAndCannotBeRetried() async throws {
+    private func waitUntilTerminal(_ queue: ConversionQueue) async throws {
+        for _ in 0..<200 where !queue.jobs.allSatisfy({ $0.state.isTerminal }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    func testFailedHistoryRowIsRetriedWithItsPresetInANewBatch() async throws {
+        let historyURL = directory.appendingPathComponent("history.json")
+        let missing = directory.appendingPathComponent("later.png")
+        var preset = try BackendHarness.builtIn("image.jpeg")
+        preset.quality = .low
+
+        let first = ConversionQueue()
+        first.restoreHistory(from: historyURL)
+        first.addJobs([ConversionJob(sourceURL: missing, preset: preset)])
+        try await waitUntilTerminal(first)
+        guard case .failed = try XCTUnwrap(first.jobs.first).state else {
+            return XCTFail("a missing source fails")
+        }
+        // A newer batch the retried row has to move after.
+        first.addJobs(try sources(1).map { ConversionJob(sourceURL: $0, preset: try BackendHarness.builtIn("image.jpeg")) })
+        try await waitUntilTerminal(first)
+
+        let relaunched = ConversionQueue()
+        relaunched.restoreHistory(from: historyURL)
+        let restored = try XCTUnwrap(relaunched.jobs.first)
+        XCTAssertTrue(restored.isFromHistory)
+        XCTAssertTrue(restored.canConvertAgain)
+        XCTAssertEqual(restored.preset, preset, "the record keeps the preset exactly as it ran")
+        XCTAssertFalse(try XCTUnwrap(relaunched.jobs.last).canConvertAgain, "converted rows are not retried")
+
+        _ = try TestFixtures.copy("same_name/photo.png", to: directory, as: "later.png")
+        relaunched.retryJob(id: restored.id)
+        let retried = try XCTUnwrap(relaunched.jobs.last)
+        XCTAssertEqual(retried.id, restored.id, "a retried history row moves after everything else")
+        XCTAssertFalse(retried.isFromHistory)
+        XCTAssertNotEqual(retried.batchID, restored.batchID, "it starts a batch of its own")
+
+        try await waitUntilTerminal(relaunched)
+        XCTAssertEqual(relaunched.jobs.last?.state, .completed)
+        XCTAssertEqual(relaunched.jobs.last?.outputURLs.first?.pathExtension, "jpg")
+    }
+
+    func testHistoryRowWithoutStoredPresetIsNotRetried() throws {
+        let record = QueueHistoryStore.Record(
+            id: UUID(), batchID: UUID(), batchCreatedAt: Date(),
+            sourcePath: directory.appendingPathComponent("old.png").path,
+            presetName: "JPEG Image", presetMenuName: "JPEG", category: .image, destinationFormat: "jpg",
+            outcome: .failed, message: "Conversion failed.", outputPaths: [], startedAt: nil, finishedAt: nil
+        )
+        let restored = QueueHistoryStore.job(from: record)
+        XCTAssertTrue(restored.isFromHistory)
+        XCTAssertFalse(restored.canConvertAgain, "older records did not keep the preset")
+
+        let queue = ConversionQueue()
+        queue.setJobsForTesting([restored])
+        queue.retryJob(id: restored.id)
+        guard case .failed = try XCTUnwrap(queue.jobs.first).state else {
+            return XCTFail("left as it was")
+        }
+    }
+
+    func testCancellingWaitingJobsClosesTheirJournalEntries() throws {
+        let queue = ConversionQueue()
+        queue.pause()
+        let jobs = try sources(3).map { ConversionJob(sourceURL: $0, preset: try BackendHarness.builtIn("image.jpeg")) }
+        for job in jobs {
+            ConversionJournal.shared.recordAdmission(
+                jobID: job.id, requestID: UUID(), sourceURL: job.sourceURL,
+                bookmarkData: nil, presetID: job.preset.id, presetName: job.preset.name
+            )
+        }
+        queue.addJobs(jobs)
+
+        queue.cancelJob(id: jobs[0].id)
+        XCTAssertEqual(ConversionJournal.shared.entry(for: jobs[0].id)?.state, .cancelled)
+        queue.cancelAll()
+        for job in jobs {
+            XCTAssertEqual(ConversionJournal.shared.entry(for: job.id)?.state, .cancelled,
+                           "a cancelled waiting job is not reported as interrupted next launch")
+        }
+    }
+
+    func testHistorySurvivesRelaunchAndConvertedRowsAreNotRetried() async throws {
         let historyURL = directory.appendingPathComponent("history.json")
         let first = ConversionQueue()
         first.restoreHistory(from: historyURL)
@@ -63,7 +146,7 @@ final class QueueInteractionTests: XCTestCase {
         XCTAssertEqual(restored.preset.menuName, "JPEG")
 
         relaunched.retryJob(id: restored.id)
-        XCTAssertEqual(relaunched.jobs.first?.state, .completed, "history rows are not retried")
+        XCTAssertEqual(relaunched.jobs.first?.state, .completed, "converted history rows are not retried")
 
         relaunched.clearCompleted()
         XCTAssertTrue(QueueHistoryStore.load(from: historyURL).isEmpty, "clearing also clears history")

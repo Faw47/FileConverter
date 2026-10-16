@@ -189,6 +189,11 @@ public final class ConversionQueue: ObservableObject {
 
         if task == nil {
             releaseReservations(for: id)
+            // A waiting job never runs, so close its journal entry here or
+            // the next launch reports it as interrupted.
+            if job != nil {
+                ConversionJournal.shared.transitionState(jobID: id, to: .cancelled)
+            }
         }
         leaseToRelease?.release()
         task?.cancel()
@@ -208,9 +213,11 @@ public final class ConversionQueue: ObservableObject {
         var activeJobs: [ConversionJob] = []
         var tasks: [Task<Void, Never>] = []
         var leasesToRelease: [SecurityScopedLease] = []
+        var cancelledIDs: [UUID] = []
 
         for i in 0..<jobs.count {
             if jobs[i].state.isCancellable {
+                cancelledIDs.append(jobs[i].id)
                 jobs[i].state = .cancelled
                 jobs[i].finishedAt = Date()
                 if activeJobIDs.contains(jobs[i].id) {
@@ -230,11 +237,12 @@ public final class ConversionQueue: ObservableObject {
 
         leasesToRelease.forEach { $0.release() }
         saveHistory()
+        // Waiting jobs too, or the next launch reports them as interrupted.
+        ConversionJournal.shared.transitionStates(jobIDs: cancelledIDs, to: .cancelled)
         for task in tasks {
             task.cancel()
         }
         for job in activeJobs {
-            ConversionJournal.shared.transitionState(jobID: job.id, to: .cancelled)
             Task {
                 await BackendResolver.shared.cancel(jobID: job.id, backendType: job.resolvedBackend)
             }
@@ -321,10 +329,28 @@ public final class ConversionQueue: ObservableObject {
     }
 
     public func retryJob(id: UUID) {
-        if let index = jobs.firstIndex(where: { $0.id == id }),
-           jobs[index].state.isTerminal,
-           !jobs[index].isFromHistory,
-           !activeJobIDs.contains(id) {
+        retryJobs(ids: [id])
+    }
+
+    /// Queues finished jobs again. Jobs from an earlier launch start one new
+    /// batch together, after everything else, so they get their own progress,
+    /// notification, and `{date}`; history rows without a stored preset and
+    /// history rows that converted are left alone.
+    public func retryJobs(ids: [UUID]) {
+        let requested = Set(ids)
+        let historyBatchID = UUID()
+        let historyBatchDate = Date()
+        var revivedFromHistory = Set<UUID>()
+
+        for index in jobs.indices where requested.contains(jobs[index].id) {
+            guard jobs[index].state.isTerminal, !activeJobIDs.contains(jobs[index].id) else { continue }
+            if jobs[index].isFromHistory {
+                guard jobs[index].canConvertAgain else { continue }
+                jobs[index].isFromHistory = false
+                jobs[index].batchID = historyBatchID
+                jobs[index].batchCreatedAt = historyBatchDate
+                revivedFromHistory.insert(jobs[index].id)
+            }
             notifiedBatchIDs.remove(jobs[index].batchID)
             jobs[index].state = .queued
             jobs[index].progress = ConversionProgress()
@@ -345,6 +371,12 @@ public final class ConversionQueue: ObservableObject {
             jobs[index].sourceAccessLease?.release()
             jobs[index].sourceAccessLease = nil
             jobs[index].conflictingOutputURLs = []
+        }
+
+        if !revivedFromHistory.isEmpty {
+            let revived = jobs.filter { revivedFromHistory.contains($0.id) }
+            jobs.removeAll { revivedFromHistory.contains($0.id) }
+            jobs.append(contentsOf: revived)
         }
 
         updateCountsAndProgress()
@@ -1277,8 +1309,7 @@ public final class ConversionQueue: ObservableObject {
 
         let center = UNUserNotificationCenter.current()
         let content = UNMutableNotificationContent()
-        content.title = "Conversion Finished"
-
+        content.title = Self.formatBatchNotificationTitle(total: total, completed: completed, failed: failed)
         content.body = Self.formatBatchNotificationBody(
             total: total,
             completed: completed,
@@ -1336,6 +1367,15 @@ public final class ConversionQueue: ObservableObject {
 
     func clearNotificationHandoffForTesting(batchID: UUID) {
         NotificationHandoffStore.remove(batchID: batchID)
+    }
+
+    /// Says how the batch went, so a failure never reads as "Finished".
+    nonisolated public static func formatBatchNotificationTitle(total: Int, completed: Int, failed: Int) -> String {
+        if failed > 0 {
+            if completed > 0 { return "Some Conversions Failed" }
+            return total == 1 ? "Conversion Failed" : "Conversions Failed"
+        }
+        return completed > 0 ? "Conversion Finished" : "Nothing Converted"
     }
 
     nonisolated public static func formatBatchNotificationBody(

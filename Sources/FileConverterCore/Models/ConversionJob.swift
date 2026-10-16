@@ -94,8 +94,18 @@ public struct ConversionJob: Identifiable, Sendable {
     /// Set while the job waits for another job that is creating the same
     /// output file (reservation key of that file).
     public var waitingForDestinationKey: URL?
-    /// Restored from a previous launch; shown for reference, not retried.
+    /// Restored from a previous launch.
     public var isFromHistory = false
+    /// The history record kept the preset this job ran with. Records written
+    /// by older versions did not, and those rows cannot be retried as is.
+    public var hasRestoredPreset = false
+
+    /// Not converted (failed, cancelled, skipped, or with warnings), and the
+    /// preset it used is known, so it can run again as it did.
+    public var canConvertAgain: Bool {
+        guard state.isTerminal, state != .completed else { return false }
+        return !isFromHistory || hasRestoredPreset
+    }
 
     public init(
         id: UUID = UUID(),

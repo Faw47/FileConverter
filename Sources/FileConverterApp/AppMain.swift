@@ -80,16 +80,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // Coordinated shutdown (TASK-029 / REQ-006): If conversions are active, request cancellation
-        // and allow up to 3 seconds for bounded external tool termination before exiting.
-        guard ConversionQueue.shared.activeCount > 0 else {
+        let queue = ConversionQueue.shared
+        let unfinished = queue.activeCount + queue.queuedCount
+        guard unfinished > 0 else {
             return .terminateNow
         }
+        // Logging out or shutting down: don't hold the Mac up with a question.
+        if !Self.isSystemShutdownQuit && !confirmQuit(unfinished: unfinished) {
+            return .terminateCancel
+        }
+        // Coordinated shutdown (TASK-029 / REQ-006): cancel, and allow up to
+        // 3 seconds for bounded external tool termination before exiting.
         Task { @MainActor in
-            await ConversionQueue.shared.cancelAllAndWait(timeout: 3.0)
+            await queue.cancelAllAndWait(timeout: 3.0)
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    private func confirmQuit(unfinished: Int) -> Bool {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Quit File Converter?"
+        alert.informativeText = Inflect.string(
+            "If you quit now, ^[\(unfinished) unfinished conversion](inflect: true) will stop. Files already converted are kept."
+        )
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// True when the Mac is logging out, restarting, or shutting down.
+    private static var isSystemShutdownQuit: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventClass == AEEventClass(kCoreEventClass),
+              event.eventID == AEEventID(kAEQuitApplication),
+              let reason = event.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.enumCodeValue else {
+            return false
+        }
+        let systemReasons = [kAELogOut, kAEReallyLogOut, kAEShowRestartDialog, kAERestart, kAEShowShutdownDialog, kAEShutDown]
+        return systemReasons.map { OSType($0) }.contains(reason)
     }
 
     /// SwiftUI gives the Settings window an identifier containing

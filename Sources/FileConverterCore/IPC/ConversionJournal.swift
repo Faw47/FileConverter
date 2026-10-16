@@ -155,6 +155,24 @@ public final class ConversionJournal: @unchecked Sendable {
         saveJournal()
     }
 
+    /// Moves several entries to one state with a single journal write.
+    public func transitionStates(jobIDs: [UUID], to newState: JournalJobState) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        var changed = false
+        for jobID in jobIDs {
+            guard var entry = entriesByID[jobID] else { continue }
+            entry.state = newState
+            entry.updatedAt = Date()
+            entriesByID[jobID] = entry
+            changed = true
+        }
+        if changed {
+            saveJournal()
+        }
+    }
+
     public func entry(for jobID: UUID) -> JournalEntry? {
         lock.lock()
         defer { lock.unlock() }

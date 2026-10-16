@@ -122,17 +122,9 @@ public struct JobRowView: View {
                     .popover(isPresented: $showingErrorDetails) {
                         detailsPopover(title: "Conversion Failed", body: error.localizedDescription + (error.recoverySuggestion.map { "\n\n\($0)" } ?? ""), technical: error.technicalDetails)
                     }
-                if !job.isFromHistory {
-                    iconButton("arrow.clockwise.circle.fill", help: "Try again", label: "Try converting \(job.filename) again") {
-                        ConversionQueue.shared.retryJob(id: job.id)
-                    }
-                }
+                convertAgainButton(help: "Try again", label: "Try converting \(job.filename) again")
             case .cancelled, .skipped:
-                if !job.isFromHistory {
-                    iconButton("arrow.clockwise.circle.fill", help: "Convert again", label: "Convert \(job.filename) again") {
-                        ConversionQueue.shared.retryJob(id: job.id)
-                    }
-                }
+                convertAgainButton(help: "Convert again", label: "Convert \(job.filename) again")
             }
 
             if job.state.isTerminal {
@@ -141,6 +133,20 @@ public struct JobRowView: View {
                     ConversionQueue.shared.removeJob(id: job.id)
                 }
                 .opacity(isHovered ? 1 : 0)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func convertAgainButton(help: String, label: String) -> some View {
+        if job.canConvertAgain {
+            iconButton("arrow.clockwise.circle.fill", help: help, label: label) {
+                ConversionQueue.shared.retryJob(id: job.id)
+            }
+        } else if job.isFromHistory {
+            // Older history rows don't know the preset they used.
+            iconButton("arrow.clockwise.circle.fill", help: "Choose a preset and convert again", label: label) {
+                WorkflowPresentationCoordinator.shared.enqueue(.batch(urls: [job.sourceURL], excludedCount: 0))
             }
         }
     }

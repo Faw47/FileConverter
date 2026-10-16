@@ -6,6 +6,7 @@ import SwiftUI
 struct MenuBarStatusView: View {
     @ObservedObject var queue: ConversionQueue
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     private var activeJobs: [ConversionJob] {
         queue.jobs.filter { !$0.state.isTerminal }
@@ -44,5 +45,17 @@ struct MenuBarStatusView: View {
             NSApp.activate(ignoringOtherApps: true)
             openWindow(id: "main")
         }
+        Button("Settings…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
+        }
+        .keyboardShortcut(",")
+        Divider()
+        // Goes through applicationShouldTerminate, which asks first when
+        // conversions are unfinished.
+        Button("Quit File Converter") {
+            NSApp.terminate(nil)
+        }
+        .keyboardShortcut("q")
     }
 }

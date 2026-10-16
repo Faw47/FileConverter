@@ -19,6 +19,10 @@ public enum QueueHistoryStore {
         let outputPaths: [String]
         let startedAt: Date?
         let finishedAt: Date?
+        /// The preset exactly as the job used it, kept for rows that can be
+        /// converted again (everything but `completed`). Absent in records
+        /// written by older versions.
+        var preset: ConversionPreset? = nil
 
         enum Outcome: String, Codable {
             case completed, completedWithWarnings, failed, skipped, cancelled
@@ -59,12 +63,13 @@ public enum QueueHistoryStore {
             message: message,
             outputPaths: job.outputURLs.map(\.path),
             startedAt: job.startedAt,
-            finishedAt: job.finishedAt
+            finishedAt: job.finishedAt,
+            preset: outcome == .completed ? nil : job.preset
         )
     }
 
     static func job(from record: Record) -> ConversionJob {
-        let preset = ConversionPreset(
+        let preset = record.preset ?? ConversionPreset(
             name: record.presetName,
             menuName: record.presetMenuName,
             category: record.category,
@@ -93,6 +98,7 @@ public enum QueueHistoryStore {
         )
         job.destinationURL = job.outputURLs.first
         job.isFromHistory = true
+        job.hasRestoredPreset = record.preset != nil
         return job
     }
 
