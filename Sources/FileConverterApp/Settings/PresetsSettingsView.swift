@@ -181,8 +181,8 @@ public struct PresetsSettingsView: View {
 
     private var presetSidebar: some View {
         sidebarList
-            .edgeBar(.top) { sidebarFilterBar }
-            .edgeBar(.bottom) { sidebarActions }
+            .edgeBar(.top, floats: false) { sidebarFilterBar }
+            .edgeBar(.bottom, floats: false) { sidebarActions }
     }
 
     private var sidebarFilterBar: some View {
@@ -287,35 +287,48 @@ public struct PresetsSettingsView: View {
 
     private var sidebarActions: some View {
         HStack(spacing: 6) {
-            Button {
-                request(.add)
-            } label: {
-                Label("New Preset", systemImage: "plus")
-            }
-            .help("New preset")
-            .accessibilityLabel("Create preset")
-
-            Button {
-                if let selectedPreset {
-                    request(.duplicate(selectedPreset.id))
+            // One capsule for add, duplicate, and remove, like the +/−
+            // controls in System Settings.
+            HStack(spacing: 0) {
+                Button {
+                    request(.add)
+                } label: {
+                    Label("New Preset", systemImage: "plus")
+                        .frame(width: 28, height: 24)
+                        .contentShape(Rectangle())
                 }
-            } label: {
-                Label("Duplicate", systemImage: "doc.on.doc")
-            }
-            .disabled(selectedPreset == nil)
-            .help("Duplicate selected preset")
-            .accessibilityLabel("Duplicate selected preset")
+                .help("New preset")
+                .accessibilityLabel("Create preset")
 
-            Button {
-                if let selectedPreset {
-                    request(.delete(selectedPreset.id))
+                Button {
+                    if let selectedPreset {
+                        request(.duplicate(selectedPreset.id))
+                    }
+                } label: {
+                    Label("Duplicate", systemImage: "plus.square.on.square")
+                        .frame(width: 28, height: 24)
+                        .contentShape(Rectangle())
                 }
-            } label: {
-                Label("Delete", systemImage: "minus")
+                .disabled(selectedPreset == nil)
+                .help("Duplicate selected preset")
+                .accessibilityLabel("Duplicate selected preset")
+
+                Button {
+                    if let selectedPreset {
+                        request(.delete(selectedPreset.id))
+                    }
+                } label: {
+                    Label("Delete", systemImage: "minus")
+                        .frame(width: 28, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .disabled(selectedPreset == nil || selectedPreset?.isBuiltIn == true)
+                .help(selectedPreset?.isBuiltIn == true ? "Built-in presets can be hidden but not deleted" : "Delete selected preset")
+                .accessibilityLabel("Delete selected preset")
             }
-            .disabled(selectedPreset == nil || selectedPreset?.isBuiltIn == true)
-            .help(selectedPreset?.isBuiltIn == true ? "Built-in presets can be hidden but not deleted" : "Delete selected preset")
-            .accessibilityLabel("Delete selected preset")
+            .buttonStyle(.borderless)
+            .labelStyle(.iconOnly)
+            .controlGroupCapsule()
 
             Spacer()
 
@@ -343,7 +356,6 @@ public struct PresetsSettingsView: View {
             .accessibilityLabel("More preset actions")
         }
         .labelStyle(.iconOnly)
-        .sidebarButtonStyle()
     }
 
     @ViewBuilder
@@ -823,14 +835,31 @@ private struct PresetSidebarRow: View {
                     .foregroundStyle(.orange)
                     .help("Needs a tool that is not installed")
             }
-            // The output format, unless the name already says it ("MP4 – 720p").
-            if !preset.menuName.localizedCaseInsensitiveContains(preset.destinationFormat) {
+            // Which files a single-format preset is for, unless the name says
+            // so ("WAV → MP3"); otherwise two "MP4 – Fast" rows look the same.
+            if let sources = specificSources {
+                Text("from \(sources)")
+                    .foregroundStyle(.secondary)
+            } else if !preset.menuName.localizedCaseInsensitiveContains(preset.destinationFormat) {
+                // The output format, unless the name already says it ("MP4 – 720p").
                 Text(preset.destinationFormat.uppercased())
                     .foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue(preset.isEnabled ? "" : "Hidden from menus")
+    }
+
+    /// "MOV" for a preset written for specific formats, when its name
+    /// doesn't already mention them; nil for kinds like "any video".
+    private var specificSources: String? {
+        let specific = preset.sourceFormats.filter { spec in
+            let normalized = spec.lowercased()
+            return normalized != "*" && FormatCategory(rawValue: normalized) == nil
+        }
+        guard !specific.isEmpty, specific.count == preset.sourceFormats.count,
+              !specific.contains(where: { preset.menuName.localizedCaseInsensitiveContains($0) }) else { return nil }
+        return specific.map { $0.uppercased() }.joined(separator: ", ")
     }
 }
 
@@ -1035,6 +1064,20 @@ struct NewPresetWizardView: View {
 private extension View {
     /// Round glass buttons in the sidebar's floating bar on macOS 26 and
     /// later; plain borderless icons in the older bottom strip.
+    /// A row of plain icon buttons drawn as one capsule: glass on macOS 26
+    /// and later, a bordered segment look before that.
+    @ViewBuilder
+    func controlGroupCapsule() -> some View {
+        if #available(macOS 26, *) {
+            padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            padding(.horizontal, 2)
+                .background(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+        }
+    }
+
     @ViewBuilder
     func sidebarButtonStyle() -> some View {
         if #available(macOS 26, *) {

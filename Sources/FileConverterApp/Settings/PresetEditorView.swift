@@ -236,7 +236,7 @@ public struct PresetEditorView: View {
                 }
             }
         }
-        .edgeBar(.bottom) {
+        .edgeBar(.bottom, floats: false) {
             HStack(spacing: 8) {
                 if !preset.wrappedValue.isBuiltIn {
                     Button("Delete…", role: .destructive) {

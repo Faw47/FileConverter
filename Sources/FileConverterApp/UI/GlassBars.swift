@@ -15,11 +15,21 @@ private struct EdgeBar<Bar: View>: ViewModifier {
     let edge: VerticalEdge
     let style: EdgeBarStyle
     let isPresented: Bool
+    let floats: Bool
     @ViewBuilder let bar: () -> Bar
 
     func body(content: Content) -> some View {
         if !isPresented {
             content
+        } else if #available(macOS 26, *), !floats {
+            // Beside the content rather than over it: inside the Settings
+            // split view the scroll-edge effect doesn't fade rows under a
+            // floating bar, so they showed through its buttons.
+            VStack(spacing: 0) {
+                if edge == .top { paddedBar }
+                content
+                if edge == .bottom { paddedBar }
+            }
         } else if #available(macOS 26, *) {
             content.safeAreaBar(edge: edge) {
                 bar()
@@ -33,6 +43,12 @@ private struct EdgeBar<Bar: View>: ViewModifier {
                 if edge == .bottom { Divider(); fallbackBar }
             }
         }
+    }
+
+    private var paddedBar: some View {
+        bar()
+            .padding(.horizontal, style == .sheet ? 20 : 12)
+            .padding(.vertical, style == .sheet ? 14 : 8)
     }
 
     @ViewBuilder
@@ -57,9 +73,10 @@ extension View {
         _ edge: VerticalEdge,
         style: EdgeBarStyle = .window,
         isPresented: Bool = true,
+        floats: Bool = true,
         @ViewBuilder _ bar: @escaping () -> Bar
     ) -> some View {
-        modifier(EdgeBar(edge: edge, style: style, isPresented: isPresented, bar: bar))
+        modifier(EdgeBar(edge: edge, style: style, isPresented: isPresented, floats: floats, bar: bar))
     }
 
     /// Glass on macOS 26 and later, where the button floats in an edge bar;
