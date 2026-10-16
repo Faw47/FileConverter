@@ -151,4 +151,20 @@ final class QueueInteractionTests: XCTestCase {
         relaunched.clearCompleted()
         XCTAssertTrue(QueueHistoryStore.load(from: historyURL).isEmpty, "clearing also clears history")
     }
+
+    func testHistoryKeepsAFailuresSuggestionAndTechnicalDetails() throws {
+        let error = ConversionError.externalToolFailed(tool: "FFmpeg", exitCode: 1, stderr: "Invalid data found when processing input")
+        let job = ConversionJob(
+            sourceURL: directory.appendingPathComponent("clip.mov"),
+            preset: try BackendHarness.builtIn("video.mp4-balanced"),
+            state: .failed(error)
+        )
+        let record = try XCTUnwrap(QueueHistoryStore.record(for: job))
+        let data = try JSONEncoder().encode(record)
+        let restored = QueueHistoryStore.job(from: try JSONDecoder().decode(QueueHistoryStore.Record.self, from: data))
+        guard case .failed(let restoredError) = restored.state else { return XCTFail("still failed") }
+        XCTAssertEqual(restoredError.localizedDescription, error.localizedDescription)
+        XCTAssertEqual(restoredError.recoverySuggestion, error.recoverySuggestion)
+        XCTAssertTrue(restoredError.technicalDetails.contains("Invalid data found"), "Details keep the tool's log")
+    }
 }

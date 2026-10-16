@@ -10,7 +10,6 @@ public struct FinderIntegrationView: View {
     @State private var channelReady = false
     @State private var snapshotReady = false
     @State private var statusDetail = "Checking integration files…"
-    @State private var snapshotAge: String?
     @State private var isTesting = false
     @State private var testSuccessMessage: String?
     @State private var testErrorMessage: String?
@@ -69,15 +68,6 @@ public struct FinderIntegrationView: View {
             }
 
             Section("Troubleshooting") {
-                LabeledContent("Menu data") {
-                    Text(snapshotAge ?? "Never written")
-                }
-                LabeledContent {
-                    Button("Rewrite Menu Data") { forceRefreshSnapshot() }
-                } label: {
-                    Text("New presets are missing from the menu")
-                    Text("Writes the menu data Finder reads again.")
-                }
                 LabeledContent {
                     Button(finderRelaunched ? "Restarted" : "Restart Finder…") {
                         showingRelaunchConfirmation = true
@@ -86,12 +76,6 @@ public struct FinderIntegrationView: View {
                 } label: {
                     Text("The menu does not appear at all")
                     Text("Open Finder windows close and reopen.")
-                }
-                LabeledContent {
-                    Button("Show Folder") { revealIPCFolder() }
-                } label: {
-                    Text("Shared folder")
-                    Text("The folder File Converter shares with Finder.")
                 }
             }
         }
@@ -127,7 +111,7 @@ public struct FinderIntegrationView: View {
         }
 
         if integrationFilesReady {
-            statusDetail = "Secure channel, menu snapshot, and the Finder extension are enabled."
+            statusDetail = "Right-click files in Finder and choose File Converter."
         } else if extensionEnabled == false {
             statusDetail = "Enable File Converter under System Settings > General > Login Items & Extensions."
         } else if extensionEnabled == nil {
@@ -139,69 +123,40 @@ public struct FinderIntegrationView: View {
         } else {
             statusDetail = "Preset menu data snapshot has not been exported yet."
         }
-
-        snapshotAge = snapshotFileAge()
     }
 
+    /// Rewrites the menu data Finder reads (so new or changed presets
+    /// show up), then checks the extension again.
     private func testIntegration() {
         isTesting = true
         testSuccessMessage = nil
         testErrorMessage = nil
 
         Task { @MainActor in
-            _ = PresetStore.shared.publishFinderMenuSnapshot()
+            let writeError = rewriteMenuData()
             refresh()
             isTesting = false
-            if integrationFilesReady {
-                testSuccessMessage = "Extension status, secure channel, and preset snapshot are ready."
+            if integrationFilesReady && writeError == nil {
+                testSuccessMessage = "The menu in Finder is up to date."
             } else {
-                testErrorMessage = statusDetail.isEmpty ? "Finder extension integration is not ready. Check system permissions and app group configuration." : statusDetail
+                testErrorMessage = writeError
+                    ?? (statusDetail.isEmpty ? "The Finder menu is not ready. Check that the extension is turned on in System Settings." : statusDetail)
             }
         }
     }
 
-    private func snapshotFileAge() -> String? {
-        guard let config = try? IPCConfiguration.current(),
-              let container = config.sharedContainerURL() else {
-            return "No container"
+    /// The reason the menu data could not be written, or nil.
+    private func rewriteMenuData() -> String? {
+        guard PresetStore.shared.publishFinderMenuSnapshot() else {
+            return PresetStore.shared.lastErrorDescription ?? "Could not update the Finder menu."
         }
-
-        let snapshotURL = container
-            .appendingPathComponent("FileConverter", isDirectory: true)
-            .appendingPathComponent("finder-menu-snapshot.json")
-
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: snapshotURL.path),
-              let modificationDate = attributes[.modificationDate] as? Date else {
-            return "Never synced"
-        }
-
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return "Updated \(formatter.localizedString(for: modificationDate, relativeTo: Date()))"
-    }
-
-    private func forceRefreshSnapshot() {
-        let didWrite = PresetStore.shared.publishFinderMenuSnapshot()
-        if !didWrite {
-            statusDetail = PresetStore.shared.lastErrorDescription ?? "Could not write the Finder menu snapshot."
-        }
-        refresh()
+        return nil
     }
 
     private func openSystemExtensions() {
         if #available(macOS 10.15, *) {
             FIFinderSyncController.showExtensionManagementInterface()
         }
-    }
-
-    private func revealIPCFolder() {
-        guard let config = try? IPCConfiguration.current(),
-              let container = config.sharedContainerURL() else {
-            testErrorMessage = "The shared Finder data directory is not available yet. Open File Converter once to initialize integration."
-            return
-        }
-
-        NSWorkspace.shared.activateFileViewerSelecting([container])
     }
 
     private func relaunchFinder() {

@@ -51,7 +51,10 @@ final class AccessibilityAuditTests: XCTestCase {
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Conflict for \\(conflict.sourceFilename)\")"))
         // The button's own title says what it does; VoiceOver reads it as is.
         XCTAssertTrue(content.contains("\"Cancel Conversion\" : \"Cancel Conversions\""))
+        // Esc skips (nothing is stopped or replaced); it is not on Cancel Conversion.
         XCTAssertTrue(content.contains(".keyboardShortcut(.cancelAction)"))
+        XCTAssertEqual(content.components(separatedBy: ".keyboardShortcut(").count - 1, 1)
+        XCTAssertTrue(content.contains("Button(conflicts.count == 1 ? \"Skip\" : \"Skip All\") {\n                queue.resolveCollisions(.skip, applyToAll: true)\n            }\n            .keyboardShortcut(.cancelAction)"))
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Skip \\(conflict.sourceFilename)\")"))
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Keep both files for \\(conflict.sourceFilename)\")"))
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Replace the existing file for \\(conflict.sourceFilename)\")"))

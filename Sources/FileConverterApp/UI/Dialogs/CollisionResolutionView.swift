@@ -54,26 +54,29 @@ struct CollisionResolutionView: View {
             Text("The existing files will be moved to the Trash.")
         }
     }
+
     private var actions: some View {
         HStack {
             // Says what it does: these conversions stop. Nothing on disk
-            // changes either way.
+            // changes either way. No shortcut: Esc must not stop anything.
             Button(conflicts.count == 1 ? "Cancel Conversion" : "Cancel Conversions") {
                 for conflict in conflicts {
                     queue.cancelJob(id: conflict.jobID)
                 }
                 onFinished()
             }
-            .keyboardShortcut(.cancelAction)
             .help("Stop converting these files; existing files are left as they are")
 
             Spacer()
 
+            // Esc skips: the existing files stay and nothing new is written.
+            Button(conflicts.count == 1 ? "Skip" : "Skip All") {
+                queue.resolveCollisions(.skip, applyToAll: true)
+            }
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel(conflicts.count == 1 ? "Skip this file" : "Skip all conflicting files")
+
             if conflicts.count > 1 {
-                Button("Skip All") {
-                    queue.resolveCollisions(.skip, applyToAll: true)
-                }
-                .accessibilityLabel("Skip all conflicting files")
                 Button("Keep Both for All") {
                     queue.resolveCollisions(.keepBoth, applyToAll: true)
                 }
