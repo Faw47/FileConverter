@@ -755,6 +755,30 @@ public enum BuiltInPresets {
             isBuiltIn: true
         ))
 
+        add("document.pdf-rotate-right", ConversionPreset(
+            name: "Rotate PDF Pages Right",
+            menuName: "Rotate PDF Right",
+            category: .document,
+            sourceFormats: ["pdf"],
+            destinationFormat: "pdf",
+            backend: .pdfKit,
+            quality: .lossless,
+            processingOptions: ConversionProcessingOptions(pdfRotationDegrees: 90),
+            isBuiltIn: true,
+            sameFormatSuffix: "rotated"
+        ))
+        add("document.pdf-rotate-left", ConversionPreset(
+            name: "Rotate PDF Pages Left",
+            menuName: "Rotate PDF Left",
+            category: .document,
+            sourceFormats: ["pdf"],
+            destinationFormat: "pdf",
+            backend: .pdfKit,
+            quality: .lossless,
+            processingOptions: ConversionProcessingOptions(pdfRotationDegrees: 270),
+            isBuiltIn: true,
+            sameFormatSuffix: "rotated"
+        ))
         add("document.docx", ConversionPreset(
             name: "Microsoft Word (DOCX)",
             menuName: "DOCX",

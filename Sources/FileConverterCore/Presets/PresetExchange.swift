@@ -292,7 +292,8 @@ public enum PresetExchange {
         }
 
         // PDF section
-        if preset.splitPDFIntoPages || preset.processingOptions?.pdfSplitMode != nil || preset.processingOptions?.pdfCompressionProfile != nil {
+        if preset.splitPDFIntoPages || preset.processingOptions?.pdfSplitMode != nil || preset.processingOptions?.pdfCompressionProfile != nil
+            || preset.processingOptions?.pdfRotationDegrees != nil {
             var pdfOptions: [String: Any] = ["splitIntoPages": preset.splitPDFIntoPages]
             if let mode = preset.processingOptions?.pdfSplitMode { pdfOptions["splitMode"] = mode }
             if let ranges = preset.processingOptions?.pdfPageRanges { pdfOptions["pageRanges"] = ranges }
@@ -312,6 +313,7 @@ public enum PresetExchange {
             if let linearize = preset.processingOptions?.pdfLinearize, linearize { pdfOptions["linearize"] = linearize }
             if let compatibility = preset.processingOptions?.pdfCompatibilityLevel { pdfOptions["compatibilityLevel"] = compatibility }
             if preset.processingOptions?.pdfFlattenToImages == true { pdfOptions["flattenToImages"] = true }
+            if let degrees = preset.processingOptions?.pdfRotationDegrees { pdfOptions["rotationDegrees"] = degrees }
             dict["pdf"] = pdfOptions
         }
 
@@ -722,6 +724,7 @@ public enum PresetExchange {
         var pdfLinearize = false
         var pdfCompatibilityLevel: String?
         var pdfFlattenToImages = false
+        var pdfRotationDegrees: Int?
 
         if let pdfDict = dict["pdf"] as? [String: Any] {
             splitPDFIntoPages = pdfDict["splitIntoPages"] as? Bool ?? false
@@ -743,6 +746,9 @@ public enum PresetExchange {
             pdfLinearize = pdfDict["linearize"] as? Bool ?? false
             pdfCompatibilityLevel = pdfDict["compatibilityLevel"] as? String
             pdfFlattenToImages = pdfDict["flattenToImages"] as? Bool ?? false
+            if let degrees = pdfDict["rotationDegrees"] as? Int, [90, 180, 270].contains(((degrees % 360) + 360) % 360) {
+                pdfRotationDegrees = ((degrees % 360) + 360) % 360
+            }
         }
 
         let processingOptions = ConversionProcessingOptions(
@@ -767,7 +773,8 @@ public enum PresetExchange {
             pdfRemoveThumbnails: pdfRemoveThumbnails,
             pdfLinearize: pdfLinearize,
             pdfCompatibilityLevel: pdfCompatibilityLevel,
-            pdfFlattenToImages: pdfFlattenToImages
+            pdfFlattenToImages: pdfFlattenToImages,
+            pdfRotationDegrees: pdfRotationDegrees
         )
 
         let presetID = (dict["id"] as? String).flatMap(UUID.init) ?? UUID()

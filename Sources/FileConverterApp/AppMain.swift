@@ -410,6 +410,11 @@ struct FileConverterApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
+                Button("Combine into PDF…") {
+                    appState.chooseFilesToCombine()
+                }
+                .help("Put several PDFs and images into one PDF")
+
                 Divider()
 
                 Button("Clear Finished") {

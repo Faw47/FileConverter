@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import AppKit
 import FileConverterCore
 import FileConverterNativeBackends
@@ -191,6 +192,47 @@ public final class AppState: ObservableObject {
         } else if preset.isPDFCompressWorkflow {
             WorkflowPresentationCoordinator.shared.enqueue(.pdfCompress(urls: urls, preset: preset, leases: leases))
         }
+    }
+
+    /// Asks where to save, combines the PDFs and images into one PDF in the
+    /// background, and shows it in Finder.
+    public func combineIntoPDF(urls: [URL]) {
+        guard PDFCombiner.canCombine(urls) else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = "Combined.pdf"
+        panel.directoryURL = urls.first?.deletingLastPathComponent()
+        panel.prompt = "Combine"
+        panel.message = Inflect.string("Combine ^[\(urls.count) file](inflect: true) into one PDF, in the order shown in the list.")
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        Task {
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try PDFCombiner.combine(urls, into: destination)
+                }.value
+                NSWorkspace.shared.activateFileViewerSelecting([destination])
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Couldn’t Combine Into a PDF"
+                alert.informativeText = error.localizedDescription
+                alert.runModal()
+            }
+        }
+    }
+
+    /// File › Combine into PDF…: choose the files first.
+    public func chooseFilesToCombine() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.pdf, .image]
+        panel.prompt = "Choose"
+        panel.message = "Choose two or more PDFs or images to put into one PDF."
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK else { return }
+        let urls = panel.urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        combineIntoPDF(urls: urls)
     }
 
     private func handleBatchCompleted(_ note: Notification) {

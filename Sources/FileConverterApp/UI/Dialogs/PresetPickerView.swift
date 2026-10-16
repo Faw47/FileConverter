@@ -1,5 +1,6 @@
 import AppKit
 import FileConverterCore
+import FileConverterNativeBackends
 import SwiftUI
 
 /// Choose how to convert files that arrived without a preset (drag and drop,
@@ -341,6 +342,15 @@ struct PresetPickerView: View {
             HStack {
                 Button("Manage Presets…", action: onManagePresets)
                     .edgeBarButtonStyle()
+                if PDFCombiner.canCombine(recognized) {
+                    Button("Combine into PDF…") {
+                        let files = recognized
+                        onCancel()
+                        DispatchQueue.main.async { AppState.shared.combineIntoPDF(urls: files) }
+                    }
+                    .help("Put these files into one PDF instead of converting each")
+                    .edgeBarButtonStyle()
+                }
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
@@ -425,6 +435,8 @@ private struct MixedBatchView: View {
     private func presets(for urls: [URL]) -> [ConversionPreset] {
         PresetValidator.compatiblePresets(forURLs: urls)
     }
+
+    private var allURLs: [URL] { groups.flatMap(\.urls) }
 
     /// "Clip.mov", "a.jpg, b.jpg", or "a.jpg, b.jpg, and 3 more".
     static func names(_ urls: [URL]) -> String {
@@ -516,6 +528,15 @@ private struct MixedBatchView: View {
             HStack {
                 Button("Manage Presets…", action: onManagePresets)
                     .edgeBarButtonStyle()
+                if PDFCombiner.canCombine(allURLs) {
+                    Button("Combine into PDF…") {
+                        let files = allURLs
+                        onCancel()
+                        DispatchQueue.main.async { AppState.shared.combineIntoPDF(urls: files) }
+                    }
+                    .help("Put these files into one PDF instead of converting each")
+                    .edgeBarButtonStyle()
+                }
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)

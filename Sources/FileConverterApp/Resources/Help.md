@@ -41,6 +41,10 @@ Location (GPS) is removed from converted photos and videos unless you turn this 
 
 FFmpeg, ImageMagick, Ghostscript, LibreOffice, and Calibre add formats such as MKV, WebM, MP3, WebP, Office documents, and EPUB. Install them with Homebrew; **Settings › External Tools** shows what was found and lets you point to a tool installed elsewhere.
 
+## Combining and rotating PDFs
+
+To put several PDFs and images into one PDF, choose **Combine into PDF…** in the File menu, or drop the files on the window and click **Combine into PDF…**. Pages keep the order of the files. The “Rotate PDF Right” and “Rotate PDF Left” presets turn every page of a PDF.
+
 ## Compressing PDFs
 
 Without Ghostscript, File Converter shrinks the images inside the PDF and keeps text, links, and bookmarks. **Turn pages into images** gives the smallest file; text is recognized on your Mac so the PDF stays searchable. If the result would not be smaller, nothing is saved.

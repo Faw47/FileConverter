@@ -47,7 +47,7 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
             return sourceFormat.id == "pdf" && destinationFormat.id == "pdf"
         }
         if destinationFormat.id == "pdf" {
-            if sourceFormat.id == "pdf" && preset.isPDFCompressWorkflow {
+            if sourceFormat.id == "pdf" && (preset.isPDFCompressWorkflow || preset.processingOptions?.pdfRotationDegrees != nil) {
                 return true
             }
             return sourceFormat.category == .image || sourceFormat.id == "txt" || sourceFormat.id == "rtf" || sourceFormat.id == "html"
@@ -331,6 +331,12 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
                         throw ConversionError.malformedSource(path: sourceURL.path, reason: "PDF document is password-protected and cannot be processed.")
                     }
                     if isCancelled() { throw ConversionError.cancelled }
+                    if let degrees = job.preset.processingOptions?.pdfRotationDegrees {
+                        for index in 0..<doc.pageCount {
+                            guard let page = doc.page(at: index) else { continue }
+                            page.rotation = ((page.rotation + degrees) % 360 + 360) % 360
+                        }
+                    }
                     guard doc.write(to: destURL) else {
                         throw ConversionError.destinationUnavailable(path: destURL.path)
                     }

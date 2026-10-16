@@ -60,6 +60,8 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     /// Native compression only: turn every page into an image (smallest
     /// file; text stays searchable through on-device recognition).
     public var pdfFlattenToImages: Bool
+    /// Turn every page by this many degrees (90 right, 270 left, 180).
+    public var pdfRotationDegrees: Int?
 
     public init(
         audioSplitDurationSeconds: Int? = nil,
@@ -83,7 +85,8 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         pdfRemoveThumbnails: Bool = false,
         pdfLinearize: Bool = false,
         pdfCompatibilityLevel: String? = nil,
-        pdfFlattenToImages: Bool = false
+        pdfFlattenToImages: Bool = false,
+        pdfRotationDegrees: Int? = nil
     ) {
         self.audioSplitDurationSeconds = audioSplitDurationSeconds
         self.audioTargetFileSizeBytes = audioTargetFileSizeBytes
@@ -107,6 +110,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         self.pdfLinearize = pdfLinearize
         self.pdfCompatibilityLevel = pdfCompatibilityLevel
         self.pdfFlattenToImages = pdfFlattenToImages
+        self.pdfRotationDegrees = pdfRotationDegrees
     }
 
     public init(from decoder: Decoder) throws {
@@ -133,12 +137,14 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         self.pdfLinearize = try container.decodeIfPresent(Bool.self, forKey: .pdfLinearize) ?? false
         self.pdfCompatibilityLevel = try container.decodeIfPresent(String.self, forKey: .pdfCompatibilityLevel)
         self.pdfFlattenToImages = try container.decodeIfPresent(Bool.self, forKey: .pdfFlattenToImages) ?? false
+        self.pdfRotationDegrees = try container.decodeIfPresent(Int.self, forKey: .pdfRotationDegrees)
     }
 
     public var isEmpty: Bool {
         audioSplitDurationSeconds == nil
             && audioTargetFileSizeBytes == nil
             && videoTargetFileSizeBytes == nil
+            && pdfRotationDegrees == nil
             && !splitPDFIntoPages
             && pdfSplitMode == nil
             && pdfPageRanges == nil
