@@ -45,7 +45,7 @@ public final class ExternalToolDiscovery: @unchecked Sendable {
 
     public init(
         capabilitiesCacheURL: URL? = ExternalToolDiscovery.defaultCapabilitiesCacheURL,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = AppDataLocation.defaults
     ) {
         self.capabilitiesCacheURL = capabilitiesCacheURL
         self.defaults = defaults

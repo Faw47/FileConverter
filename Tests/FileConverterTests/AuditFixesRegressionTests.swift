@@ -203,25 +203,17 @@ final class AuditFixesRegressionTests: XCTestCase {
         var preset = BuiltInPresets.makeDefaultPresets().first { $0.destinationFormat == "pdf" }!
         preset.filenamePattern = "{name}"
 
-        let key = "fc.defaultFilenamePattern"
-        let oldPattern = UserDefaults.standard.string(forKey: key)
-        defer {
-            if let oldPattern {
-                UserDefaults.standard.set(oldPattern, forKey: key)
-            } else {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
+        withIsolatedDefaults { defaults in
+            defaults.set("{name}_converted", forKey: "fc.defaultFilenamePattern")
+
+            let outputFilename = OutputNamingEngine.generateFormattedFilename(
+                sourceURL: sourceURL,
+                preset: preset,
+                targetExtension: "pdf"
+            )
+
+            XCTAssertEqual(outputFilename, "Report_converted.pdf")
         }
-
-        UserDefaults.standard.set("{name}_converted", forKey: key)
-
-        let outputFilename = OutputNamingEngine.generateFormattedFilename(
-            sourceURL: sourceURL,
-            preset: preset,
-            targetExtension: "pdf"
-        )
-
-        XCTAssertEqual(outputFilename, "Report_converted.pdf")
     }
 
     // MARK: - Issue 37: WebM Disambiguation from MKV

@@ -74,7 +74,7 @@ public final class ConversionQueue: ObservableObject {
     private var notifiedBatchIDs = Set<UUID>()
 
     public init() {
-        let stored = UserDefaults.standard.integer(forKey: "maxConcurrentJobs")
+        let stored = ConversionDefaults.store.integer(forKey: "maxConcurrentJobs")
         self.maxConcurrency = (1...16).contains(stored) ? stored : max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
         setupThermalMonitoring()
     }
@@ -1303,7 +1303,7 @@ public final class ConversionQueue: ObservableObject {
             )
         }
 
-        let enabled = UserDefaults.standard.object(forKey: "enableNotifications") as? Bool ?? false
+        let enabled = ConversionDefaults.store.object(forKey: "enableNotifications") as? Bool ?? false
         guard enabled else { return }
         guard Bundle.main.bundleURL.pathExtension.lowercased() == "app" else { return }
 
@@ -1491,7 +1491,7 @@ private enum NotificationHandoffStore {
     }
 
     private static func loadRecords() -> [Record] {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+        guard let data = ConversionDefaults.store.data(forKey: defaultsKey),
               let records = try? JSONDecoder().decode([Record].self, from: data) else {
             return []
         }
@@ -1501,6 +1501,6 @@ private enum NotificationHandoffStore {
 
     private static func persist(_ records: [Record]) {
         guard let data = try? JSONEncoder().encode(records) else { return }
-        UserDefaults.standard.set(data, forKey: defaultsKey)
+        ConversionDefaults.store.set(data, forKey: defaultsKey)
     }
 }
