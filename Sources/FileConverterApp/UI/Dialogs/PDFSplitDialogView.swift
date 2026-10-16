@@ -255,37 +255,7 @@ public struct PDFSplitDialogView: View {
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
-        let collector = DropURLCollector()
-        let group = DispatchGroup()
-
-        for (index, provider) in providers.enumerated() {
-            group.enter()
-            if provider.canLoadObject(ofClass: URL.self) {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    defer { group.leave() }
-                    if let url { collector.store(url, at: index) }
-                }
-            } else {
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    defer { group.leave() }
-                    if let url = item as? URL {
-                        collector.store(url, at: index)
-                    } else if let nsURL = item as? NSURL {
-                        collector.store(nsURL as URL, at: index)
-                    } else if let data = item as? Data {
-                        if let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           let url = URL(string: str), url.isFileURL {
-                            collector.store(url, at: index)
-                        } else if let url = URL(dataRepresentation: data, relativeTo: nil) {
-                            collector.store(url, at: index)
-                        }
-                    }
-                }
-            }
-        }
-
-        group.notify(queue: .main) {
-            let candidates = collector.orderedURLs()
+        DropURLCollector.fileURLs(from: providers) { candidates in
             let dropped = candidates.filter { url in
                 guard url.pathExtension.lowercased() == "pdf" else { return false }
                 var isDir: ObjCBool = false

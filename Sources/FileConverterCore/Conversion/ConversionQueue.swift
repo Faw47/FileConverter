@@ -1244,7 +1244,7 @@ public final class ConversionQueue: ObservableObject {
         let batchID = jobs[index].batchID
         guard collisionAlertedBatchIDs.insert(batchID).inserted else { return }
         NotificationCenter.default.post(
-            name: NSNotification.Name("FileConverterActivateApp"),
+            name: .fileConverterActivateApp,
             object: nil
         )
         let batchConflictCount = jobs.filter { $0.batchID == batchID && $0.state == .awaitingCollision }.count
@@ -1319,12 +1319,19 @@ public final class ConversionQueue: ObservableObject {
         )
         content.sound = .default
         content.userInfo = Self.notificationUserInfo(for: batchID)
+        if completed > 0 {
+            content.categoryIdentifier = Self.batchFinishedCategory
+        }
 
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         center.add(request, withCompletionHandler: nil)
     }
 
     nonisolated public static let completionBatchIdentifierKey = "completionBatchID"
+    /// Notification category with "Show in Finder" and "Open" buttons.
+    nonisolated public static let batchFinishedCategory = "io.fileconverter.batchFinished"
+    nonisolated public static let openOutputsAction = "io.fileconverter.openOutputs"
+    nonisolated public static let revealOutputsAction = "io.fileconverter.revealOutputs"
 
     nonisolated public static func notificationUserInfo(for batchID: UUID) -> [AnyHashable: Any] {
         [completionBatchIdentifierKey: batchID.uuidString]

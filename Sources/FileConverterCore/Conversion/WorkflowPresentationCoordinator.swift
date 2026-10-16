@@ -78,7 +78,7 @@ public final class WorkflowPresentationCoordinator: ObservableObject {
         } else if isAddFilesQueued {
             isAddFilesQueued = false
             NotificationCenter.default.post(
-                name: NSNotification.Name("OpenFileConverterOpenPanel"),
+                name: .fileConverterOpenPanel,
                 object: nil
             )
         }

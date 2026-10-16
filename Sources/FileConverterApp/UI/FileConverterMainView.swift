@@ -64,15 +64,15 @@ public struct FileConverterMainView: View {
         .dropHighlight(dropTargeted, "Drop to convert")
         .background(MainWindowAccessor())
         .frame(minWidth: 560, idealWidth: 640, minHeight: 420, idealHeight: 500)
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenFileConverterOpenPanel"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .fileConverterOpenPanel)) { _ in
             openFilesDialog()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenFileConverterPresetPicker"))) { note in
+        .onReceive(NotificationCenter.default.publisher(for: .fileConverterPresetPicker)) { note in
             if let urls = note.userInfo?["urls"] as? [URL], !urls.isEmpty {
                 coordinator.enqueue(.batch(urls: urls, excludedCount: 0))
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenFileConverterWorkflowDialog"))) { note in
+        .onReceive(NotificationCenter.default.publisher(for: .fileConverterWorkflowDialog)) { note in
             if let preset = note.userInfo?["preset"] as? ConversionPreset,
                let urls = note.userInfo?["urls"] as? [URL], !urls.isEmpty {
                 let leases = note.userInfo?["leases"] as? [SecurityScopedLease]
@@ -170,39 +170,7 @@ public struct FileConverterMainView: View {
     }
 
     private func handleDroppedProviders(_ providers: [NSItemProvider]) {
-        let collector = DropURLCollector()
-        let group = DispatchGroup()
-
-        for (index, provider) in providers.enumerated() {
-            group.enter()
-            if provider.canLoadObject(ofClass: URL.self) {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    defer { group.leave() }
-                    if let url = url {
-                        collector.store(url, at: index)
-                    }
-                }
-            } else {
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    defer { group.leave() }
-                    if let url = item as? URL {
-                        collector.store(url, at: index)
-                    } else if let nsURL = item as? NSURL {
-                        collector.store(nsURL as URL, at: index)
-                    } else if let data = item as? Data {
-                        if let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           let url = URL(string: str), url.isFileURL {
-                            collector.store(url, at: index)
-                        } else if let url = URL(dataRepresentation: data, relativeTo: nil) {
-                            collector.store(url, at: index)
-                        }
-                    }
-                }
-            }
-        }
-
-        group.notify(queue: .main) {
-            let candidates = collector.orderedURLs().filter { !$0.path.isEmpty }
+        DropURLCollector.fileURLs(from: providers) { candidates in
             self.processCandidateURLs(candidates)
         }
     }
@@ -368,7 +336,7 @@ struct AddFilesButton: View {
 
     var body: some View {
         Button {
-            NotificationCenter.default.post(name: NSNotification.Name("OpenFileConverterOpenPanel"), object: nil)
+            NotificationCenter.default.post(name: .fileConverterOpenPanel, object: nil)
         } label: {
             Label("Add Files…", systemImage: "plus")
         }

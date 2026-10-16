@@ -10,11 +10,9 @@ public final class AppState: ObservableObject {
     public static let shared = AppState()
 
     @Published public var selectedTab: SettingsTab
-    @Published public var dropZoneActive: Bool = false
     @Published public private(set) var backendDiscoveryComplete = false
     @Published public private(set) var discoveryStatus: String?
     @Published public private(set) var isDiscoveringBackends: Bool = false
-    @Published public var activeWorkflowDialog: ActiveWorkflowDialog?
     @Published public var uncompletedJournalEntries: [JournalEntry] = []
 
     private var cancellables = Set<AnyCancellable>()
@@ -34,15 +32,6 @@ public final class AppState: ObservableObject {
             case .presets: return "slider.horizontal.3"
             case .externalTools: return "terminal"
             case .finder: return "macwindow"
-            }
-        }
-
-        public var subtitle: String {
-            switch self {
-            case .general: return "Outputs, conflicts, notifications"
-            case .presets: return "Formats, backends, quality"
-            case .externalTools: return "FFmpeg, documents, diagnostics"
-            case .finder: return "Context menu, status"
             }
         }
     }
@@ -211,23 +200,5 @@ public final class AppState: ObservableObject {
             guard !urls.isEmpty else { return }
             NSWorkspace.shared.activateFileViewerSelecting(urls)
         }
-    }
-}
-
-public enum ActiveWorkflowDialog: Identifiable, Equatable {
-    case compressPDF(id: UUID = UUID(), urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
-    case splitPDF(id: UUID = UUID(), urls: [URL], preset: ConversionPreset, leases: [SecurityScopedLease]?)
-
-    public var id: UUID {
-        switch self {
-        case .compressPDF(let id, _, _, _):
-            return id
-        case .splitPDF(let id, _, _, _):
-            return id
-        }
-    }
-
-    public static func == (lhs: ActiveWorkflowDialog, rhs: ActiveWorkflowDialog) -> Bool {
-        lhs.id == rhs.id
     }
 }

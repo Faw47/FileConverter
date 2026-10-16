@@ -58,10 +58,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.servicesProvider = self
         UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(
+                identifier: ConversionQueue.batchFinishedCategory,
+                actions: [
+                    UNNotificationAction(identifier: ConversionQueue.revealOutputsAction, title: "Show in Finder"),
+                    UNNotificationAction(identifier: ConversionQueue.openOutputsAction, title: "Open", options: [.foreground]),
+                ],
+                intentIdentifiers: []
+            ),
+        ])
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleActivateApp),
-            name: NSNotification.Name("FileConverterActivateApp"),
+            name: .fileConverterActivateApp,
             object: nil
         )
 
@@ -182,6 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let batchID = NotificationURLResolver.batchID(
             from: response.notification.request.content.userInfo
         )
+        let opens = response.actionIdentifier == ConversionQueue.openOutputsAction
         completionHandler()
 
         guard let batchID else { return }
@@ -189,6 +200,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let self else { return }
             ConversionQueue.shared.withNotificationRevealURLs(for: batchID) { urls in
                 guard !urls.isEmpty else { return }
+                if opens {
+                    // "Open": the converted files, in their default apps.
+                    urls.forEach { NSWorkspace.shared.open($0) }
+                    return
+                }
+                // Clicking the notification or "Show in Finder".
                 self.isHeadlessBackgroundLaunch = false
                 NSApp.activate(ignoringOtherApps: true)
                 self.activateMainWindow()
@@ -253,7 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         for url in customURLs {
             if URLDeduplicator.shared.shouldProcess(url) {
                 NotificationCenter.default.post(
-                    name: NSNotification.Name("HandleIncomingURL"),
+                    name: .fileConverterHandleIncomingURL,
                     object: nil,
                     userInfo: ["url": url]
                 )
@@ -295,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
         NotificationCenter.default.post(
-            name: NSNotification.Name("OpenFileConverterPresetPicker"),
+            name: .fileConverterPresetPicker,
             object: nil,
             userInfo: ["urls": urls]
         )
@@ -351,7 +368,7 @@ struct FileConverterApp: App {
                         handleIncomingURL(url)
                     }
                 }
-                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("HandleIncomingURL"))) { note in
+                .onReceive(NotificationCenter.default.publisher(for: .fileConverterHandleIncomingURL)) { note in
                     if let url = note.userInfo?["url"] as? URL {
                         handleIncomingURL(url)
                     }
@@ -388,7 +405,7 @@ struct FileConverterApp: App {
 
             CommandGroup(replacing: .newItem) {
                 Button("Open…") {
-                    NotificationCenter.default.post(name: NSNotification.Name("OpenFileConverterOpenPanel"), object: nil)
+                    NotificationCenter.default.post(name: .fileConverterOpenPanel, object: nil)
                 }
                 .keyboardShortcut("o", modifiers: .command)
 

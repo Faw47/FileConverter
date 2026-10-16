@@ -201,7 +201,7 @@ public final class AppSettings: ObservableObject {
             Keys.defaultOutputPolicy: "sameAsSource",
             Keys.defaultOverwritePolicy: OverwritePolicy.appendNumber.rawValue,
             Keys.removeLocationData: true,
-            Keys.showMenuBarExtra: true,
+            Keys.showMenuBarExtra: false,
             Keys.concurrencyIsAutomatic: true,
             Keys.enableNotifications: true,
             Keys.revealInFinder: false,
@@ -227,6 +227,11 @@ public final class AppSettings: ObservableObject {
         enableNotifications = defaults.bool(forKey: Keys.enableNotifications)
         revealInFinder = defaults.bool(forKey: Keys.revealInFinder)
         openWithBehavior = OpenWithBehavior(rawValue: defaults.string(forKey: Keys.openWithBehavior) ?? "") ?? .askWithLastChoice
+        // The menu bar item is off for new installs (the Dock icon already
+        // shows progress); people who already had it keep it.
+        if defaults.object(forKey: Keys.showMenuBarExtra) == nil, Self.isExistingInstall {
+            defaults.set(true, forKey: Keys.showMenuBarExtra)
+        }
         showMenuBarExtra = defaults.bool(forKey: Keys.showMenuBarExtra)
         concurrencyIsAutomatic = defaults.bool(forKey: Keys.concurrencyIsAutomatic)
 
@@ -281,7 +286,7 @@ public final class AppSettings: ObservableObject {
         enableNotifications = true
         revealInFinder = false
         openWithBehavior = .askWithLastChoice
-        showMenuBarExtra = true
+        showMenuBarExtra = false
         concurrencyIsAutomatic = true
         defaultFilenamePattern = "{name}"
         maxConcurrentJobs = Self.systemDefaultConcurrency
@@ -344,6 +349,14 @@ public final class AppSettings: ObservableObject {
 
     private static func normalizeOverwritePolicy(_ value: String) -> String {
         OverwritePolicy(rawValue: value)?.rawValue ?? OverwritePolicy.appendNumber.rawValue
+    }
+
+    /// True when File Converter has run here before this setting changed.
+    private static var isExistingInstall: Bool {
+        guard let directory = AppDataLocation.directory else { return false }
+        return ["history.json", "conversion_journal.json"].contains {
+            FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
+        }
     }
 
     /// At least one, at most one per processor core (two on a one-core Mac).

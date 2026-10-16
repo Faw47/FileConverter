@@ -16,13 +16,26 @@ struct MenuBarStatusView: View {
         guard let job = queue.jobs.last(where: { $0.state == .completed || { if case .completedWithWarnings = $0.state { return true }; return false }($0) }) else {
             return []
         }
-        return job.outputURLs.filter { FileManager.default.fileExists(atPath: $0.path) }
+        let candidates = job.outputURLs.isEmpty ? (job.destinationURL.map { [$0] } ?? []) : job.outputURLs
+        return candidates.filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// "Converting 3 files · 42% done" for everything running or waiting.
+    private var overallStatus: String? {
+        guard let progress = ConversionQueue.activeBatchProgress(queue.jobs) else { return nil }
+        let unfinished = activeJobs.count
+        let verb = queue.isPaused ? "Paused" : "Converting"
+        return Inflect.string("\(verb) ^[\(unfinished) file](inflect: true) · \(Int(progress.fraction * 100))% done")
     }
 
     var body: some View {
         if activeJobs.isEmpty {
             Text("No conversions running")
         } else {
+            if let overallStatus {
+                Text(overallStatus)
+                Divider()
+            }
             ForEach(activeJobs.prefix(8)) { job in
                 Text("\(job.filename) — \(job.state == .queued ? "Waiting" : job.progress.percentageString)")
             }

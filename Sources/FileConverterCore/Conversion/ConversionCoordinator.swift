@@ -65,11 +65,11 @@ public actor ConversionCoordinator {
 
             await MainActor.run {
                 NotificationCenter.default.post(
-                    name: NSNotification.Name("FileConverterActivateApp"),
+                    name: .fileConverterActivateApp,
                     object: nil
                 )
                 NotificationCenter.default.post(
-                    name: NSNotification.Name("OpenFileConverterWorkflowDialog"),
+                    name: .fileConverterWorkflowDialog,
                     object: nil,
                     userInfo: [
                         "preset": preset,
