@@ -253,6 +253,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private var isHeadlessBackgroundLaunch = false
+    private let launchDate = Date()
+
+    /// Shortcuts actions run in the background. When one launched File
+    /// Converter (it is not active and launched moments ago), hide the
+    /// main window SwiftUI opened at launch, as for a Finder conversion.
+    func stayInBackgroundIfLaunchedForIntent() {
+        guard !NSApp.isActive, Date().timeIntervalSince(launchDate) < 10 else { return }
+        isHeadlessBackgroundLaunch = true
+        for window in NSApp.windows where !isSettingsWindow(window) {
+            window.orderOut(nil)
+        }
+    }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard !urls.isEmpty else { return }
