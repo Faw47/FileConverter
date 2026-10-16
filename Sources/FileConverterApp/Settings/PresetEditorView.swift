@@ -219,6 +219,7 @@ public struct PresetEditorView: View {
                     needsAttentionSection(errors: errors)
                 }
 
+                identitySection(preset: preset)
                 quickSetupSection(preset: preset)
 
                 if preset.wrappedValue.category == .document,
@@ -238,7 +239,6 @@ public struct PresetEditorView: View {
 
                 outputSection(preset: preset)
                 metadataSection(preset: preset)
-                identitySection(preset: preset)
                 nameAndMatchingSection(preset: preset)
                 conversionEngineSection(preset: preset)
             }
@@ -351,7 +351,28 @@ public struct PresetEditorView: View {
                 .accessibilityLabel("Output format")
             }
 
-                            SettingsRow(
+            // Only for an extension File Converter doesn't know (an imported
+            // or older preset); otherwise "Convert to" says it all.
+            if resolvedFormat(for: preset.wrappedValue) == nil {
+                SettingsRow(title: "File extension") {
+                    TextField("File extension", text: preset.destinationFormat, prompt: Text("mp3"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(width: 100)
+                        .onChange(of: preset.wrappedValue.destinationFormat) { _, newValue in
+                            let normalized = newValue
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                                .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                                .lowercased()
+                            if normalized != newValue {
+                                preset.wrappedValue.destinationFormat = normalized
+                            }
+                        }
+                }
+            }
+
+            SettingsRow(
                 title: stateController.qualitySectionTitle(for: preset.wrappedValue),
                 subtitle: stateController.qualitySectionSubtitle(for: preset.wrappedValue)
             ) {
@@ -395,15 +416,7 @@ public struct PresetEditorView: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .fixedSize()
-                .onChange(of: preset.wrappedValue.category) { _, newCategory in
-                    guard sourceScope == .category else { return }
-                    if newCategory == .custom {
-                        sourceSelection = "custom"
-                        return
-                    }
-                    sourceSelection = "category:\(newCategory.rawValue.lowercased())"
-                    preset.wrappedValue.sourceFormats = [newCategory.rawValue.lowercased()]
-                }
+
             }
         }
     }
@@ -421,31 +434,6 @@ public struct PresetEditorView: View {
                 .fixedSize()
                 .onChange(of: sourceScope) { _, newScope in
                     applySourceScope(newScope, to: preset)
-                }
-            }
-
-            SettingsRow(title: "File extension") {
-                TextField("File extension", text: preset.destinationFormat, prompt: Text("mp3"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(width: 100)
-                    .onChange(of: preset.wrappedValue.destinationFormat) { _, newValue in
-                        let normalized = newValue
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                            .lowercased()
-                        if normalized != newValue {
-                            preset.wrappedValue.destinationFormat = normalized
-                        }
-                    }
-            }
-
-            if let format = resolvedFormat(for: preset.wrappedValue) {
-                SettingsRow(title: "Detected format") {
-                    Text("\(format.name), \(format.category.displayName)")
-                        .font(.system(.callout, design: .monospaced))
-                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -537,77 +525,7 @@ public struct PresetEditorView: View {
                 .fixedSize()
             }
 
-            SettingsRow(
-                title: "Video bitrate",
-                subtitle: withIgnoredNote(
-                    preset.wrappedValue.videoBitrateKbps != nil
-                        ? "Higher numbers look better and make bigger files"
-                        : "Automatic, based on picture size and quality",
-                    key: .videoBitrate,
-                    preset: preset.wrappedValue
-                )
-            ) {
-                if preset.wrappedValue.videoBitrateKbps != nil {
-                    HStack(spacing: 6) {
-                        numberField(
-                            "Video bitrate in kilobits per second",
-                            value: Binding(
-                                get: { preset.wrappedValue.videoBitrateKbps ?? 4500 },
-                                set: { preset.wrappedValue.videoBitrateKbps = $0 }
-                            ),
-                            in: 500...50_000,
-                            step: 500,
-                            unit: "kbps"
-                        )
-
-                        Button("Automatic") {
-                            preset.wrappedValue.videoBitrateKbps = nil
-                        }
-                        .controlSize(.small)
-                    }
-                } else {
-                    Button("Set Bitrate") {
-                        preset.wrappedValue.videoBitrateKbps = 4500
-                    }
-                    .controlSize(.small)
-                }
-            }
-
-            SettingsRow(
-                title: "Constant quality (CRF)",
-                subtitle: withIgnoredNote(
-                    preset.wrappedValue.crf != nil
-                        ? "Lower numbers look better and make bigger files"
-                        : "Automatic, based on quality",
-                    key: .crf,
-                    preset: preset.wrappedValue
-                )
-            ) {
-                if preset.wrappedValue.crf != nil {
-                    HStack(spacing: 6) {
-                        numberField(
-                            "Constant quality value",
-                            value: Binding(
-                                get: { preset.wrappedValue.crf ?? 23 },
-                                set: { preset.wrappedValue.crf = $0 }
-                            ),
-                            in: 0...51,
-                            step: 1,
-                            unit: nil
-                        )
-
-                        Button("Automatic") {
-                            preset.wrappedValue.crf = nil
-                        }
-                        .controlSize(.small)
-                    }
-                } else {
-                    Button("Set Value") {
-                        preset.wrappedValue.crf = 23
-                    }
-                    .controlSize(.small)
-                }
-            }
+            videoQualityRows(preset: preset)
 
             SettingsRow(title: "Picture size", subtitle: "Never larger than the original") {
                 resolutionPicker(preset: preset, originalLabel: "Original size")
@@ -627,6 +545,89 @@ public struct PresetEditorView: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .fixedSize()
+            }
+        }
+    }
+
+    /// How the video encoder is told what quality to aim for. One choice,
+    /// so a preset never carries a CRF and a bitrate that engines resolve
+    /// differently.
+    private enum VideoQualityMode: Hashable { case automatic, constantQuality, bitrate }
+
+    private func videoQualityMode(_ preset: ConversionPreset) -> VideoQualityMode {
+        if preset.crf != nil { return .constantQuality }
+        if preset.videoBitrateKbps != nil { return .bitrate }
+        return .automatic
+    }
+
+    @ViewBuilder
+    private func videoQualityRows(preset: Binding<ConversionPreset>) -> some View {
+        let mode = videoQualityMode(preset.wrappedValue)
+        SettingsRow(
+            title: "Fine-tune",
+            subtitle: {
+                switch mode {
+                case .automatic: return "Quality above decides, based on picture size"
+                case .constantQuality:
+                    return withIgnoredNote("Lower numbers look better and make bigger files", key: .crf, preset: preset.wrappedValue)
+                case .bitrate:
+                    return withIgnoredNote("Higher numbers look better and make bigger files", key: .videoBitrate, preset: preset.wrappedValue)
+                }
+            }()
+        ) {
+            Picker("Fine-tune", selection: Binding<VideoQualityMode>(
+                get: { videoQualityMode(preset.wrappedValue) },
+                set: { newMode in
+                    switch newMode {
+                    case .automatic:
+                        preset.wrappedValue.crf = nil
+                        preset.wrappedValue.videoBitrateKbps = nil
+                    case .constantQuality:
+                        preset.wrappedValue.crf = preset.wrappedValue.crf ?? 23
+                        preset.wrappedValue.videoBitrateKbps = nil
+                    case .bitrate:
+                        preset.wrappedValue.videoBitrateKbps = preset.wrappedValue.videoBitrateKbps ?? 4500
+                        preset.wrappedValue.crf = nil
+                    }
+                }
+            )) {
+                Text("Automatic").tag(VideoQualityMode.automatic)
+                Text("Constant quality (CRF)").tag(VideoQualityMode.constantQuality)
+                Text("Target bitrate").tag(VideoQualityMode.bitrate)
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+        }
+
+        switch mode {
+        case .automatic:
+            EmptyView()
+        case .constantQuality:
+            SettingsRow(title: "Constant quality") {
+                numberField(
+                    "Constant quality value",
+                    value: Binding(
+                        get: { preset.wrappedValue.crf ?? 23 },
+                        set: { preset.wrappedValue.crf = $0 }
+                    ),
+                    in: 0...51,
+                    step: 1,
+                    unit: nil
+                )
+            }
+        case .bitrate:
+            SettingsRow(title: "Target bitrate") {
+                numberField(
+                    "Video bitrate in kilobits per second",
+                    value: Binding(
+                        get: { preset.wrappedValue.videoBitrateKbps ?? 4500 },
+                        set: { preset.wrappedValue.videoBitrateKbps = $0 }
+                    ),
+                    in: 500...50_000,
+                    step: 500,
+                    unit: "kbps"
+                )
             }
         }
     }
