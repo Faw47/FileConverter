@@ -341,6 +341,13 @@ public struct PDFSplitDialogView: View {
                 self.isLoadingStats = false
                 // A missing, unreadable, or empty PDF has no pages to pick;
                 // its row and the footer say what is wrong with it.
+                // Pages saved in the preset may be past this PDF's end.
+                let pageCount = items.map(\.pageCount).max() ?? 0
+                let inRange = self.selectedPages.filter { $0 <= pageCount }
+                if inRange != self.selectedPages {
+                    self.selectedPages = inRange
+                    self.selectedPagesText = Self.rangeText(for: inRange)
+                }
                 if self.selectedPages.isEmpty {
                     self.selectedPages = PDFPageRangeParser.defaultSelection(
                         totalPages: items.map(\.pageCount).max() ?? 0

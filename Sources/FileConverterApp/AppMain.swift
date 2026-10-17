@@ -355,9 +355,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 @main
 struct FileConverterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var appState = AppState.shared
-    @StateObject private var conversionQueue = ConversionQueue.shared
-    @StateObject private var settings = AppSettings.shared
+    @Bindable private var appState = AppState.shared
+    @Bindable private var conversionQueue = ConversionQueue.shared
+    @Bindable private var settings = AppSettings.shared
 
     /// MenuBarExtra writes `isInserted` back on every update; binding it
     /// straight to @AppStorage made each write trigger another update and
@@ -383,7 +383,7 @@ struct FileConverterApp: App {
     var body: some Scene {
         Window("File Converter", id: "main") {
             FileConverterMainView()
-                .environmentObject(appState)
+                .environment(appState)
                 .onOpenURL { url in
                     if URLDeduplicator.shared.shouldProcess(url) {
                         handleIncomingURL(url)
@@ -413,7 +413,7 @@ struct FileConverterApp: App {
         .defaultSize(width: 620, height: 640)
         Settings {
             SettingsView()
-                .environmentObject(appState)
+                .environment(appState)
         }
         .windowResizability(.contentMinSize)
         .commands {

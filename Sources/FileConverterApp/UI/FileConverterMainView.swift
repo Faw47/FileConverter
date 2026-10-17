@@ -40,9 +40,9 @@ private struct MainWindowAccessor: NSViewRepresentable {
 }
 
 public struct FileConverterMainView: View {
-    @StateObject private var appState = AppState.shared
-    @ObservedObject private var queue = ConversionQueue.shared
-    @ObservedObject private var coordinator = WorkflowPresentationCoordinator.shared
+    @Bindable private var appState = AppState.shared
+    @Bindable private var queue = ConversionQueue.shared
+    @Bindable private var coordinator = WorkflowPresentationCoordinator.shared
     @Environment(\.openSettings) private var openSettings
 
     @State private var conversionErrorDescription: String?
@@ -56,7 +56,7 @@ public struct FileConverterMainView: View {
                 DropZoneView(onSelectFiles: openFilesDialog, isDropTargeted: $dropTargeted)
             } else {
                 ConversionQueueView()
-                    .environmentObject(appState)
+                    .environment(appState)
                     .edgeBar(.bottom) { dropHint }
             }
         }
@@ -370,7 +370,7 @@ public struct FileConverterMainView: View {
 
 /// Opens the file chooser (the window handles it, as for ⌘O).
 struct AddFilesButton: View {
-    @ObservedObject private var coordinator = WorkflowPresentationCoordinator.shared
+    @Bindable private var coordinator = WorkflowPresentationCoordinator.shared
 
     var body: some View {
         Button {

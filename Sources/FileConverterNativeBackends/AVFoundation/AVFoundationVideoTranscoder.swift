@@ -361,6 +361,10 @@ final class AVFoundationVideoTranscoder: @unchecked Sendable {
     }
 }
 
+private final class PumpState: @unchecked Sendable {
+    var finished = false
+}
+
 /// Moves samples from one reader output to one writer input.
 private final class Pump: @unchecked Sendable {
     let output: AVAssetReaderOutput
@@ -376,18 +380,19 @@ private final class Pump: @unchecked Sendable {
 
     func run(isCancelled: @escaping @Sendable () -> Bool, progress: @escaping @Sendable (Double) -> Void) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            var finished = false
+            // Only touched on `queue`, which is serial.
+            let state = PumpState()
             input.requestMediaDataWhenReady(on: queue) { [self] in
-                guard !finished else { return }
+                guard !state.finished else { return }
                 while input.isReadyForMoreMediaData {
                     if isCancelled() {
-                        finished = true
+                        state.finished = true
                         input.markAsFinished()
                         continuation.resume()
                         return
                     }
                     guard let sample = output.copyNextSampleBuffer() else {
-                        finished = true
+                        state.finished = true
                         input.markAsFinished()
                         continuation.resume()
                         return
@@ -398,7 +403,7 @@ private final class Pump: @unchecked Sendable {
                         if seconds.isFinite { progress(seconds) }
                     }
                     if !input.append(sample) {
-                        finished = true
+                        state.finished = true
                         continuation.resume()
                         return
                     }

@@ -73,9 +73,9 @@ final class QueueLayoutCache {
 }
 
 public struct ConversionQueueView: View {
-    @ObservedObject var queue = ConversionQueue.shared
-    @ObservedObject private var settings = AppSettings.shared
-    @EnvironmentObject var appState: AppState
+    @Bindable var queue = ConversionQueue.shared
+    @Bindable private var settings = AppSettings.shared
+    @Bindable var appState = AppState.shared
 
     @State private var selection = Set<UUID>()
     @State private var expandedBatches = Set<UUID>()

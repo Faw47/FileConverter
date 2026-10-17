@@ -1,3 +1,4 @@
+import Observation
 import Foundation
 import Combine
 
@@ -27,13 +28,14 @@ public enum WorkflowPresentationItem: Identifiable, Equatable, Sendable {
 /// Enforces FIFO presentation so concurrent drag/drop, Finder IPC, and PDF workflows
 /// never replace an active sheet or lose queued batches.
 @MainActor
-public final class WorkflowPresentationCoordinator: ObservableObject {
+@Observable
+public final class WorkflowPresentationCoordinator {
     public static let shared = WorkflowPresentationCoordinator()
 
-    @Published public private(set) var currentPresentation: WorkflowPresentationItem?
-    @Published public private(set) var pendingQueue: [WorkflowPresentationItem] = []
-    @Published public var isOpenPanelPresented = false
-    @Published public var isAddFilesQueued = false
+    public private(set) var currentPresentation: WorkflowPresentationItem?
+    public private(set) var pendingQueue: [WorkflowPresentationItem] = []
+    public var isOpenPanelPresented = false
+    public var isAddFilesQueued = false
 
     public init() {}
 

@@ -1,10 +1,12 @@
+import Observation
 import Combine
 import FileConverterCore
 import Foundation
 import UserNotifications
 
 @MainActor
-public final class AppSettings: ObservableObject {
+@Observable
+public final class AppSettings {
     public static let shared = AppSettings()
 
     /// Conversion keys are shared with Core (`ConversionDefaults.Keys`), which
@@ -52,7 +54,7 @@ public final class AppSettings: ObservableObject {
         case unavailable
     }
 
-    @Published public var defaultOutputPolicyRaw: String {
+    public var defaultOutputPolicyRaw: String {
         didSet {
             let normalized = Self.normalizeOutputPolicy(defaultOutputPolicyRaw)
             if normalized != defaultOutputPolicyRaw {
@@ -63,21 +65,21 @@ public final class AppSettings: ObservableObject {
         }
     }
 
-    @Published public var customOutputFolderPath: String {
+    public var customOutputFolderPath: String {
         didSet {
             defaults.set(customOutputFolderPath, forKey: Keys.customOutputFolderPath)
         }
     }
 
-    @Published public var customOutputFolderBookmark: Data? {
+    public var customOutputFolderBookmark: Data? {
         didSet {
             defaults.set(customOutputFolderBookmark, forKey: Keys.customOutputFolderBookmark)
         }
     }
 
-    @Published public private(set) var customOutputFolderError: String?
+    public private(set) var customOutputFolderError: String?
 
-    @Published public var defaultOverwritePolicyRaw: String {
+    public var defaultOverwritePolicyRaw: String {
         didSet {
             let normalized = Self.normalizeOverwritePolicy(defaultOverwritePolicyRaw)
             if normalized != defaultOverwritePolicyRaw {
@@ -88,45 +90,45 @@ public final class AppSettings: ObservableObject {
         }
     }
 
-    @Published public var preserveCreationDate: Bool {
+    public var preserveCreationDate: Bool {
         didSet { defaults.set(preserveCreationDate, forKey: Keys.preserveCreationDate) }
     }
 
-    @Published public var preserveModificationDate: Bool {
+    public var preserveModificationDate: Bool {
         didSet { defaults.set(preserveModificationDate, forKey: Keys.preserveModificationDate) }
     }
 
-    @Published public var removeLocationData: Bool {
+    public var removeLocationData: Bool {
         didSet { defaults.set(removeLocationData, forKey: Keys.removeLocationData) }
     }
 
-    @Published public var enableNotifications: Bool {
+    public var enableNotifications: Bool {
         didSet {
             defaults.set(enableNotifications, forKey: Keys.enableNotifications)
             if enableNotifications { refreshNotificationAuthorization(requestIfNeeded: true) }
         }
     }
 
-    @Published public private(set) var notificationStatusText = "Checking notification access…"
-    @Published public private(set) var notificationAuthorizationState: NotificationAuthorizationState = .checking
+    public private(set) var notificationStatusText = "Checking notification access…"
+    public private(set) var notificationAuthorizationState: NotificationAuthorizationState = .checking
 
-    @Published public var openWithBehavior: OpenWithBehavior {
+    public var openWithBehavior: OpenWithBehavior {
         didSet { defaults.set(openWithBehavior.rawValue, forKey: Keys.openWithBehavior) }
     }
 
-    @Published public var concurrencyIsAutomatic: Bool {
+    public var concurrencyIsAutomatic: Bool {
         didSet { defaults.set(concurrencyIsAutomatic, forKey: Keys.concurrencyIsAutomatic) }
     }
 
-    @Published public var showMenuBarExtra: Bool {
+    public var showMenuBarExtra: Bool {
         didSet { defaults.set(showMenuBarExtra, forKey: Keys.showMenuBarExtra) }
     }
 
-    @Published public var revealInFinder: Bool {
+    public var revealInFinder: Bool {
         didSet { defaults.set(revealInFinder, forKey: Keys.revealInFinder) }
     }
 
-    @Published public var maxConcurrentJobs: Int {
+    public var maxConcurrentJobs: Int {
         didSet {
             let normalized = Self.normalizeConcurrency(maxConcurrentJobs)
             if normalized != maxConcurrentJobs {
@@ -140,7 +142,7 @@ public final class AppSettings: ObservableObject {
 
     /// Saved as given. Editing UI commits through `commitFilenamePattern`,
     /// which trims and validates once editing ends, never per keystroke.
-    @Published public var defaultFilenamePattern: String {
+    public var defaultFilenamePattern: String {
         didSet {
             defaults.set(defaultFilenamePattern, forKey: Keys.defaultFilenamePattern)
         }

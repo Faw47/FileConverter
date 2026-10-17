@@ -3,7 +3,7 @@ import SwiftUI
 
 /// How many files convert at once. Shown as a section of General settings.
 struct ConversionSpeedSection: View {
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var settings = AppSettings.shared
     @State private var thermalState = ProcessInfo.processInfo.thermalState
 
     /// 0 stands for "Automatic".

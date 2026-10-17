@@ -1,28 +1,46 @@
+import Observation
 import Foundation
 import Combine
 import UserNotifications
 
 @MainActor
-public final class ConversionQueue: ObservableObject {
+@Observable
+public final class ConversionQueue {
     public static let shared = ConversionQueue()
 
-    @Published public private(set) var jobs: [ConversionJob] = []
-    @Published public private(set) var activeCount: Int = 0
-    @Published public private(set) var queuedCount: Int = 0
-    @Published public private(set) var completedCount: Int = 0
-    @Published public private(set) var failedCount: Int = 0
-    @Published public private(set) var skippedCount: Int = 0
-    @Published public private(set) var cancelledCount: Int = 0
-    @Published public private(set) var cancelableCount: Int = 0
-    @Published public private(set) var overallProgress: Double = 0.0
+    public private(set) var jobs: [ConversionJob] = [] {
+        didSet { for continuation in jobStreams.values { continuation.yield(jobs) } }
+    }
+    @ObservationIgnored private var jobStreams: [UUID: AsyncStream<[ConversionJob]>.Continuation] = [:]
+
+    /// The current jobs, then every change: for code outside SwiftUI (the
+    /// Dock badge, Shortcuts) that waits on the queue.
+    public func jobUpdates() -> AsyncStream<[ConversionJob]> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let id = UUID()
+            jobStreams[id] = continuation
+            continuation.yield(jobs)
+            continuation.onTermination = { _ in
+                Task { @MainActor [weak self] in self?.jobStreams[id] = nil }
+            }
+        }
+    }
+    public private(set) var activeCount: Int = 0
+    public private(set) var queuedCount: Int = 0
+    public private(set) var completedCount: Int = 0
+    public private(set) var failedCount: Int = 0
+    public private(set) var skippedCount: Int = 0
+    public private(set) var cancelledCount: Int = 0
+    public private(set) var cancelableCount: Int = 0
+    public private(set) var overallProgress: Double = 0.0
     /// Lifecycle completion: terminal jobs / total. Reaches 1.0 even when
     /// jobs fail, skip, or cancel.
-    @Published public private(set) var completionProgress: Double = 0.0
+    public private(set) var completionProgress: Double = 0.0
     /// While paused, running jobs finish but no waiting job starts.
-    @Published public private(set) var isPaused = false
+    public private(set) var isPaused = false
     /// Success fraction: completed jobs / total.
-    @Published public private(set) var successFraction: Double = 0.0
-    @Published public private(set) var pendingCollisions: [CollisionConflict] = []
+    public private(set) var successFraction: Double = 0.0
+    public private(set) var pendingCollisions: [CollisionConflict] = []
 
     public struct CollisionConflict: Identifiable, Sendable, Equatable {
         public let id: UUID

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Menu bar menu: what is converting right now, and quick actions.
 struct MenuBarStatusView: View {
-    @ObservedObject var queue: ConversionQueue
+    @Bindable var queue: ConversionQueue
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
 

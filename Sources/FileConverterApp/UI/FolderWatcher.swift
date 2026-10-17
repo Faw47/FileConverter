@@ -1,3 +1,4 @@
+import Observation
 import AppKit
 import FileConverterCore
 import Foundation
@@ -8,10 +9,11 @@ import Foundation
 /// at start, and a file is converted once its size has stopped
 /// changing, so a copy in progress isn't picked up half-written.
 @MainActor
-final class FolderWatcher: ObservableObject {
+@Observable
+final class FolderWatcher {
     static let shared = FolderWatcher()
 
-    @Published private(set) var folders: [WatchFolder] = WatchFolderStore.load()
+    private(set) var folders: [WatchFolder] = WatchFolderStore.load()
 
     private var sources: [UUID: DispatchSourceFileSystemObject] = [:]
     private var known: [UUID: Set<String>] = [:]

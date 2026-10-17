@@ -42,7 +42,7 @@ public enum SnapshotRunner {
 
                 let hostingView = NSHostingView(
                     rootView: SettingsView()
-                        .environmentObject(appState)
+                        .environment(appState)
                 )
                 hostingView.frame = NSRect(x: 0, y: 0, width: 920, height: 620)
                 window.contentView = hostingView
@@ -74,7 +74,7 @@ public enum SnapshotRunner {
         }
         snap("help", size: CGSize(width: 620, height: 900), appearances: appearances, to: outURL) { HelpView() }
         snap("main_empty", size: CGSize(width: 640, height: 500), appearances: appearances, to: outURL) {
-            FileConverterMainView().environmentObject(AppState.shared)
+            FileConverterMainView().environment(AppState.shared)
         }
         snap("menubar", size: CGSize(width: 300, height: 260), appearances: appearances, to: outURL) {
             MenuBarStatusView(queue: ConversionQueue.shared)
@@ -151,7 +151,7 @@ public enum SnapshotRunner {
                 let realJobs = ConversionQueue.shared.jobs
                 ConversionQueue.shared.setJobsForTesting(jobs.filter(\.state.isTerminal))
                 snap("main_queue", size: CGSize(width: 640, height: 500), appearances: appearances, to: outURL) {
-                    FileConverterMainView().environmentObject(AppState.shared)
+                    FileConverterMainView().environment(AppState.shared)
                 }
                 ConversionQueue.shared.setJobsForTesting(realJobs)
             }

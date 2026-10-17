@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 public struct PresetsSettingsView: View {
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var settings = AppSettings.shared
     @Environment(\.undoManager) private var undoManager
 
     @State private var presets: [ConversionPreset] = []

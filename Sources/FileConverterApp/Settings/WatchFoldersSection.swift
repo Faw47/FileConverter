@@ -4,7 +4,7 @@ import SwiftUI
 
 /// General › Watched Folders: folders whose new files convert on their own.
 struct WatchFoldersSection: View {
-    @ObservedObject private var watcher = FolderWatcher.shared
+    @Bindable private var watcher = FolderWatcher.shared
 
     /// Presets a folder can use: not the PDF dialogs, which need choices.
     private var presets: [ConversionPreset] {

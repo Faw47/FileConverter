@@ -7,7 +7,7 @@ public struct PresetEditorView: View {
     private let onSaved: () -> Void
     private let onDeleted: () -> Void
     private let onDirtyChange: (Bool) -> Void
-    @EnvironmentObject private var appState: AppState
+    @Bindable private var appState = AppState.shared
 
     @State private var draft: ConversionPreset?
     @State private var baselinePreset: ConversionPreset?

@@ -5,7 +5,7 @@ import SwiftUI
 /// the queue live, so each button acts on exactly the row it sits in and the
 /// sheet closes itself once nothing is left to decide.
 struct CollisionResolutionView: View {
-    @ObservedObject var queue: ConversionQueue
+    @Bindable var queue: ConversionQueue
     var onFinished: () -> Void
 
     @State private var confirmingReplaceAll = false

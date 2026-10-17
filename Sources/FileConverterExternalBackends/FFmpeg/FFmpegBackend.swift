@@ -920,8 +920,6 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
         args.append(contentsOf: Self.trimArguments(for: preset))
         args.append(contentsOf: ["-i", sourceURL.path])
 
-        let hasH264HardwareEncoder = availableEncoders.contains("h264_videotoolbox")
-        let hasHEVCHardwareEncoder = availableEncoders.contains("hevc_videotoolbox")
 
         let isAudioOnly = preset.category == .audio || preset.videoCodec == .none
         let targetExt = destURL.pathExtension.lowercased()

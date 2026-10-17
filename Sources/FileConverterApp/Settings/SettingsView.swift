@@ -3,7 +3,7 @@ import SwiftUI
 /// The Settings window. Every tab shares one window size, so switching tabs
 /// never resizes the window; the user can make it larger.
 public struct SettingsView: View {
-    @EnvironmentObject private var appState: AppState
+    @Bindable private var appState = AppState.shared
 
     public init() {}
 

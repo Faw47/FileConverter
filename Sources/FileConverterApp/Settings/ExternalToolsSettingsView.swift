@@ -7,7 +7,7 @@ import SwiftUI
 /// tool was found, its version, and where; a tool installed somewhere
 /// unusual can be pointed to by hand.
 public struct ExternalToolsSettingsView: View {
-    @ObservedObject private var appState = AppState.shared
+    @Bindable private var appState = AppState.shared
     @State private var tools: [ToolInfo] = []
     @State private var pathError: String?
 

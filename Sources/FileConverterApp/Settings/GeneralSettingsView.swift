@@ -3,7 +3,7 @@ import FileConverterCore
 import SwiftUI
 
 public struct GeneralSettingsView: View {
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var settings = AppSettings.shared
     @StateObject private var patternField = PatternFieldController()
     @State private var draftPattern = AppSettings.shared.defaultFilenamePattern
     @State private var showingResetConfirmation = false

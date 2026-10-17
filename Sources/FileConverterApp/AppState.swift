@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 import AppKit
@@ -7,14 +8,17 @@ import FileConverterExternalBackends
 import Combine
 
 @MainActor
-public final class AppState: ObservableObject {
+@Observable
+public final class AppState {
     public static let shared = AppState()
 
-    @Published public var selectedTab: SettingsTab
-    @Published public private(set) var backendDiscoveryComplete = false
-    @Published public private(set) var discoveryStatus: String?
-    @Published public private(set) var isDiscoveringBackends: Bool = false
-    @Published public var uncompletedJournalEntries: [JournalEntry] = []
+    public var selectedTab: SettingsTab {
+        didSet { ConversionDefaults.store.set(selectedTab.rawValue, forKey: AppSettings.Keys.selectedSettingsTab) }
+    }
+    public private(set) var backendDiscoveryComplete = false
+    public private(set) var discoveryStatus: String?
+    public private(set) var isDiscoveringBackends: Bool = false
+    public var uncompletedJournalEntries: [JournalEntry] = []
 
     private var cancellables = Set<AnyCancellable>()
     private var backendDiscoveryTask: Task<Void, Never>?
@@ -56,12 +60,6 @@ public final class AppState: ObservableObject {
         _ = ConversionCoordinator.shared
         startBackendDiscovery()
         ConversionQueue.shared.restoreHistory()
-
-        $selectedTab
-            .sink { tab in
-                ConversionDefaults.store.set(tab.rawValue, forKey: AppSettings.Keys.selectedSettingsTab)
-            }
-            .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: .fileConverterBatchCompleted)
             .receive(on: DispatchQueue.main)

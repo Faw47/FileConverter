@@ -196,7 +196,7 @@ struct CombineIntoPDFIntent: AppIntent {
         let base = trimmed.isEmpty ? "Combined" : (trimmed.lowercased().hasSuffix(".pdf") ? String(trimmed.dropLast(4)) : trimmed)
         let destination = Self.unusedURL(in: folder, base: base)
         try await Task.detached(priority: .userInitiated) {
-            try PDFCombiner.combine(urls, into: destination)
+            _ = try PDFCombiner.combine(urls, into: destination)
         }.value
         return .result(value: IntentFile(fileURL: destination))
     }
@@ -281,8 +281,8 @@ enum IntentConversion {
         let ids = Set(ownJobs(in: queue.jobs).map(\.id))
 
         let finished: [ConversionJob]? = await withTaskCancellationHandler {
-            // $jobs sends the current value first, then every change.
-            for await jobs in queue.$jobs.values {
+            // Sends the current jobs first, then every change.
+            for await jobs in queue.jobUpdates() {
                 let mine = ownJobs(in: jobs)
                 guard !mine.isEmpty else { continue }
                 progress.totalUnitCount = Int64(mine.count) * 100

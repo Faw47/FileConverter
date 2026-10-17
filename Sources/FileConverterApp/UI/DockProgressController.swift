@@ -11,16 +11,18 @@ final class DockProgressController {
     static let shared = DockProgressController()
 
     private var cancellables = Set<AnyCancellable>()
+    private var updatesTask: Task<Void, Never>?
     private var failedSinceActivation = false
     private var lastFailedCount = 0
     private let progressView = DockProgressView(frame: NSRect(x: 0, y: 0, width: 128, height: 128))
 
     func start() {
         let queue = ConversionQueue.shared
-        queue.$jobs
-            .receive(on: RunLoop.main)
-            .sink { [weak self] jobs in self?.update(jobs) }
-            .store(in: &cancellables)
+        updatesTask = Task { [weak self] in
+            for await jobs in queue.jobUpdates() {
+                self?.update(jobs)
+            }
+        }
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
                 self?.failedSinceActivation = false
