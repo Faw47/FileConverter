@@ -13,7 +13,19 @@ struct QueueBatch: Identifiable {
     var failed: Int { jobs.filter { if case .failed = $0.state { return true }; return false }.count }
     var date: Date { jobs.first?.batchCreatedAt ?? .distantPast }
 
+    /// "photo.jpg → JPEG · Converted" for one file; counts for several.
     var summary: String {
+        if jobs.count == 1, let job = jobs.first {
+            let outcome: String
+            switch job.state {
+            case .completed, .completedWithWarnings: outcome = "Converted"
+            case .failed: outcome = "Failed"
+            case .cancelled: outcome = "Cancelled"
+            case .skipped: outcome = "Skipped"
+            default: outcome = "Waiting"
+            }
+            return "\(job.filename) → \(job.targetFormat) · \(outcome)"
+        }
         let formats = Set(jobs.map(\.targetFormat))
         let target = formats.count == 1 ? " to \(formats.first ?? "")" : ""
         var parts = ["\(completed) of \(jobs.count) converted\(target)"]
@@ -139,7 +151,7 @@ public struct ConversionQueueView: View {
                             HStack {
                                 Text(batch.summary)
                                 Spacer()
-                                Text(batch.date, style: .relative)
+                                Text(batch.date, format: .relative(presentation: .named))
                                     .foregroundStyle(.secondary)
                                     .font(.caption)
                             }

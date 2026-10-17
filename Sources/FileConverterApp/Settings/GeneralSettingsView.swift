@@ -177,6 +177,7 @@ public struct GeneralSettingsView: View {
                     tokenButton("{preset}", help: "Preset name")
                     tokenButton("{date}", help: "Date, like 2026-10-12")
                     tokenButton("{time}", help: "Time, like 14-05-09")
+                    tokenButton("{ext}", help: "The new file type, like mp4")
                 }
             }
             if let patternProblem {

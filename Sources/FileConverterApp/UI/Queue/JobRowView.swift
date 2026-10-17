@@ -140,6 +140,12 @@ public struct JobRowView: View {
                     .popover(isPresented: $showingErrorDetails) {
                         detailsPopover(title: "Conversion Failed", body: error.localizedDescription + (error.recoverySuggestion.map { "\n\n\($0)" } ?? ""), technical: error.technicalDetails)
                     }
+                if case .dependencyMissing = error {
+                    Button("Set Up…") { AppState.shared.openSettings(tab: .externalTools) }
+                        .controlSize(.small)
+                        .help("Install or locate the tool this conversion needs")
+                        .accessibilityLabel("Set up the tool \(job.filename) needs")
+                }
                 convertAgainButton(help: "Try again", label: "Try converting \(job.filename) again")
             case .cancelled, .skipped:
                 convertAgainButton(help: "Convert again", label: "Convert \(job.filename) again")

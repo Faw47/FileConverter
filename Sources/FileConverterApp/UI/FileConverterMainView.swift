@@ -79,6 +79,10 @@ public struct FileConverterMainView: View {
                 appState.presentWorkflowDialog(preset: preset, urls: urls, leases: leases)
             }
         }
+        // ⌘V with files copied in Finder converts them, like a drop.
+        .onPasteCommand(of: [.fileURL]) { providers in
+            handleDroppedProviders(providers)
+        }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             handleDroppedProviders(providers)
             return !providers.isEmpty

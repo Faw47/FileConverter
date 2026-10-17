@@ -21,6 +21,8 @@ struct PresetPickerView: View {
     @State private var qualityOverride: QualityOverride = .preset
     @State private var sizeOverride: SizeOverride = .preset
     @State private var sizeEstimate: String?
+    /// Kind, size, and dimensions or length, when there is one file.
+    @State private var sourceDetail: String?
     @State private var customFolder: URL?
     @FocusState private var focus: Field?
     /// Detection results for `urls`, filled once rather than on every redraw.
@@ -122,6 +124,11 @@ struct PresetPickerView: View {
                 .font(.title3.weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if let sourceDetail {
+                Text(sourceDetail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             if !unsupported.isEmpty || excludedCount > 0 {
                 Text(unsupportedSummary)
                     .font(.callout)
@@ -132,6 +139,10 @@ struct PresetPickerView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+        }
+        .task(id: urls.count == 1 ? urls.first : nil) {
+            guard urls.count == 1, let url = urls.first else { sourceDetail = nil; return }
+            sourceDetail = await SourceSummary.line(for: url)
         }
     }
 
