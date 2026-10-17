@@ -118,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func confirmQuit(unfinished: Int) -> Bool {
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Quit File Converter?"
@@ -172,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc private func handleActivateApp() {
         isHeadlessBackgroundLaunch = false
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         activateMainWindow()
     }
 
@@ -216,7 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 }
                 // Clicking the notification or "Show in Finder".
                 self.isHeadlessBackgroundLaunch = false
-                NSApp.activate(ignoringOtherApps: true)
+                NSApp.activate()
                 self.activateMainWindow()
                 NSWorkspace.shared.activateFileViewerSelecting(urls)
             }
@@ -276,7 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if shouldActivate {
             isHeadlessBackgroundLaunch = false
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             activateMainWindow()
         } else {
             let hasVisibleMain = NSApp.windows.contains { $0.isVisible && !isSettingsWindow($0) }
@@ -346,7 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let fresh = URLDeduplicator.shared.shouldProcessBatch(items)
         guard !fresh.isEmpty else { return }
         AppLogger.finder.notice("Files received via Services: count=\(fresh.count, privacy: .public)")
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         activateMainWindow()
         receiveFilesWithoutPreset(fresh)
     }
@@ -497,7 +497,7 @@ struct FileConverterApp: App {
         let configuredScheme = try? IPCConfiguration.current().urlScheme
         if url.scheme == configuredScheme {
             if url.host == "settings" {
-                NSApp.activate(ignoringOtherApps: true)
+                NSApp.activate()
                 let tab: AppState.SettingsTab? = {
                     guard let tabName = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                         .queryItems?.first(where: { $0.name == "tab" })?.value else { return nil }
@@ -518,7 +518,7 @@ struct FileConverterApp: App {
                 }
             }
         } else if url.isFileURL {
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             AppDelegate.shared?.activateMainWindow()
             AppDelegate.shared?.receiveFilesWithoutPreset([url])
         }

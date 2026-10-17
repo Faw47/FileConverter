@@ -56,9 +56,9 @@ struct PresetPickerView: View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return compatible }
         return compatible.filter {
-            $0.menuName.lowercased().contains(query)
-                || $0.name.lowercased().contains(query)
-                || $0.destinationFormat.lowercased().contains(query)
+            $0.menuName.localizedStandardContains(query)
+                || $0.name.localizedStandardContains(query)
+                || $0.destinationFormat.localizedStandardContains(query)
         }
     }
 
@@ -96,7 +96,7 @@ struct PresetPickerView: View {
                 MixedBatchView(
                     groups: groups,
                     batch: batch,
-                    options: AnyView(optionPickers(showQuality: true, showSize: groups.contains { $0.category == .image })),
+                    options: optionPickers(showQuality: true, showSize: groups.contains { $0.category == .image }),
                     applyingOverrides: applyingOverrides,
                     onCancel: onCancel,
                     onConvert: onConvert,
@@ -345,7 +345,7 @@ struct PresetPickerView: View {
                     Button("Combine into PDF…") {
                         let files = recognized
                         onCancel()
-                        DispatchQueue.main.async { AppState.shared.combineIntoPDF(urls: files) }
+                        Task { @MainActor in AppState.shared.combineIntoPDF(urls: files) }
                     }
                     .help("Put these files into one PDF instead of converting each")
                     .edgeBarButtonStyle()
@@ -420,10 +420,10 @@ struct PresetPickerView: View {
 
 /// Files of different kinds (photos and videos): one preset per kind, one
 /// Convert button.
-private struct MixedBatchView: View {
+private struct MixedBatchView<Options: View>: View {
     let groups: [(category: FormatCategory, urls: [URL])]
     let batch: SourceBatchCache
-    let options: AnyView
+    let options: Options
     let applyingOverrides: (ConversionPreset) -> ConversionPreset
     let onCancel: () -> Void
     let onConvert: ([(urls: [URL], preset: ConversionPreset)]) -> Void
@@ -532,7 +532,7 @@ private struct MixedBatchView: View {
                     Button("Combine into PDF…") {
                         let files = allURLs
                         onCancel()
-                        DispatchQueue.main.async { AppState.shared.combineIntoPDF(urls: files) }
+                        Task { @MainActor in AppState.shared.combineIntoPDF(urls: files) }
                     }
                     .help("Put these files into one PDF instead of converting each")
                     .edgeBarButtonStyle()

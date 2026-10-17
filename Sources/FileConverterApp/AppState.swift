@@ -152,7 +152,7 @@ public final class AppState: ObservableObject {
         if let tab { selectedTab = tab }
 
         if let settingsWindow = NSApplication.shared.windows.first(where: AppDelegate.isSettingsWindow) {
-            NSApplication.shared.activate(ignoringOtherApps: true)
+            NSApplication.shared.activate()
             if settingsWindow.isMiniaturized {
                 settingsWindow.deminiaturize(nil)
             }
@@ -162,7 +162,7 @@ public final class AppState: ObservableObject {
 
         if let openSettingsAction {
             openSettingsAction()
-            NSApplication.shared.activate(ignoringOtherApps: true)
+            NSApplication.shared.activate()
             return
         }
 
@@ -204,12 +204,12 @@ public final class AppState: ObservableObject {
         panel.directoryURL = urls.first?.deletingLastPathComponent()
         panel.prompt = "Combine"
         panel.message = Inflect.string("Combine ^[\(urls.count) file](inflect: true) into one PDF, in the order shown in the list.")
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         guard panel.runModal() == .OK, let destination = panel.url else { return }
         Task {
             do {
                 try await Task.detached(priority: .userInitiated) {
-                    try PDFCombiner.combine(urls, into: destination)
+                    _ = try PDFCombiner.combine(urls, into: destination)
                 }.value
                 NSWorkspace.shared.activateFileViewerSelecting([destination])
             } catch {
@@ -229,7 +229,7 @@ public final class AppState: ObservableObject {
         panel.allowedContentTypes = [.pdf, .image]
         panel.prompt = "Choose"
         panel.message = "Choose two or more PDFs or images to put into one PDF."
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         combineIntoPDF(urls: urls)

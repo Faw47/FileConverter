@@ -279,7 +279,7 @@ public struct JobRowView: View {
         case .awaitingCollision: return "A file with this name already exists — choose what to do"
         case .converting:
             if let fps = job.progress.currentFPS, fps > 0 {
-                return String(format: "Converting (%.0f fps)", fps)
+                return "Converting (\(fps.formatted(.number.precision(.fractionLength(0)))) fps)"
             }
             return "Converting…"
         case .finalizing: return "Saving…"

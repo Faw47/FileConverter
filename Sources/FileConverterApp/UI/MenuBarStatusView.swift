@@ -58,11 +58,11 @@ struct MenuBarStatusView: View {
         }
         Divider()
         Button("Open File Converter") {
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             openWindow(id: "main")
         }
         Button("Settings…") {
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             openSettings()
         }
         .keyboardShortcut(",")

@@ -17,7 +17,7 @@ public struct ConversionBatchSelection: Identifiable {
 private struct MainWindowAccessor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        DispatchQueue.main.async {
+        Task { @MainActor in
             if let window = view.window {
                 window.isReleasedWhenClosed = false
                 window.identifier = NSUserInterfaceItemIdentifier("FileConverterMainWindow")
