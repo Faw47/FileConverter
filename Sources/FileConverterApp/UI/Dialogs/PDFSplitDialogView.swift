@@ -339,9 +339,12 @@ public struct PDFSplitDialogView: View {
                 self.cachedTotalPages = items.map(\.pageCount).max() ?? 1
                 self.isDocumentLocked = items.contains(where: { $0.isLocked })
                 self.isLoadingStats = false
-                let maxPages = items.map(\.pageCount).max() ?? 1
+                // A missing, unreadable, or empty PDF has no pages to pick;
+                // its row and the footer say what is wrong with it.
                 if self.selectedPages.isEmpty {
-                    self.selectedPages = Set(1...min(maxPages, 5))
+                    self.selectedPages = PDFPageRangeParser.defaultSelection(
+                        totalPages: items.map(\.pageCount).max() ?? 0
+                    )
                 }
             }
         }
@@ -476,22 +479,27 @@ public struct PDFSplitDialogView: View {
     // MARK: - Pages
     private var pagesSection: some View {
         Section {
-            if batchItems.count > 1, let firstURL {
-                Text("Showing “\(firstURL.lastPathComponent)”. The same page numbers are used for every PDF; a PDF without some of them gives only the pages it has.")
+            if batchItems.count > 1, let shown = firstPreviewItem?.url {
+                Text("Showing “\(shown.lastPathComponent)”. The same page numbers are used for every PDF; a PDF without some of them gives only the pages it has.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            let layout = previewLayout
-            PDFPageGrid(
-                documentURL: firstPreviewURL,
-                pageCount: firstPreviewPageCount,
-                isSelectable: selectedMode.picksPages,
-                selectedPages: selectedPages,
-                excludedPages: layout.excluded,
-                fileLabel: { layout.labels[$0] },
-                onClick: { page, extending in togglePage(page, extendingRange: extending) }
-            )
+            if !isLoadingStats && firstPreviewItem == nil {
+                Text(batchItems.isEmpty ? "No PDFs left." : "There are no readable pages to show.")
+                    .foregroundStyle(.secondary)
+            } else {
+                let layout = previewLayout
+                PDFPageGrid(
+                    documentURL: firstPreviewURL,
+                    pageCount: firstPreviewPageCount,
+                    isSelectable: selectedMode.picksPages,
+                    selectedPages: selectedPages,
+                    excludedPages: layout.excluded,
+                    fileLabel: { layout.labels[$0] },
+                    onClick: { page, extending in togglePage(page, extendingRange: extending) }
+                )
+            }
         } header: {
             HStack {
                 Text("Pages")

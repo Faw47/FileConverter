@@ -167,3 +167,17 @@ final class PDFExtractAndProtectTests: XCTestCase {
         return url
     }
 }
+
+/// The split dialog's first selection used `1...min(pages, 5)`, which traps
+/// when the PDF is missing, unreadable, or has no pages.
+final class PDFDefaultSelectionTests: XCTestCase {
+    func testDefaultSelectionIsEmptyForADocumentWithoutPages() {
+        XCTAssertEqual(PDFPageRangeParser.defaultSelection(totalPages: 0), [])
+        XCTAssertEqual(PDFPageRangeParser.defaultSelection(totalPages: -1), [])
+    }
+
+    func testDefaultSelectionTakesTheFirstFewPages() {
+        XCTAssertEqual(PDFPageRangeParser.defaultSelection(totalPages: 3), [1, 2, 3])
+        XCTAssertEqual(PDFPageRangeParser.defaultSelection(totalPages: 40), [1, 2, 3, 4, 5])
+    }
+}
