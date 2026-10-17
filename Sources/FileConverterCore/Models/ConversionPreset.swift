@@ -35,6 +35,16 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     /// Video size limit (MP4 through FFmpeg): bitrate and picture size are
     /// chosen to fit, and the result is checked and redone if it is larger.
     public var videoTargetFileSizeBytes: Int?
+    /// Keep only part of a video or audio file: from this many seconds in.
+    public var trimStartSeconds: Double?
+    /// Keep only part of a video or audio file: up to this many seconds in.
+    public var trimEndSeconds: Double?
+    /// Video to image presets: the moment to save, in seconds. `nil` is the
+    /// first frame.
+    public var frameTimeSeconds: Double?
+    /// Audio: make every file about as loud as the others (EBU R128,
+    /// −16 LUFS) with FFmpeg's loudnorm filter.
+    public var normalizeLoudness: Bool
     public var splitPDFIntoPages: Bool
 
     // PDF Splitting Options
@@ -67,6 +77,10 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         audioSplitDurationSeconds: Int? = nil,
         audioTargetFileSizeBytes: Int? = nil,
         videoTargetFileSizeBytes: Int? = nil,
+        trimStartSeconds: Double? = nil,
+        trimEndSeconds: Double? = nil,
+        frameTimeSeconds: Double? = nil,
+        normalizeLoudness: Bool = false,
         splitPDFIntoPages: Bool = false,
         pdfSplitMode: String? = nil,
         pdfPageRanges: String? = nil,
@@ -91,6 +105,10 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         self.audioSplitDurationSeconds = audioSplitDurationSeconds
         self.audioTargetFileSizeBytes = audioTargetFileSizeBytes
         self.videoTargetFileSizeBytes = videoTargetFileSizeBytes
+        self.trimStartSeconds = trimStartSeconds
+        self.trimEndSeconds = trimEndSeconds
+        self.frameTimeSeconds = frameTimeSeconds
+        self.normalizeLoudness = normalizeLoudness
         self.splitPDFIntoPages = splitPDFIntoPages
         self.pdfSplitMode = pdfSplitMode
         self.pdfPageRanges = pdfPageRanges
@@ -118,6 +136,10 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         self.audioSplitDurationSeconds = try container.decodeIfPresent(Int.self, forKey: .audioSplitDurationSeconds)
         self.audioTargetFileSizeBytes = try container.decodeIfPresent(Int.self, forKey: .audioTargetFileSizeBytes)
         self.videoTargetFileSizeBytes = try container.decodeIfPresent(Int.self, forKey: .videoTargetFileSizeBytes)
+        self.trimStartSeconds = try container.decodeIfPresent(Double.self, forKey: .trimStartSeconds)
+        self.trimEndSeconds = try container.decodeIfPresent(Double.self, forKey: .trimEndSeconds)
+        self.frameTimeSeconds = try container.decodeIfPresent(Double.self, forKey: .frameTimeSeconds)
+        self.normalizeLoudness = try container.decodeIfPresent(Bool.self, forKey: .normalizeLoudness) ?? false
         self.splitPDFIntoPages = try container.decodeIfPresent(Bool.self, forKey: .splitPDFIntoPages) ?? false
         self.pdfSplitMode = try container.decodeIfPresent(String.self, forKey: .pdfSplitMode)
         self.pdfPageRanges = try container.decodeIfPresent(String.self, forKey: .pdfPageRanges)
@@ -144,6 +166,10 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         audioSplitDurationSeconds == nil
             && audioTargetFileSizeBytes == nil
             && videoTargetFileSizeBytes == nil
+            && trimStartSeconds == nil
+            && trimEndSeconds == nil
+            && frameTimeSeconds == nil
+            && !normalizeLoudness
             && pdfRotationDegrees == nil
             && !splitPDFIntoPages
             && pdfSplitMode == nil
@@ -554,6 +580,53 @@ public struct ConversionPreset: Identifiable, Hashable, Codable, Sendable {
             options.videoTargetFileSizeBytes = newValue
             processingOptions = options.isEmpty ? nil : options
         }
+    }
+
+    public var trimStartSeconds: Double? {
+        get { processingOptions?.trimStartSeconds }
+        set {
+            var options = processingOptions ?? ConversionProcessingOptions()
+            options.trimStartSeconds = newValue
+            processingOptions = options.isEmpty ? nil : options
+        }
+    }
+
+    public var trimEndSeconds: Double? {
+        get { processingOptions?.trimEndSeconds }
+        set {
+            var options = processingOptions ?? ConversionProcessingOptions()
+            options.trimEndSeconds = newValue
+            processingOptions = options.isEmpty ? nil : options
+        }
+    }
+
+    public var frameTimeSeconds: Double? {
+        get { processingOptions?.frameTimeSeconds }
+        set {
+            var options = processingOptions ?? ConversionProcessingOptions()
+            options.frameTimeSeconds = newValue
+            processingOptions = options.isEmpty ? nil : options
+        }
+    }
+
+    public var normalizeLoudness: Bool {
+        get { processingOptions?.normalizeLoudness ?? false }
+        set {
+            var options = processingOptions ?? ConversionProcessingOptions()
+            options.normalizeLoudness = newValue
+            processingOptions = options.isEmpty ? nil : options
+        }
+    }
+
+    /// True when the preset keeps only part of the file.
+    public var isTrimmed: Bool {
+        trimStartSeconds != nil || trimEndSeconds != nil
+    }
+
+    /// Video to still image: saves one frame instead of converting.
+    public var isVideoFrameExport: Bool {
+        category == .video
+            && FormatRegistry.shared.format(forID: destinationFormat)?.category == .image
     }
 
     public var splitPDFIntoPages: Bool {

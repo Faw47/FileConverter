@@ -200,14 +200,19 @@ public struct PresetEditorView: View {
                    || PresetValidator.canSplitPDFPages(preset.wrappedValue)) {
                 documentToolsSection(preset: preset)
             }
-            if preset.wrappedValue.category == .video {
-                videoSection(preset: preset)
-            }
-            if preset.wrappedValue.category == .image {
-                imageSection(preset: preset)
-            }
-            if preset.wrappedValue.category == .audio || preset.wrappedValue.category == .video {
-                audioSection(preset: preset)
+            if preset.wrappedValue.isVideoFrameExport {
+                frameSection(preset: preset)
+            } else {
+                if preset.wrappedValue.category == .video {
+                    videoSection(preset: preset)
+                }
+                if preset.wrappedValue.category == .image {
+                    imageSection(preset: preset)
+                }
+                if preset.wrappedValue.category == .audio || preset.wrappedValue.category == .video {
+                    audioSection(preset: preset)
+                    trimSection(preset: preset)
+                }
             }
 
             outputSection(preset: preset)
@@ -657,6 +662,50 @@ public struct PresetEditorView: View {
         }
     }
 
+    private func frameSection(preset: Binding<ConversionPreset>) -> some View {
+        Section("Frame") {
+            SettingsRow(
+                title: "Save the frame at",
+                subtitle: "Minutes and seconds, like 1:30. Leave empty for the first frame."
+            ) {
+                timeField("Frame time", value: preset.frameTimeSeconds, prompt: "First frame")
+            }
+            SettingsRow(title: "Picture size", subtitle: "Never larger than the video") {
+                resolutionPicker(preset: preset, originalLabel: "Original size")
+            }
+        }
+    }
+
+    private func trimSection(preset: Binding<ConversionPreset>) -> some View {
+        Section("Trim") {
+            SettingsRow(
+                title: "Start at",
+                subtitle: "Minutes and seconds, like 1:30. Leave empty to start at the beginning."
+            ) {
+                timeField("Start time", value: preset.trimStartSeconds, prompt: "0:00")
+            }
+            SettingsRow(title: "End at", subtitle: "Leave empty to keep going to the end") {
+                timeField("End time", value: preset.trimEndSeconds, prompt: "End")
+            }
+        }
+    }
+
+    private func timeField(_ label: String, value: Binding<Double?>, prompt: String) -> some View {
+        TextField(label, value: value, format: MediaTimeFormat(), prompt: Text(prompt))
+            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.trailing)
+            .monospacedDigit()
+            .frame(width: 110)
+            .accessibilityLabel(label)
+    }
+
+    /// FFmpeg-only settings are offered only when FFmpeg is installed (or
+    /// already turned on, so they can be turned off again).
+    private var isFFmpegInstalled: Bool {
+        BackendResolver.shared.backend(for: .ffmpeg)?.isAvailable == true
+    }
+
     private func imageSection(preset: Binding<ConversionPreset>) -> some View {
         Section("Image") {
             SettingsRow(title: "Maximum size", subtitle: "Longest side; images are never enlarged") {
@@ -897,6 +946,29 @@ public struct PresetEditorView: View {
                         .pickerStyle(.menu)
                         .fixedSize()
                         .disabled(isTranscodingDisabled)
+                    }
+
+                    if preset.wrappedValue.category == .audio,
+                       isFFmpegInstalled || preset.wrappedValue.normalizeLoudness {
+                        SettingsRow(
+                            title: "Even out loudness",
+                            subtitle: isTranscodingDisabled
+                                ? "Not available when the audio isn't re-encoded"
+                                : "Makes every file play at about the same volume (−16 LUFS). Needs FFmpeg."
+                        ) {
+                            Toggle("Even out loudness", isOn: Binding(
+                                get: { preset.wrappedValue.normalizeLoudness },
+                                set: { isOn in
+                                    preset.wrappedValue.normalizeLoudness = isOn
+                                    if isOn, ![.auto, .ffmpeg].contains(preset.wrappedValue.backend) {
+                                        preset.wrappedValue.backend = .ffmpeg
+                                    }
+                                }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                        }
+                        .disabled(isTranscodingDisabled && !preset.wrappedValue.normalizeLoudness)
                     }
 
                     if preset.wrappedValue.category == .audio {

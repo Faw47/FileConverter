@@ -17,7 +17,10 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
     public init() {}
 
     public func supports(sourceFormat: FormatDefinition, destinationFormat: FormatDefinition, preset: ConversionPreset) -> Bool {
-        guard !preset.requiresExternalAudioProcessing else { return false }
+        guard !preset.requiresExternalAudioProcessing, !preset.normalizeLoudness else { return false }
+        if sourceFormat.category == .video, destinationFormat.category == .image {
+            return sourceFormat.nativeDecoderAvailable && AVFoundationFrameExporter.canWrite(destinationFormat)
+        }
         // Video to Video / Audio or Audio to Audio
         if sourceFormat.nativeDecoderAvailable && destinationFormat.nativeEncoderAvailable {
             let targetExt = destinationFormat.primaryExtension.lowercased()
@@ -131,8 +134,22 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
 
         let asset = AVURLAsset(url: sourceURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
 
+        if FormatRegistry.shared.format(forID: job.preset.destinationFormat)?.category == .image {
+            let start = Date()
+            return try await AVFoundationFrameExporter.export(
+                asset: asset,
+                preset: job.preset,
+                sourcePath: sourceURL.path,
+                to: destURL
+            ) { fraction in
+                progressHandler(ConversionProgress(fractionCompleted: fraction, elapsedTime: Date().timeIntervalSince(start)))
+            }
+        }
+
+        let timeRange = try await Self.trimRange(for: job.preset, asset: asset, sourcePath: sourceURL.path)
+
         if Self.isAudioOnlyOutput(job.preset) {
-            try await convertAudio(asset: asset, sourcePath: sourceURL.path, destinationURL: destURL, targetExtension: job.preset.destinationFormat, preset: job.preset, jobID: jobID, progressHandler: progressHandler)
+            try await convertAudio(asset: asset, sourcePath: sourceURL.path, destinationURL: destURL, targetExtension: job.preset.destinationFormat, preset: job.preset, timeRange: timeRange, jobID: jobID, progressHandler: progressHandler)
             return []
         }
 
@@ -149,6 +166,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
            job.preset.framerate == nil,
            let passthrough = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough),
            passthrough.supportedFileTypes.contains(outputFileType) {
+            if let timeRange { passthrough.timeRange = timeRange }
             try await runExport(passthrough, jobID: jobID, sourceURL: sourceURL, destURL: destURL, fileType: outputFileType, progressHandler: progressHandler)
             return []
         }
@@ -167,7 +185,8 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
             asset: asset,
             to: destURL,
             fileType: outputFileType,
-            preset: job.preset
+            preset: job.preset,
+            timeRange: timeRange
         ) { fraction in
             let elapsed = Date().timeIntervalSince(start)
             progressHandler(ConversionProgress(
@@ -244,6 +263,27 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         default:
             break
         }
+    }
+
+    /// The part of the source a trimmed preset keeps, or nil to keep it all.
+    static func trimRange(for preset: ConversionPreset, asset: AVAsset, sourcePath: String) async throws -> CMTimeRange? {
+        guard preset.isTrimmed else { return nil }
+        let total = max(0, CMTimeGetSeconds(try await asset.load(.duration)))
+        let start = max(0, preset.trimStartSeconds ?? 0)
+        guard total <= 0 || start < total else {
+            throw ConversionError.invalidPreset(
+                reason: "The start time (\(MediaTrim.formatTime(start))) is after the end of this file (\(MediaTrim.formatTime(total)))."
+            )
+        }
+        let end = total > 0 ? min(preset.trimEndSeconds ?? total, total) : (preset.trimEndSeconds ?? .infinity)
+        guard end > start else {
+            throw ConversionError.invalidPreset(reason: "The end time must be after the start time.")
+        }
+        let startTime = CMTime(seconds: start, preferredTimescale: 600)
+        guard end.isFinite else {
+            return CMTimeRange(start: startTime, duration: .positiveInfinity)
+        }
+        return CMTimeRange(start: startTime, end: CMTime(seconds: end, preferredTimescale: 600))
     }
 
     static func outputFileType(forTarget targetFormat: String) -> AVFileType? {
@@ -331,6 +371,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         destinationURL: URL,
         targetExtension: String,
         preset: ConversionPreset,
+        timeRange: CMTimeRange?,
         jobID: UUID,
         progressHandler: @escaping @Sendable (ConversionProgress) -> Void
     ) async throws {
@@ -389,6 +430,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
         }
 
         let reader = try AVAssetReader(asset: asset)
+        if let timeRange { reader.timeRange = timeRange }
         // Decoded samples handed from reader to writer.
         var decodeSettings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
@@ -462,7 +504,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
             reader.cancelReading()
             throw writer.error ?? ConversionError.destinationUnavailable(path: destinationURL.path)
         }
-        writer.startSession(atSourceTime: .zero)
+        writer.startSession(atSourceTime: timeRange?.start ?? .zero)
         guard registerPCMSession(jobID: jobID, reader: reader, writer: writer) else {
             throw ConversionError.cancelled
         }
@@ -470,7 +512,9 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
             _ = removePCMSession(jobID: jobID)
         }
 
-        let duration = max(0, CMTimeGetSeconds(try await asset.load(.duration)))
+        let fullDuration = max(0, CMTimeGetSeconds(try await asset.load(.duration)))
+        let duration = MediaTrim.keptDuration(totalSeconds: fullDuration, preset: preset)
+        let offset = timeRange.map { CMTimeGetSeconds($0.start) } ?? 0
         let start = Date()
         do {
             while reader.status == .reading {
@@ -492,7 +536,7 @@ public final class AVFoundationBackend: ConversionBackend, @unchecked Sendable {
                     throw writer.error ?? ConversionError.destinationUnavailable(path: destinationURL.path)
                 }
                 let end = CMSampleBufferGetPresentationTimeStamp(sample) + CMSampleBufferGetDuration(sample)
-                let seconds = CMTimeGetSeconds(end)
+                let seconds = CMTimeGetSeconds(end) - offset
                 if seconds.isFinite && duration > 0 {
                     progressHandler(ConversionProgress(
                         fractionCompleted: min(0.99, max(0, seconds / duration)),

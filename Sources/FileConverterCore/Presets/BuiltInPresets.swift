@@ -217,6 +217,32 @@ public enum BuiltInPresets {
             isBuiltIn: true
         ))
 
+        add("video.frame-jpeg", ConversionPreset(
+            name: "Video Frame to JPEG",
+            menuName: "Video Frame → JPEG",
+            category: .video,
+            sourceFormats: ["video"],
+            destinationFormat: "jpg",
+            backend: .auto,
+            videoCodec: .none,
+            audioCodec: .none,
+            quality: .high,
+            isBuiltIn: true
+        ))
+
+        add("video.frame-png", ConversionPreset(
+            name: "Video Frame to PNG",
+            menuName: "Video Frame → PNG",
+            category: .video,
+            sourceFormats: ["video"],
+            destinationFormat: "png",
+            backend: .auto,
+            videoCodec: .none,
+            audioCodec: .none,
+            quality: .high,
+            isBuiltIn: true
+        ))
+
         add("video.mkv-to-mp4", ConversionPreset(
             name: "MKV to MP4 (No Re-encoding When Possible)",
             menuName: "MP4 – Fast",

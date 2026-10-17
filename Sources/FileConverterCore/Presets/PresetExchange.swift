@@ -291,6 +291,17 @@ public enum PresetExchange {
             dict["videoTargetFileSize"] = ["enabled": true, "targetBytes": videoTargetBytes]
         }
 
+        // Media section: trimming, frame time, loudness. Written only when
+        // used, so files from presets without these settings don't change.
+        var media: [String: Any] = [:]
+        if let start = preset.trimStartSeconds { media["trimStartSeconds"] = start }
+        if let end = preset.trimEndSeconds { media["trimEndSeconds"] = end }
+        if let frame = preset.frameTimeSeconds { media["frameTimeSeconds"] = frame }
+        if preset.normalizeLoudness { media["normalizeLoudness"] = true }
+        if !media.isEmpty {
+            dict["media"] = media
+        }
+
         // PDF section
         if preset.splitPDFIntoPages || preset.processingOptions?.pdfSplitMode != nil || preset.processingOptions?.pdfCompressionProfile != nil
             || preset.processingOptions?.pdfRotationDegrees != nil {
@@ -652,6 +663,31 @@ public enum PresetExchange {
             videoTargetFileSizeBytes = bytes
         }
 
+        // Trimming, frame time, and loudness
+        var trimStartSeconds: Double?
+        var trimEndSeconds: Double?
+        var frameTimeSeconds: Double?
+        var normalizeLoudness = false
+        if let mediaDict = dict["media"] as? [String: Any] {
+            func seconds(_ key: String) throws -> Double? {
+                guard let raw = mediaDict[key], !(raw is NSNull) else { return nil }
+                // JSON true/false also arrive as NSNumber; refuse them.
+                guard let number = raw as? NSNumber,
+                      CFGetTypeID(number) != CFBooleanGetTypeID(),
+                      number.doubleValue.isFinite, number.doubleValue >= 0 else {
+                    throw PresetExchangeError.invalidField(preset: displayName, field: "media.\(key)", reason: "Must be a number of seconds, 0 or more.")
+                }
+                return number.doubleValue
+            }
+            trimStartSeconds = try seconds("trimStartSeconds")
+            trimEndSeconds = try seconds("trimEndSeconds")
+            frameTimeSeconds = try seconds("frameTimeSeconds")
+            normalizeLoudness = mediaDict["normalizeLoudness"] as? Bool ?? false
+            if let start = trimStartSeconds, let end = trimEndSeconds, end <= start {
+                throw PresetExchangeError.invalidField(preset: displayName, field: "media.trimEndSeconds", reason: "The end time must be after the start time.")
+            }
+        }
+
         // Direct Stream Copy checks (Requirement 3)
         if audioCodec == .copy && targetFileSizeBytes != nil {
             throw PresetExchangeError.incompatibleConfiguration(
@@ -685,7 +721,7 @@ public enum PresetExchange {
         let recognizedKeys: Set<String> = [
             "id", "builtInKey", "name", "menuTitle", "menuName", "category", "enabled",
             "sources", "sourceFormats", "sortOrder", "output", "conversion", "split",
-            "targetFileSize", "videoTargetFileSize", "metadata", "pdf", "processingOptions", "opaqueFields", "inheritance"
+            "targetFileSize", "videoTargetFileSize", "media", "metadata", "pdf", "processingOptions", "opaqueFields", "inheritance"
         ]
         let unrecognized = dict.filter { !recognizedKeys.contains($0.key) }
         var opaqueDict: [String: AnyCodableValue] = [:]
@@ -755,6 +791,10 @@ public enum PresetExchange {
             audioSplitDurationSeconds: splitDurationSeconds,
             audioTargetFileSizeBytes: targetFileSizeBytes,
             videoTargetFileSizeBytes: videoTargetFileSizeBytes,
+            trimStartSeconds: trimStartSeconds,
+            trimEndSeconds: trimEndSeconds,
+            frameTimeSeconds: frameTimeSeconds,
+            normalizeLoudness: normalizeLoudness,
             splitPDFIntoPages: splitPDFIntoPages,
             pdfSplitMode: pdfSplitMode,
             pdfPageRanges: pdfPageRanges,

@@ -185,11 +185,20 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
         }
         let totalDurationSeconds: Double
         do {
-            totalDurationSeconds = try await probeMediaDuration(sourceURL: sourceURL, jobID: jobID) ?? 0.0
+            totalDurationSeconds = MediaTrim.keptDuration(
+                totalSeconds: try await probeMediaDuration(sourceURL: sourceURL, jobID: jobID) ?? 0.0,
+                preset: job.preset
+            )
         } catch is CancellationError {
             throw ConversionError.cancelled
         }
         try Task.checkCancellation()
+        if job.preset.isTrimmed, totalDurationSeconds <= 0,
+           let full = try? await probeMediaDuration(sourceURL: sourceURL, jobID: jobID), full > 0 {
+            throw ConversionError.invalidPreset(
+                reason: "The start time (\(MediaTrim.formatTime(job.preset.trimStartSeconds ?? 0))) is after the end of this file (\(MediaTrim.formatTime(full)))."
+            )
+        }
 
         let availableEncoders: Set<String>
         do {
@@ -225,6 +234,16 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
                 )
             }
         }
+        let isAudioOnly = job.preset.category == .audio || job.preset.videoCodec == .none
+        let sourceInfo: SourceMediaInfo?
+        do {
+            sourceInfo = isAudioOnly && !job.preset.normalizeLoudness
+                ? nil
+                : try await probeSourceInfo(sourceURL: sourceURL, jobID: jobID)
+        } catch is CancellationError {
+            throw ConversionError.cancelled
+        }
+
         if let targetBytes = job.preset.audioTargetFileSizeBytes {
             guard totalDurationSeconds > 0 else {
                 throw ConversionError.malformedSource(
@@ -238,6 +257,7 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
                 preset: job.preset,
                 targetBytes: targetBytes,
                 totalDurationSeconds: totalDurationSeconds,
+                sourceInfo: sourceInfo,
                 availableEncoders: availableEncoders,
                 ffmpegPath: ffmpegPath,
                 jobID: jobID,
@@ -253,12 +273,6 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
                     reason: "Could not determine the video length needed to fit a size limit."
                 )
             }
-            let sourceInfo: SourceMediaInfo?
-            do {
-                sourceInfo = try await probeSourceInfo(sourceURL: sourceURL, jobID: jobID)
-            } catch is CancellationError {
-                throw ConversionError.cancelled
-            }
             return try await convertToTargetVideoSize(
                 sourceURL: sourceURL,
                 destinationURL: destURL,
@@ -273,13 +287,6 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
             )
         }
 
-        let isAudioOnly = job.preset.category == .audio || job.preset.videoCodec == .none
-        let sourceInfo: SourceMediaInfo?
-        do {
-            sourceInfo = isAudioOnly ? nil : try await probeSourceInfo(sourceURL: sourceURL, jobID: jobID)
-        } catch is CancellationError {
-            throw ConversionError.cancelled
-        }
         var warnings: [String] = []
         let arguments = buildFFmpegArguments(
             sourceURL: sourceURL,
@@ -354,7 +361,9 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
             }
             info.rotation = ((rotation % 360) + 360) % 360
         }
-        info.audioCodecs = streams.filter { ($0["codec_type"] as? String) == "audio" }.compactMap { $0["codec_name"] as? String }
+        let audioStreams = streams.filter { ($0["codec_type"] as? String) == "audio" }
+        info.audioCodecs = audioStreams.compactMap { $0["codec_name"] as? String }
+        info.audioSampleRate = audioStreams.first.flatMap { ($0["sample_rate"] as? String).flatMap(Int.init) }
         info.subtitleStreams = streams.compactMap { stream in
             guard (stream["codec_type"] as? String) == "subtitle",
                   let index = stream["index"] as? Int else { return nil }
@@ -421,6 +430,7 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
         preset: ConversionPreset,
         targetBytes: Int,
         totalDurationSeconds: Double,
+        sourceInfo: SourceMediaInfo?,
         availableEncoders: Set<String>,
         ffmpegPath: String,
         jobID: UUID,
@@ -454,7 +464,8 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
                 destURL: destinationURL,
                 preset: preset,
                 availableEncoders: availableEncoders,
-                audioBitrateOverride: bitrate
+                audioBitrateOverride: bitrate,
+                sourceInfo: sourceInfo
             )
             try await runFFmpeg(
                 executablePath: ffmpegPath,
@@ -906,6 +917,7 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
             args.append(contentsOf: ["-f", "mov"])
         }
 
+        args.append(contentsOf: Self.trimArguments(for: preset))
         args.append(contentsOf: ["-i", sourceURL.path])
 
         let hasH264HardwareEncoder = availableEncoders.contains("h264_videotoolbox")
@@ -1005,8 +1017,19 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
             }
 
             if preset.audioCodec != .copy && preset.audioCodec != .none {
+                if preset.normalizeLoudness {
+                    args.append(contentsOf: ["-af", MediaTrim.loudnormFilter])
+                }
                 if let sampleRate = preset.audioSampleRate {
                     args.append(contentsOf: ["-ar", "\(sampleRate)"])
+                } else if preset.normalizeLoudness {
+                    // loudnorm works at 192 kHz; go back to the original rate.
+                    let rate = Self.loudnormOutputSampleRate(
+                        sourceRate: sourceInfo?.audioSampleRate,
+                        targetExt: targetExt,
+                        audioCodec: preset.audioCodec
+                    )
+                    args.append(contentsOf: ["-ar", "\(rate)"])
                 }
                 if let channels = preset.audioChannels {
                     args.append(contentsOf: ["-ac", "\(channels)"])
@@ -1104,6 +1127,32 @@ public final class FFmpegBackend: ConversionBackend, @unchecked Sendable {
         return args
     }
 
+
+    /// Input seeking keeps trimmed conversions fast: FFmpeg starts reading
+    /// at the start time and stops at the end time.
+    static func trimArguments(for preset: ConversionPreset) -> [String] {
+        var args: [String] = []
+        if let start = preset.trimStartSeconds, start > 0 {
+            args += ["-ss", MediaTrim.argument(start)]
+        }
+        if let end = preset.trimEndSeconds {
+            args += ["-to", MediaTrim.argument(end)]
+        }
+        return args
+    }
+
+    /// Sample rate after loudnorm: the original rate when the encoder can
+    /// take it, otherwise 48 kHz.
+    static func loudnormOutputSampleRate(sourceRate: Int?, targetExt: String, audioCodec: AudioCodecType) -> Int {
+        // Opus encodes at 48 kHz only.
+        if targetExt == "opus" || audioCodec == .opus { return 48_000 }
+        guard let sourceRate, sourceRate >= 8_000 else { return 48_000 }
+        if targetExt == "mp3" {
+            let mp3Rates = [8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000]
+            return mp3Rates.last { $0 <= sourceRate } ?? 48_000
+        }
+        return sourceRate
+    }
 
     // MARK: - Video
 

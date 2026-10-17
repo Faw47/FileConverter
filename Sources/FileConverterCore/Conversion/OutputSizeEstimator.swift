@@ -74,7 +74,8 @@ public enum OutputSizeEstimator {
 
         switch destination.category {
         case .audio:
-            guard let duration = source.duration else { return fallback }
+            guard let fullDuration = source.duration else { return fallback }
+            let duration = MediaTrim.keptDuration(totalSeconds: fullDuration, preset: preset)
             if ["wav", "aiff"].contains(destinationID) || preset.audioCodec == .wav || preset.audioCodec == .aiff {
                 return Int64(pcmBytesPerSecond(preset) * duration)
             }
@@ -101,7 +102,8 @@ public enum OutputSizeEstimator {
                 videoKbps = sourceKbps
             }
             let audioKbps = Double(preset.audioBitrateKbps ?? 256)
-            return Int64(duration * (videoKbps + audioKbps) * 1_000 / 8 * 1.05)
+            let keptDuration = MediaTrim.keptDuration(totalSeconds: duration, preset: preset)
+            return Int64(keptDuration * (videoKbps + audioKbps) * 1_000 / 8 * 1.05)
 
         case .image:
             if let pages = source.pageCount, let pageSize = source.pageSizePoints {
