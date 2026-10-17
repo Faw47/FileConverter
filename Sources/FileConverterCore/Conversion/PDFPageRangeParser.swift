@@ -144,6 +144,13 @@ public enum PDFPageRangeParser {
         parseRangesStrict(input, totalPages: totalPages).validRanges
     }
 
+    /// The pages picked when a split dialog opens with nothing selected:
+    /// the first few pages, or none when the document has no pages.
+    public static func defaultSelection(totalPages: Int, limit: Int = 5) -> Set<Int> {
+        guard totalPages > 0, limit > 0 else { return [] }
+        return Set(1...min(totalPages, limit))
+    }
+
     /// Computes the planned output files and their 0-based page indices according to
     /// the requested split mode and options.
     public static func planOutputs(
@@ -277,6 +284,14 @@ public enum PDFPageRangeParser {
                     )
                 }
             }
+
+        case "extract":
+            // The chosen pages, in page order, saved as one PDF. Strict like
+            // "selected": a page outside the document plans nothing.
+            guard let requested = selectedPages, !requested.isEmpty,
+                  requested.allSatisfy({ $0 >= 1 && $0 <= totalPages }) else { return [] }
+            let indices = Array(Set(requested)).sorted().map { $0 - 1 }
+            return [PDFSplitOutputPlan(suffix: "extracted", pageIndices: indices)]
 
         default:
             return (0..<totalPages).map { pageIndex in

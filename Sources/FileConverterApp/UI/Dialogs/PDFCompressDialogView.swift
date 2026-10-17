@@ -63,14 +63,20 @@ public struct PDFCompressDialogView: View {
     @State private var linearize: Bool
     @State private var nameEnding: String
     @State private var customOutputDirectory: URL?
+    /// Kept only in this dialog's memory; see `PDFPasswordVault`.
+    @State private var protectWithPassword = false
+    @State private var password = ""
+    @State private var passwordAgain = ""
 
     public init(
         urls: [URL],
         initialPreset: ConversionPreset,
         onCancel: @escaping () -> Void,
-        onStart: @escaping (ConversionPreset, [URL]) -> Void
+        onStart: @escaping (ConversionPreset, [URL]) -> Void,
+        startsProtected: Bool = false
     ) {
         self._currentURLs = State(initialValue: urls)
+        self._protectWithPassword = State(initialValue: startsProtected)
         self.initialPreset = initialPreset
         self.onCancel = onCancel
         self.onStart = onStart
@@ -181,11 +187,38 @@ public struct PDFCompressDialogView: View {
                     }
                 }
                 if usesGhostscript {
-                    Toggle("Optimize for fast web viewing", isOn: $linearize)
+                    // Adding a password rewrites the file, which undoes it.
+                    Toggle("Optimize for fast web viewing", isOn: protectWithPassword ? .constant(false) : $linearize)
                         .accessibilityLabel("Optimize for fast web viewing")
+                        .disabled(protectWithPassword)
                 }
             } footer: {
                 FooterText(compressionFooter)
+            }
+
+            Section {
+                Toggle("Protect with a password", isOn: $protectWithPassword)
+                    .accessibilityLabel("Protect with a password")
+                if protectWithPassword {
+                    SecureField("Password", text: $password)
+                        .textContentType(.newPassword)
+                    SecureField("Verify", text: $passwordAgain)
+                        .textContentType(.newPassword)
+                        .accessibilityLabel("Enter the password again")
+                }
+            } header: {
+                Text("Password")
+            } footer: {
+                if protectWithPassword && passwordsDiffer {
+                    Text("The passwords don’t match.")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    FooterText(protectWithPassword
+                        ? "The PDF can’t be opened without this password. File Converter doesn’t save it anywhere, so keep it somewhere safe." + (usesGhostscript ? " Fast web viewing isn’t available for protected PDFs." : "")
+                        : "Anyone with the file can open it.")
+                }
             }
 
             Section("Remove") {
@@ -216,7 +249,9 @@ public struct PDFCompressDialogView: View {
             } header: {
                 Text("Saving")
             } footer: {
-                FooterText("Example: \(exampleName). If the result is not smaller, nothing is saved.")
+                FooterText("Example: \(exampleName). " + (protectWithPassword
+                    ? "The protected PDF is saved even if it isn’t smaller."
+                    : "If the result is not smaller, nothing is saved."))
             }
         }
         .formStyle(.grouped)
@@ -391,7 +426,7 @@ public struct PDFCompressDialogView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .edgeBarButtonStyle(prominent: true)
-                .disabled(isLoadingStats || cachedPageCount == nil || !problemFiles.isEmpty)
+                .disabled(isLoadingStats || cachedPageCount == nil || !problemFiles.isEmpty || (protectWithPassword && passwordProblem != nil))
                 .accessibilityLabel("Start PDF compression")
             }
         }
@@ -406,6 +441,19 @@ public struct PDFCompressDialogView: View {
         let listed = problemFiles.prefix(3).map { "“\($0.url.lastPathComponent)” \($0.reason)" }
         let more = problemFiles.count > 3 ? Inflect.string(", and ^[\(problemFiles.count - 3) more PDF](inflect: true) can’t be used") : ""
         return listed.joined(separator: "; ") + more + "."
+    }
+
+    /// Shown only once both fields have something in them.
+    private var passwordsDiffer: Bool {
+        !password.isEmpty && !passwordAgain.isEmpty && password != passwordAgain
+    }
+
+    /// Why the password can't be used yet, or nil when it can.
+    private var passwordProblem: String? {
+        if password.isEmpty { return "Enter a password." }
+        if passwordAgain.isEmpty { return "Enter the password again to verify it." }
+        if password != passwordAgain { return "The passwords don’t match." }
+        return nil
     }
 
     private func chooseOutputDirectory() {
@@ -500,13 +548,19 @@ public struct PDFCompressDialogView: View {
         options.pdfRemoveMetadata = removeMetadata
         options.pdfRemoveAnnotations = removeAnnotations
         options.pdfRemoveThumbnails = usesGhostscript
-        options.pdfLinearize = usesGhostscript && linearize
+        options.pdfLinearize = usesGhostscript && linearize && !protectWithPassword
+        // A token from an earlier run names a password this run didn't ask for.
+        options.pdfPasswordToken = nil
         return options
     }
 
     private func startCompression() {
         var preset = initialPreset
-        preset.processingOptions = compressionOptions()
+        var options = compressionOptions()
+        if protectWithPassword, passwordProblem == nil {
+            options.pdfPasswordToken = PDFPasswordVault.shared.store(password)
+        }
+        preset.processingOptions = options
 
         // The dialog's choices are this run's own values, not General ones.
         var inheritance = preset.resolvedInheritance
