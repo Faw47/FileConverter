@@ -97,6 +97,26 @@ public enum PresetValidator {
                 errors.append("A video size limit re-encodes the video, so it can't copy streams.")
             }
         }
+        errors.append(contentsOf: MediaTrim.validationErrors(for: preset))
+        if preset.isTrimmed, preset.category != .video, preset.category != .audio {
+            errors.append("Only video and audio presets can trim.")
+        }
+        if preset.frameTimeSeconds != nil, !preset.isVideoFrameExport {
+            errors.append("A frame time needs a video preset that saves an image.")
+        }
+        if preset.normalizeLoudness {
+            let destination = FormatRegistry.shared.format(forID: destinationKey)
+                ?? FormatRegistry.shared.format(forExtension: destinationKey)
+            if preset.category != .audio || destination?.category != .audio {
+                errors.append("Evening out loudness needs an audio preset.")
+            }
+            if preset.audioCodec == .copy || preset.audioCodec == .none {
+                errors.append("Evening out loudness re-encodes the audio, so it can't copy it unchanged.")
+            }
+            if ![.auto, .ffmpeg].contains(preset.backend) {
+                errors.append("Evening out loudness needs FFmpeg. Set the converter to Automatic or FFmpeg.")
+            }
+        }
         if preset.audioSplitDurationSeconds != nil, preset.audioTargetFileSizeBytes != nil {
             errors.append("Choose either split audio or a target file size, not both.")
         }

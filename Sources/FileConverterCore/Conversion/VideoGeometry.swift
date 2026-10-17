@@ -18,6 +18,8 @@ public struct SourceMediaInfo: Sendable, Equatable {
     public var subtitleStreams: [(index: Int, codec: String)]
     public var chapterCount: Int
     public var duration: Double?
+    /// Sample rate of the first audio stream, in hertz.
+    public var audioSampleRate: Int?
 
     public init(
         width: Int? = nil,
@@ -33,7 +35,8 @@ public struct SourceMediaInfo: Sendable, Equatable {
         audioCodecs: [String] = [],
         subtitleStreams: [(index: Int, codec: String)] = [],
         chapterCount: Int = 0,
-        duration: Double? = nil
+        duration: Double? = nil,
+        audioSampleRate: Int? = nil
     ) {
         self.width = width
         self.height = height
@@ -49,6 +52,7 @@ public struct SourceMediaInfo: Sendable, Equatable {
         self.subtitleStreams = subtitleStreams
         self.chapterCount = chapterCount
         self.duration = duration
+        self.audioSampleRate = audioSampleRate
     }
 
     public static func == (lhs: SourceMediaInfo, rhs: SourceMediaInfo) -> Bool {

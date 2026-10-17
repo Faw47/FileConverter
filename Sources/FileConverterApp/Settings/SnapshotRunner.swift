@@ -176,6 +176,16 @@ public enum SnapshotRunner {
                     PresetEditorView(presetID: preset.id, onSaved: {}, onDeleted: {}, onDirtyChange: { _ in })
                 }
             }
+            if let frame = presets.first(where: { $0.builtInKey == "video.frame-jpeg" }) {
+                snap("preset_editor_frame", size: CGSize(width: 640, height: 1100), appearances: appearances, to: outURL) {
+                    PresetEditorView(presetID: frame.id, onSaved: {}, onDeleted: {}, onDirtyChange: { _ in })
+                }
+            }
+            if let audio = presets.first(where: { $0.builtInKey == "audio.mp3-320" }) {
+                snap("preset_editor_audio", size: CGSize(width: 640, height: 1500), appearances: appearances, to: outURL) {
+                    PresetEditorView(presetID: audio.id, onSaved: {}, onDeleted: {}, onDirtyChange: { _ in })
+                }
+            }
         }
 
         print("==> Visual Test Snapshots Complete!")

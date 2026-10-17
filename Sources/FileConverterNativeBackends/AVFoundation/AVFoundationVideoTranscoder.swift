@@ -78,6 +78,7 @@ final class AVFoundationVideoTranscoder: @unchecked Sendable {
         to destinationURL: URL,
         fileType: AVFileType,
         preset: ConversionPreset,
+        timeRange: CMTimeRange? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> Result {
         var result = Result()
@@ -86,7 +87,8 @@ final class AVFoundationVideoTranscoder: @unchecked Sendable {
         }
         let audioTracks = preset.audioCodec == .none ? [] : try await asset.loadTracks(withMediaType: .audio)
         let source = try await Self.inspect(videoTrack)
-        let duration = CMTimeGetSeconds(try await asset.load(.duration))
+        let duration = MediaTrim.keptDuration(totalSeconds: CMTimeGetSeconds(try await asset.load(.duration)), preset: preset)
+        let offset = timeRange.map { CMTimeGetSeconds($0.start) } ?? 0
 
         // Output picture.
         let display = source.displaySize
@@ -138,6 +140,7 @@ final class AVFoundationVideoTranscoder: @unchecked Sendable {
         composition.instructions = [instruction]
 
         let reader = try AVAssetReader(asset: asset)
+        if let timeRange { reader.timeRange = timeRange }
         let pixelFormat = keepsHDR
             ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
             : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
@@ -228,7 +231,7 @@ final class AVFoundationVideoTranscoder: @unchecked Sendable {
             reader.cancelReading()
             throw writer.error ?? ConversionError.destinationUnavailable(path: destinationURL.path)
         }
-        writer.startSession(atSourceTime: .zero)
+        writer.startSession(atSourceTime: timeRange?.start ?? .zero)
 
         let total = max(duration, 0.001)
         let pumps = [Pump(output: videoOutput, input: videoInput, reportsProgress: true)]
@@ -238,7 +241,7 @@ final class AVFoundationVideoTranscoder: @unchecked Sendable {
             for pump in pumps {
                 group.addTask {
                     await pump.run(isCancelled: isCancelledCheck) { seconds in
-                        progress(min(0.99, max(0, seconds / total)))
+                        progress(min(0.99, max(0, (seconds - offset) / total)))
                     }
                 }
             }
