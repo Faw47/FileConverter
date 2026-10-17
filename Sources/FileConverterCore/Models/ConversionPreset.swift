@@ -38,7 +38,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     public var splitPDFIntoPages: Bool
 
     // PDF Splitting Options
-    public var pdfSplitMode: String? // "all", "ranges", "chunks", "evenOdd", "selected"
+    public var pdfSplitMode: String? // "all", "ranges", "chunks", "evenOdd", "selected", "extract"
     public var pdfPageRanges: String? // e.g. "1-5, 8, 11-15"
     public var pdfChunkSize: Int? // e.g. 2
     public var pdfSelectedPages: [Int]? // e.g. [1, 3, 5]
@@ -62,6 +62,10 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
     public var pdfFlattenToImages: Bool
     /// Turn every page by this many degrees (90 right, 270 left, 180).
     public var pdfRotationDegrees: Int?
+    /// Names a password held in memory by `PDFPasswordVault` for this run.
+    /// The password itself is never stored here, so presets and history
+    /// that keep these options never contain it.
+    public var pdfPasswordToken: String?
 
     public init(
         audioSplitDurationSeconds: Int? = nil,
@@ -86,7 +90,8 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         pdfLinearize: Bool = false,
         pdfCompatibilityLevel: String? = nil,
         pdfFlattenToImages: Bool = false,
-        pdfRotationDegrees: Int? = nil
+        pdfRotationDegrees: Int? = nil,
+        pdfPasswordToken: String? = nil
     ) {
         self.audioSplitDurationSeconds = audioSplitDurationSeconds
         self.audioTargetFileSizeBytes = audioTargetFileSizeBytes
@@ -111,6 +116,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         self.pdfCompatibilityLevel = pdfCompatibilityLevel
         self.pdfFlattenToImages = pdfFlattenToImages
         self.pdfRotationDegrees = pdfRotationDegrees
+        self.pdfPasswordToken = pdfPasswordToken
     }
 
     public init(from decoder: Decoder) throws {
@@ -138,6 +144,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
         self.pdfCompatibilityLevel = try container.decodeIfPresent(String.self, forKey: .pdfCompatibilityLevel)
         self.pdfFlattenToImages = try container.decodeIfPresent(Bool.self, forKey: .pdfFlattenToImages) ?? false
         self.pdfRotationDegrees = try container.decodeIfPresent(Int.self, forKey: .pdfRotationDegrees)
+        self.pdfPasswordToken = try container.decodeIfPresent(String.self, forKey: .pdfPasswordToken)
     }
 
     public var isEmpty: Bool {
@@ -164,6 +171,7 @@ public struct ConversionProcessingOptions: Codable, Hashable, Sendable {
             && !pdfLinearize
             && pdfCompatibilityLevel == nil
             && !pdfFlattenToImages
+            && pdfPasswordToken == nil
     }
 }
 

@@ -48,17 +48,34 @@ public struct PDFSplitDialogView: View {
         case chunks = "Fixed Chunks"
         case evenOdd = "Even & Odd"
         case selected = "Select Pages"
+        case extract = "Extract Pages"
 
         public var id: String { rawValue }
 
-        /// Menu title in the "Split into" picker.
+        /// Menu title in the "Mode" picker.
         public var title: String {
             switch self {
-            case .all: return "One file per page"
-            case .ranges: return "Page ranges"
-            case .chunks: return "Equal parts"
-            case .evenOdd: return "Odd and even pages"
-            case .selected: return "Pages I pick"
+            case .all: return "Split into single pages"
+            case .ranges: return "Split by page ranges"
+            case .chunks: return "Split into equal parts"
+            case .evenOdd: return "Split odd and even pages"
+            case .selected: return "Split selected pages"
+            case .extract: return "Extract selected pages"
+            }
+        }
+
+        /// Modes where pages are picked in the thumbnail grid.
+        var picksPages: Bool { self == .selected || self == .extract }
+
+        /// The key the PDF engine and saved presets use.
+        var key: String {
+            switch self {
+            case .all: return "all"
+            case .ranges: return "ranges"
+            case .chunks: return "chunks"
+            case .evenOdd: return "evenOdd"
+            case .selected: return "selected"
+            case .extract: return "extract"
             }
         }
     }
@@ -112,7 +129,11 @@ public struct PDFSplitDialogView: View {
             case "ranges": return .ranges
             case "chunks": return .chunks
             case "evenodd": return .evenOdd
-            case "selected": return .selected
+            case "selected":
+                // "Split selected pages" combined into one PDF is what
+                // "Extract selected pages" does now.
+                return opts?.pdfMergeSplitOutputs == true ? .extract : .selected
+            case "extract": return .extract
             default: return .all
             }
         }()
@@ -121,6 +142,7 @@ public struct PDFSplitDialogView: View {
         self._chunkSize = State(initialValue: opts?.pdfChunkSize ?? 2)
         self._mergeOutputs = State(initialValue: opts?.pdfMergeSplitOutputs ?? false)
         self._selectedPages = State(initialValue: Set(opts?.pdfSelectedPages ?? []))
+        self._selectedPagesText = State(initialValue: Self.rangeText(for: Set(opts?.pdfSelectedPages ?? [])))
         self._zeroPadDigits = State(initialValue: NumberingPadding(rawValue: opts?.pdfZeroPadDigits ?? 2) ?? .twoDigits)
 
         let wantsSubfolder: Bool = {
@@ -182,7 +204,7 @@ public struct PDFSplitDialogView: View {
             pageRanges: effectiveRange,
             chunkSize: chunkSize,
             selectedPages: Array(selectedPages.filter { $0 <= item.pageCount }),
-            mergeOutputs: mergeOutputs,
+            mergeOutputs: effectiveMergeOutputs,
             zeroPadDigits: zeroPadDigits.rawValue
         )
         return plans.count
@@ -208,21 +230,19 @@ public struct PDFSplitDialogView: View {
         switch selectedMode {
         case .ranges:
             return batchItems.contains(where: { !validateRange(for: $0).isValid })
-        case .selected:
+        case .selected, .extract:
             return selectedPages.isEmpty
         default:
             return false
         }
     }
 
-    private var currentModeKey: String {
-        switch selectedMode {
-        case .all: return "all"
-        case .ranges: return "ranges"
-        case .chunks: return "chunks"
-        case .evenOdd: return "evenOdd"
-        case .selected: return "selected"
-        }
+    private var currentModeKey: String { selectedMode.key }
+
+    /// Only page ranges offer "Combine into one PDF"; extracting always
+    /// makes one PDF and splitting selected pages always makes one per page.
+    private var effectiveMergeOutputs: Bool {
+        selectedMode == .ranges && mergeOutputs
     }
 
     public var body: some View {
@@ -231,12 +251,13 @@ public struct PDFSplitDialogView: View {
                 batchFilesSection
             }
             modeSection
+            pagesSection
             namingAndFolderSection
         }
         .formStyle(.grouped)
         .edgeBar(.top, style: .sheet) { headerView }
         .edgeBar(.bottom, style: .sheet) { footerView }
-        .frame(minWidth: 540, idealWidth: 600, minHeight: 480, idealHeight: 620)
+        .frame(minWidth: 560, idealWidth: 640, minHeight: 560, idealHeight: 720)
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
         }
@@ -329,7 +350,7 @@ public struct PDFSplitDialogView: View {
     // MARK: - Header
     private var headerView: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(batchItems.count <= 1 ? "Split “\(firstURL?.lastPathComponent ?? "PDF Document")”" : "Split \(batchItems.count) PDFs")
+            Text(headerTitle)
                 .font(.title3.weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -337,6 +358,14 @@ public struct PDFSplitDialogView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var headerTitle: String {
+        let verb = selectedMode == .extract ? "Extract pages from" : "Split"
+        if batchItems.count <= 1 {
+            return "\(verb) “\(firstURL?.lastPathComponent ?? "PDF document")”"
+        }
+        return "\(verb) \(batchItems.count) PDFs"
     }
 
     private var statsText: String {
@@ -412,10 +441,12 @@ public struct PDFSplitDialogView: View {
     // MARK: - Mode
     private var modeSection: some View {
         Section {
-            Picker("Split into", selection: $selectedMode) {
-                ForEach(SplitMode.allCases) { mode in
+            Picker("Mode", selection: $selectedMode) {
+                ForEach(SplitMode.allCases.filter { $0 != .extract }) { mode in
                     Text(mode.title).tag(mode)
                 }
+                Divider()
+                Text(SplitMode.extract.title).tag(SplitMode.extract)
             }
 
             switch selectedMode {
@@ -433,52 +464,102 @@ public struct PDFSplitDialogView: View {
                     }
                 }
 
-            case .selected:
+            case .selected, .extract:
                 TextField("Pages", text: $selectedPagesText, prompt: Text("1-3, 5"))
                     .onSubmit { applySelectedPagesText() }
-                VStack(alignment: .leading, spacing: 8) {
-                    if batchItems.count > 1, let firstURL {
-                        Text("These are the pages of “\(firstURL.lastPathComponent)”. The same page numbers are taken from every PDF; a PDF without some of them gives only the pages it has.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    HStack {
-                        Text("\(selectedPages.count) of \(totalPages) selected")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                        Spacer()
-                        Button("Select All") {
-                            selectedPages = Set(1...max(1, totalPages))
-                            selectedPagesText = Self.rangeText(for: selectedPages)
-                        }
-                        Button("Clear") {
-                            selectedPages.removeAll()
-                            selectedPagesText = ""
-                        }
-                        .disabled(selectedPages.isEmpty)
-                    }
-                    .controlSize(.small)
-                    ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 10)], spacing: 10) {
-                            ForEach(1...max(1, totalPages), id: \.self) { page in
-                                PageThumbnailCell(
-                                    documentURL: firstURL,
-                                    pageNumber: page,
-                                    isSelected: selectedPages.contains(page)
-                                ) {
-                                    togglePage(page, extendingRange: NSEvent.modifierFlags.contains(.shift))
-                                }
-                            }
-                        }
-                        .padding(2)
-                    }
-                    .frame(minHeight: 160, maxHeight: 300)
-                }
-                Toggle("Combine into one PDF", isOn: $mergeOutputs)
             }
         } footer: {
             modeFooter
+        }
+    }
+
+    // MARK: - Pages
+    private var pagesSection: some View {
+        Section {
+            if batchItems.count > 1, let firstURL {
+                Text("Showing “\(firstURL.lastPathComponent)”. The same page numbers are used for every PDF; a PDF without some of them gives only the pages it has.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            let layout = previewLayout
+            PDFPageGrid(
+                documentURL: firstPreviewURL,
+                pageCount: firstPreviewPageCount,
+                isSelectable: selectedMode.picksPages,
+                selectedPages: selectedPages,
+                excludedPages: layout.excluded,
+                fileLabel: { layout.labels[$0] },
+                onClick: { page, extending in togglePage(page, extendingRange: extending) }
+            )
+        } header: {
+            HStack {
+                Text("Pages")
+                Spacer()
+                if selectedMode.picksPages {
+                    Text("\(selectedPages.count) of \(totalPages) selected")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                    Button("Select All") {
+                        selectedPages = Set(1...max(1, totalPages))
+                        selectedPagesText = Self.rangeText(for: selectedPages)
+                    }
+                    Button("Clear") {
+                        selectedPages.removeAll()
+                        selectedPagesText = ""
+                    }
+                    .disabled(selectedPages.isEmpty)
+                }
+            }
+            .controlSize(.small)
+            .font(.callout)
+        }
+    }
+
+    /// The first PDF that can be read, whose pages the grid shows.
+    private var firstPreviewItem: PDFBatchItem? {
+        batchItems.first { $0.isValid && !$0.isLocked }
+    }
+
+    private var firstPreviewURL: URL? {
+        isLoadingStats ? nil : firstPreviewItem?.url
+    }
+
+    private var firstPreviewPageCount: Int {
+        firstPreviewItem?.pageCount ?? 0
+    }
+
+    /// Which pages the current choice leaves out, and which file each page
+    /// goes to when files hold more than one page.
+    private var previewLayout: (excluded: Set<Int>, labels: [Int: String]) {
+        guard let item = firstPreviewItem else { return ([], [:]) }
+        let plans = PDFPageRangeParser.planOutputs(
+            totalPages: item.pageCount,
+            splitMode: currentModeKey,
+            pageRanges: item.customRangeString ?? rangeString,
+            chunkSize: chunkSize,
+            selectedPages: Array(selectedPages.filter { $0 <= item.pageCount }),
+            mergeOutputs: effectiveMergeOutputs,
+            zeroPadDigits: zeroPadDigits.rawValue
+        )
+        var included = Set<Int>()
+        var labels: [Int: String] = [:]
+        let labelsFiles = plans.count > 1 && plans.contains { $0.pageIndices.count > 1 }
+        for (fileIndex, plan) in plans.enumerated() {
+            for index in plan.pageIndices {
+                included.insert(index + 1)
+                if labelsFiles { labels[index + 1] = fileLabel(for: plan, number: fileIndex + 1) }
+            }
+        }
+        let excluded = Set(1...max(1, item.pageCount)).subtracting(included)
+        return (plans.isEmpty ? [] : excluded, labels)
+    }
+
+    private func fileLabel(for plan: PDFSplitOutputPlan, number: Int) -> String {
+        switch plan.suffix {
+        case "odd": return "odd"
+        case "even": return "even"
+        default: return "file \(number)"
         }
     }
 
@@ -511,16 +592,20 @@ public struct PDFSplitDialogView: View {
         case .evenOdd:
             FooterText("Two files: one with pages 1, 3, 5… (\((totalPages + 1) / 2)) and one with pages 2, 4, 6… (\(totalPages / 2)).")
         case .selected:
-            FooterText("Click a page to select it; Shift-click selects a range. " + (mergeOutputs ? "Selected pages are saved as one PDF." : "Each selected page becomes its own PDF."))
+            FooterText("Each selected page becomes its own PDF. Click a page below to select it; Shift-click selects a range.")
+        case .extract:
+            FooterText("The selected pages are saved, in order, as one new PDF. Click a page below to select it; Shift-click selects a range.")
         }
     }
 
     // MARK: - Saving
     private var namingAndFolderSection: some View {
         Section("Saving") {
-            Picker("Page numbers", selection: $zeroPadDigits) {
-                ForEach(NumberingPadding.allCases) { pad in
-                    Text(pad.displayName).tag(pad)
+            if selectedMode != .extract {
+                Picker("Page numbers", selection: $zeroPadDigits) {
+                    ForEach(NumberingPadding.allCases) { pad in
+                        Text(pad.displayName).tag(pad)
+                    }
                 }
             }
             Toggle("Put the files in a new folder", isOn: $createSubfolder)
@@ -591,7 +676,7 @@ public struct PDFSplitDialogView: View {
                     .font(.callout)
                     .foregroundStyle(isFooterStatusError ? .red : .secondary)
 
-                Button("Split PDF") {
+                Button(selectedMode == .extract ? "Extract Pages" : "Split PDF") {
                     startSplitting()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -660,7 +745,7 @@ public struct PDFSplitDialogView: View {
                 guard validateRange(for: item).isValid else { return }
             }
         }
-        if selectedMode == .selected, selectedPages.isEmpty { return }
+        if selectedMode.picksPages, selectedPages.isEmpty { return }
 
         // Check if any batch item has a per-file custom range override
         let hasPerFileRanges = selectedMode == .ranges
@@ -677,7 +762,7 @@ public struct PDFSplitDialogView: View {
                 options.pdfPageRanges = item.customRangeString ?? rangeString
                 options.pdfChunkSize = chunkSize
                 options.pdfSelectedPages = Array(selectedPages)
-                options.pdfMergeSplitOutputs = mergeOutputs
+                options.pdfMergeSplitOutputs = effectiveMergeOutputs
                 options.pdfZeroPadDigits = zeroPadDigits.rawValue
                 applyOutputDirectory(to: &preset, options: &options)
                 preset.processingOptions = options
@@ -692,7 +777,7 @@ public struct PDFSplitDialogView: View {
             options.pdfPageRanges = rangeString
             options.pdfChunkSize = chunkSize
             options.pdfSelectedPages = Array(selectedPages)
-            options.pdfMergeSplitOutputs = mergeOutputs
+            options.pdfMergeSplitOutputs = effectiveMergeOutputs
             options.pdfZeroPadDigits = zeroPadDigits.rawValue
             applyOutputDirectory(to: &preset, options: &options)
             preset.processingOptions = options
@@ -725,62 +810,5 @@ public struct PDFSplitDialogView: View {
                 preset.outputDirectoryPolicy = .customFolder(bookmarkData: fallbackBookmark, displayPath: customOutputDirectory.path)
             }
         }
-    }
-}
-
-/// One page of the "select pages" grid, rendered as a small thumbnail.
-private struct PageThumbnailCell: View {
-    let documentURL: URL?
-    let pageNumber: Int
-    let isSelected: Bool
-    let action: () -> Void
-
-    @State private var thumbnail: NSImage?
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(nsColor: .textBackgroundColor))
-                    if let thumbnail {
-                        Image(nsImage: thumbnail)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .padding(2)
-                    }
-                }
-                .frame(width: 72, height: 96)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: isSelected ? 3 : 1)
-                )
-                Text("\(pageNumber)")
-                    .font(.caption.weight(isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Page \(pageNumber)")
-        .accessibilityValue(isSelected ? "Selected" : "Not selected")
-        .task(id: documentURL) {
-            guard thumbnail == nil, let documentURL,
-                  let page = ThumbnailDocumentCache.document(for: documentURL)?.page(at: pageNumber - 1) else { return }
-            thumbnail = page.thumbnail(of: CGSize(width: 144, height: 192), for: .cropBox)
-        }
-    }
-}
-
-/// Opens each PDF once for all of its page thumbnails.
-@MainActor
-private enum ThumbnailDocumentCache {
-    private static var documents: [URL: PDFDocument] = [:]
-
-    static func document(for url: URL) -> PDFDocument? {
-        if let cached = documents[url] { return cached }
-        guard let document = PDFDocument(url: url) else { return nil }
-        if documents.count > 8 { documents.removeAll() }
-        documents[url] = document
-        return document
     }
 }

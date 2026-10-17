@@ -278,6 +278,14 @@ public enum PDFPageRangeParser {
                 }
             }
 
+        case "extract":
+            // The chosen pages, in page order, saved as one PDF. Strict like
+            // "selected": a page outside the document plans nothing.
+            guard let requested = selectedPages, !requested.isEmpty,
+                  requested.allSatisfy({ $0 >= 1 && $0 <= totalPages }) else { return [] }
+            let indices = Array(Set(requested)).sorted().map { $0 - 1 }
+            return [PDFSplitOutputPlan(suffix: "extracted", pageIndices: indices)]
+
         default:
             return (0..<totalPages).map { pageIndex in
                 let suffix = ConversionOutputSequence.suffix(

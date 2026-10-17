@@ -704,8 +704,16 @@ public final class ConversionQueue: ObservableObject {
                 }
             }
 
-            // Compression that does not shrink the file is not worth keeping.
-            if job.preset.isPDFCompressWorkflow, plannedOutputs.count == 1 {
+            // "Protect with a password" runs after any engine, so a
+            // Ghostscript result is protected the same way as a PDFKit one.
+            let passwordToken = job.preset.processingOptions?.pdfPasswordToken
+            if let passwordToken {
+                try PDFPasswordProtection.protect(filesAt: plannedOutputs.map(\.temporaryURL), token: passwordToken)
+            }
+
+            // Compression that does not shrink the file is not worth keeping,
+            // unless the point was also to add a password.
+            if job.preset.isPDFCompressWorkflow, passwordToken == nil, plannedOutputs.count == 1 {
                 let sourceSize = FileAccessManager.shared.fileSize(at: job.sourceURL)
                 let outputSize = FileAccessManager.shared.fileSize(at: plannedOutputs[0].temporaryURL)
                 if sourceSize > 0, outputSize >= sourceSize {

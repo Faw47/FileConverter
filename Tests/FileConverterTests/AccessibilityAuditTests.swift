@@ -24,7 +24,8 @@ final class AccessibilityAuditTests: XCTestCase {
             "Compression level", "Turn pages into images", "Convert to grayscale",
             "Image resolution in dots per inch", "JPEG image quality", "Remove document details",
             "Remove comments and highlights", "Optimize for fast web viewing", "Filename ending",
-            "Change output folder", "Cancel compression", "Start PDF compression"
+            "Change output folder", "Cancel compression", "Start PDF compression",
+            "Protect with a password", "Enter the password again"
         ] {
             XCTAssertTrue(content.contains(".accessibilityLabel(\"\(label)\")"), label)
         }
@@ -40,7 +41,7 @@ final class AccessibilityAuditTests: XCTestCase {
         // field is titled with the file name, the mode is a titled picker.
         XCTAssertTrue(content.contains("\"Pages for \\(item.url.lastPathComponent)\""))
         XCTAssertTrue(content.contains(".accessibilityLabel(\"Remove \\(item.url.lastPathComponent)\")"))
-        XCTAssertTrue(content.contains("Picker(\"Split into\""))
+        XCTAssertTrue(content.contains("Picker(\"Mode\""))
         XCTAssertFalse(content.contains("Picker(\"\""), "every picker needs a title")
     }
 

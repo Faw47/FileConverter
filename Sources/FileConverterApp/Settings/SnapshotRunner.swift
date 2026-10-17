@@ -99,6 +99,20 @@ public enum SnapshotRunner {
                         PDFSplitDialogView(urls: pdfs, initialPreset: split, onCancel: {}, onStart: { (_: ConversionPreset) in })
                     }
                 }
+                if let compress = presets.first(where: { $0.menuName == "Compress PDF" }) {
+                    snap("pdf_compress_password", size: CGSize(width: 640, height: 820), appearances: appearances, to: outURL) {
+                        PDFCompressDialogView(urls: pdfs, initialPreset: compress, onCancel: {}, onStart: { (_: ConversionPreset, _: [URL]) in }, startsProtected: true)
+                    }
+                }
+                if var extract = presets.first(where: { $0.menuName == "Split PDF" }) {
+                    var options = extract.processingOptions ?? ConversionProcessingOptions()
+                    options.pdfSplitMode = "extract"
+                    options.pdfSelectedPages = [1, 3]
+                    extract.processingOptions = options
+                    snap("pdf_extract", size: CGSize(width: 820, height: 760), appearances: appearances, to: outURL) {
+                        PDFSplitDialogView(urls: pdfs, initialPreset: extract, onCancel: {}, onStart: { (_: ConversionPreset) in })
+                    }
+                }
             }
             if let photo = urls.first(where: { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }) {
                 snap("picker_single", size: CGSize(width: 720, height: 560), appearances: appearances, to: outURL) {

@@ -98,7 +98,7 @@ public final class PDFKitBackend: ConversionBackend, @unchecked Sendable {
                     reason: result.errorMessage ?? "Invalid PDF page selection."
                 )
             }
-        case "selected":
+        case "selected", "extract":
             let pages = options?.pdfSelectedPages ?? []
             guard !pages.isEmpty, pages.allSatisfy({ $0 >= 1 && $0 <= totalPages }) else {
                 throw ConversionError.malformedSource(
