@@ -92,4 +92,4 @@ Optional tools are discovered at runtime and must be invoked with discrete argum
 
 ## License and contributions
 
-The repository does not currently publish a license file. Do not assume that code may be redistributed or relicensed. If a contribution depends on specific licensing terms, raise that before opening a pull request.
+File Converter is licensed under the [MIT License](LICENSE). By contributing, you agree that your contribution may be distributed under those terms.
